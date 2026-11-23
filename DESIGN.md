@@ -40,7 +40,7 @@ The owner's ruling: **build, measure, try — nothing else.**
 
 | Layer | Job | Package | State |
 |---|---|---|---|
-| Build | Design source to named solids, poses, motions, STEP and manifest | `source/`, `kernel/`, `motion/`, `build/` | Here now |
+| Build | Design source to named solids, poses, motions, STEP and manifest | `source/`, `motion/`, `kernel/`, `builder/` | Here now |
 | Measure | Clearance and interference along a motion, contacts, mass roll-up | `measure/` | Empty slot |
 | Try | Physics trials defined as data | `trials/` | Empty slot |
 
@@ -61,6 +61,12 @@ frc_design_kernel/
   errors.py          DesignError: where, what is wrong, how to fix it
   version.py         library version and commit, for information
 
+  motion/            the motion vocabulary. Pure arithmetic, no CAD kernel.
+    matrix.py        rigid transforms as 3x4 number tables
+    ops.py           translation, rotation, gravity-drop, path at fraction t
+    paths.py         straight, arc and smooth curves through points
+    screw.py         smooth movement from one pose to the next
+
   source/            reading the design source. No CAD kernel needed.
     expressions.py   safe arithmetic for "=..." values
     schema.py        a small JSON Schema checker with plain messages
@@ -69,12 +75,6 @@ frc_design_kernel/
     checks.py        cross-references: names exist, no loops, no double mass
     load.py          file to checked, plain design
 
-  motion/            the motion vocabulary. Pure arithmetic, no CAD kernel.
-    matrix.py        rigid transforms as 3x4 number tables
-    ops.py           translation, rotation, gravity-drop, path at fraction t
-    paths.py         straight, arc and smooth curves through points
-    screw.py         smooth movement from one pose to the next
-
   kernel/            thin wrappers over the CAD kernel (OCP). Few lines each.
     shapes.py        box, cylinder, sphere, prism, tube
     booleans.py      union, difference, intersection
@@ -82,13 +82,14 @@ frc_design_kernel/
     transform.py     apply a rigid transform to a shape
     step_read.py     STEP file to named solids
     step_write.py    named solids to a STEP file
+    quiet.py         stop the kernel's own console chatter
 
-  build/             the build layer
+  builder/           the build layer (named builder so the build() function keeps its name)
     shape.py         a shape entry to one solid
     parts.py         solids taken from STEP files by name
     custom.py        the escape hatch: load, call and check a custom shape
-    assembly.py      the built design: solids, groups, poses, motions
     placement.py     who is carried by whom; transforms per group
+    assembly.py      the built design: solids as drawn, placed at a pose or along a motion
     manifest.py      the manifest
     export.py        write the STEP files and the manifest
 
@@ -104,9 +105,10 @@ data. It never applies a guideline.
 **What will go in `trials/`:** a trial described as data (bodies, contacts, drives, a stop condition), a solver, and
 a result record. It takes solids and masses from the `Assembly` so a trial and the layout cannot disagree.
 
-**Import direction.** `source` and `motion` import nothing from the rest. `kernel` imports only OCP. `build` imports
-`source`, `motion` and `kernel`. `measure` and `trials` will import `build`, `motion` and `kernel`. Nothing imports
-upward, and nothing imports in a circle. A test enforces the no-circle rule.
+**Import direction.** `motion` imports nothing from the rest. `source` imports `motion` (to check operations).
+`kernel` imports only OCP. `builder` imports `source`, `motion` and `kernel`. `measure` and `trials` will import
+`builder`, `motion` and `kernel`. Nothing imports upward, and nothing imports in a circle. A test enforces the
+no-circle rule.
 
 ## 4. The design source
 
@@ -316,8 +318,8 @@ able to tell fair use from misuse by reading the design source and the manifest.
 4. **It only makes a shape.** It does not place itself in the robot (that is what `place` is for), write files, read
    other files, or return several bodies.
 
-5. **Limited imports.** The file may import only `math`, the CAD kernel (`OCP`) and `frc_design_kernel`. The library
-   reads the file and refuses anything else before running it.
+5. **Limited imports.** The file may import only `math`, the CAD kernel (`OCP`) and `frc_design_kernel`. It may not
+   use `open`, `exec`, `eval` or similar. The library reads the file and refuses anything else before running it.
 
 6. **Checked.** The library checks what it can: the result is one solid, is valid, and has volume. It refuses
    otherwise, and names the shape and the entry that used it.
@@ -405,6 +407,6 @@ These were the simpler choice at the time. Any of them may change while the libr
 7. **Mounts are records, not constraints.** Nothing yet checks that the two solids meet at the mount point.
 8. **Mass is a single figure**, per solid or per group. Ranges (low and high) are left to the tools that budget.
 9. **Custom shape imports are checked by reading the file.** That stops honest mistakes, not a determined author.
-10. **Solid names are plain text without checks on characters** beyond being unique. If a STEP reader mangles a name,
-    restrict the allowed characters.
+10. **Solid names are plain ASCII text.** The CAD kernel damages accented letters and symbols when it writes a STEP
+    file, so the build refuses them. Names read from a supplier's STEP file are repaired where possible.
 11. **No revolve, sweep or loft shapes.** They are custom-shape cases until a second project needs one.

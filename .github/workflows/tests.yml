@@ -23,3 +23,6 @@ jobs:
         run: |
           cd "$RUNNER_TEMP"
           python -m frc_design_kernel --version
+          python -m frc_design_kernel validate "$GITHUB_WORKSPACE/examples/lifter/design.json"
+          python -m frc_design_kernel build "$GITHUB_WORKSPACE/examples/lifter/design.json" --out out
+          python -c "import json; made = json.load(open('out/manifest.json'))['generator']; print(made); assert made['version']"

@@ -1,0 +1,95 @@
+{
+  "schema": "frc-design-kernel/design@1",
+  "name": "Bench lifter",
+  "units": {"length": "mm", "mass": "kg"},
+  "frame": "Origin on the bench top under the middle of the base plate. +X toward the fork tips, +Y left, +Z up.",
+  "parameters": {
+    "base_t": 8,
+    "post_x": -120,
+    "post_y": 110,
+    "post_d": 30,
+    "post_top": "=base_t + 450",
+    "lift": 220,
+    "fork_z": 80,
+    "tine_len": 180
+  },
+  "groups": {
+    "base": {"role": "structure"},
+    "drive": {"role": "mechanism"},
+    "carriage": {"role": "mechanism", "carriedBy": "base", "massKg": 1.8,
+                 "note": "One lump figure for the whole carriage until its parts are chosen."},
+    "load": {"role": "payload", "carriedBy": "carriage"},
+    "fixtures": {"role": "fixture"}
+  },
+  "custom": {
+    "tine": {
+      "reason": "A fork tine has a curved underside so it slides under a crate; no listed shape has a curved edge.",
+      "limits": "Side outline only. The curve is one arc chosen by eye, not a stress-checked profile."
+    }
+  },
+  "solids": [
+    {"name": "base plate", "group": "base", "densityKgM3": 2700,
+     "shape": {"kind": "box", "fromMm": [-200, -150, 0], "toMm": [200, 150, "=base_t"]}},
+    {"name": "post {side}", "group": "base", "densityKgM3": 2700,
+     "each": [{"side": "left", "s": 1}, {"side": "right", "s": -1}],
+     "shape": {"kind": "tube", "section": "round", "fromMm": ["=post_x", "=s * post_y", "=base_t"],
+               "toMm": ["=post_x", "=s * post_y", "=post_top"], "outerDiameterMm": "=post_d", "wallMm": 2}},
+    {"name": "top bar", "group": "base", "densityKgM3": 2700,
+     "shape": {"kind": "tube", "section": "rectangular", "fromMm": ["=post_x", "=-post_y - 15", "=post_top + 12.5"],
+               "toMm": ["=post_x", "=post_y + 15", "=post_top + 12.5"], "widthMm": 25, "heightMm": 25, "wallMm": 2}},
+    {"name": "gusset {side}", "group": "base", "densityKgM3": 2700,
+     "each": [{"side": "left", "s": 1}, {"side": "right", "s": -1}],
+     "shape": {"kind": "prism", "plane": "xz",
+               "outlineMm": [["=post_x + post_d / 2", "=base_t"], ["=post_x + 75", "=base_t"], ["=post_x + post_d / 2", "=base_t + 60"]],
+               "fromMm": "=s * (post_y - 3)", "toMm": "=s * (post_y + 3)"}},
+    {"name": "gearmotor body", "group": "drive", "massKg": 0.62,
+     "part": {"file": "parts/gearmotor.step", "solid": "Motor body"},
+     "place": [{"kind": "translation", "travelMm": [60, -60, "=base_t + 22"]}]},
+    {"name": "gearmotor shaft", "group": "drive", "massKg": 0.03,
+     "part": {"file": "parts/gearmotor.step", "solid": "Output shaft"},
+     "place": [{"kind": "translation", "travelMm": [60, -60, "=base_t + 22"]}]},
+    {"name": "spool", "group": "drive", "note": "Mass not yet known.",
+     "shape": {"kind": "cylinder", "fromMm": [60, 35, "=base_t + 22"], "toMm": [60, 65, "=base_t + 22"], "radiusMm": 15}},
+    {"name": "sleeve {side}", "group": "carriage",
+     "each": [{"side": "left", "s": 1}, {"side": "right", "s": -1}],
+     "shape": {"kind": "tube", "section": "round", "fromMm": ["=post_x", "=s * post_y", 60],
+               "toMm": ["=post_x", "=s * post_y", 140], "outerDiameterMm": "=post_d + 10", "wallMm": 4}},
+    {"name": "carriage plate", "group": "carriage",
+     "shape": {"kind": "box", "fromMm": ["=post_x + 20", "=-post_y - 20", 70], "toMm": ["=post_x + 26", "=post_y + 20", 130]}},
+    {"name": "tine {side}", "group": "carriage",
+     "each": [{"side": "left", "s": 1}, {"side": "right", "s": -1}],
+     "shape": {"kind": "custom", "use": "tine", "parameters": {"lengthMm": "=tine_len", "widthMm": 20, "rootMm": 24, "tipMm": 6}},
+     "place": [{"kind": "translation", "travelMm": ["=post_x + 26", "=s * 60 - 10", "=fork_z"]}]}
+  ],
+  "fixtures": [
+    {"name": "bench top", "part": {"file": "parts/bench.step", "solid": "Bench top"}},
+    {"name": "crate", "group": "load", "massKg": 2.5,
+     "shape": {"kind": "box", "fromMm": [-60, -70, "=fork_z"], "toMm": [60, 70, "=fork_z + 100"]}}
+  ],
+  "mounts": [
+    {"group": "carriage", "member": "sleeve {side}", "on": "post {side}", "atMm": ["=post_x", "=s * post_y", 100],
+     "each": [{"side": "left", "s": 1}, {"side": "right", "s": -1}],
+     "note": "The sleeve slides on the post."},
+    {"group": "drive", "member": "gearmotor body", "on": "base plate", "atMm": [60, -25, "=base_t"],
+     "note": "Motor clamp bolts to the base plate."},
+    {"group": "load", "member": "crate", "on": "tine left", "atMm": [0, 60, "=fork_z"],
+     "note": "The crate rests on both tines."}
+  ],
+  "poses": {
+    "lowered": {},
+    "raised": {"carriage": [{"kind": "translation", "travelMm": [0, 0, "=lift"]}]},
+    "set down": {
+      "carriage": [{"kind": "translation", "travelMm": [0, 0, "=lift"]}],
+      "load": [{"kind": "translation", "travelMm": [260, 0, 0]}]
+    }
+  },
+  "motions": {
+    "lift": {"from": "lowered", "to": "raised",
+             "moves": {"carriage": [{"kind": "translation", "travelMm": [0, 0, "=lift"]}]}},
+    "hand off": {"from": "raised", "to": "set down",
+                 "note": "The crate is carried off the tines along one arc.",
+                 "moves": {"load": [{"kind": "path", "curve": "arc",
+                                     "throughMm": [[0, 0, 350], [130, 0, 400], [260, 0, 350]]}]}},
+    "whole cycle": {"through": ["lowered", "raised", "set down"]}
+  }
+}
