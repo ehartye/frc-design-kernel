@@ -6,8 +6,10 @@ cylinders and unions keeps that construction, so an exact convex breakdown can b
 """
 from ..builder import placement
 from ..motion import stages as stage_math
+from . import convex
 
 CONVEX = ("box", "sphere")
+GOOD = ("convex", "union of convex pieces", "convex pieces from its construction")
 
 
 def convex_outline(points):
@@ -20,15 +22,19 @@ def convex_outline(points):
 
 
 def breakdown(shape):
-    """"convex", "union of convex pieces", or the reason no convex breakdown follows from how the shape was built."""
+    """"convex", "union of convex pieces", "convex pieces from its construction", or the reason no breakdown follows from how the shape was built."""
     kind = shape["kind"]
     if kind in CONVEX or (kind == "cylinder" and shape.get("sweepDeg", 360) in (360,)) or (kind == "cylinder" and shape.get("sweepDeg", 360) <= 180):
         return "convex"
-    if kind == "prism":
-        return "convex" if convex_outline(shape["outlineMm"]) else "a prism with an outline that turns inward"
+    if kind == "prism" and convex_outline(shape["outlineMm"]):
+        return "convex"
+    if kind == "intersection" and all(breakdown(part) == "convex" for part in shape["of"]):
+        return "convex"
     if kind == "union":
         parts = [breakdown(part) for part in shape["of"]]
-        return "union of convex pieces" if all(p in ("convex", "union of convex pieces") for p in parts) else next(p for p in parts if p not in ("convex", "union of convex pieces"))
+        return "union of convex pieces" if all(p in GOOD for p in parts) else next(p for p in parts if p not in GOOD)
+    if convex.pieces(shape) is not None:
+        return "convex pieces from its construction"
     return {"tube": "a hollow tube", "difference": "a shape with material cut away", "intersection": "an overlap of shapes",
             "custom": "a custom shape", "cylinder": "a pie slice wider than a half turn"}[kind]
 
@@ -46,7 +52,7 @@ def report(assembly):
     concave = []
     for name in cut:
         found = "an imported part with no construction in the source" if built[name] is None else breakdown(built[name])
-        if found not in ("convex", "union of convex pieces"):
+        if found not in GOOD:
             concave.append({"solid": name, "why": found})
     weightless = [s.name for s in assembly.solids.values() if not s.fixture and s.mass_kg is None and "massKg" not in data["groups"][s.group]]
     paths = []

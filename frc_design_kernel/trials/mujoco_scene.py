@@ -17,6 +17,7 @@ from ..kernel.mesh import triangles
 from ..kernel.section import AXES
 from ..motion import matrix as mx
 from ..motion import ops
+from . import convex
 from .contact import damping
 from .inputs import plain
 from .ready import breakdown
@@ -70,7 +71,7 @@ class Model:
     """Collects the meshes and geoms of a scene and writes them as MJCF."""
 
     def __init__(self):
-        self.meshes, self.geoms, self.hulled, self.kinds = [], [], [], {}
+        self.meshes, self.geoms, self.hulled, self.kinds, self.faceted = [], [], [], {}, {}
 
     def add(self, solid, surface, shape, placed_at, friction, solref):
         """Add the geoms of one shape entry, part by part where it is a union."""
@@ -79,6 +80,13 @@ class Model:
                 self.add(solid, surface, part, placed_at, friction, solref)
             return
         found = primitive(shape, placed_at)
+        broken = convex.pieces(shape) if found is None and breakdown(shape) != "convex" else None
+        if broken is not None:      # its true convex pieces, from how it was built: nothing is filled in
+            for points in broken[0]:
+                self.geom(solid, surface, self.mesh([mx.scale(mx.apply(placed_at, p), MM) for p in points]), friction, solref)
+            if broken[1]:
+                self.faceted[solid] = broken[1]
+            return
         if found is None:
             built = make(shape, f'solid "{solid}"', None)
             points = [mx.scale(mx.apply(placed_at, v), MM) for v in triangles(built, 0.2)["vertices"]]
@@ -177,7 +185,8 @@ def build(assembly, name, a_case, handed=None):
     xml = (f'<mujoco><option timestep="{case["stepS"]:.9g}" gravity="{text(gravity)}" cone="elliptic" impratio="10"/>'
            f'<asset>{"".join(model.meshes)}</asset><worldbody>{"".join(g for _, _, g in model.geoms)}{body}</worldbody></mujoco>')
     facts = {"plane": plane, "pose": case.get("pose"), "geoms": model.kinds, "hulled": sorted(model.hulled),
-             "sections": [{"solid": entry["solid"]} for entry in case["surfaces"]], "typedSurfaces": [],
+             "faceted": model.faceted, "sections": [{"solid": entry["solid"], "surface": entry.get("name", entry["solid"])} for entry in case["surfaces"]],
+             "typedSurfaces": [],
              "piece": {"piece": use, "shape": piece["shape"]["kind"], "radiusMm": radius / MM},
              "contactMapping": f"spring k and damper c of each material are given to MuJoCo as solref = (-k / (m d), -c / (m d)) with piece mass m and impedance d = {IMPEDANCE}"}
     return {"engine": "mujoco", "xml": xml, "surfaceOf": {g: surface for g, surface, _ in model.geoms}, "axes": ["xyz"[i] for i in AXES[plane["normal"]]],

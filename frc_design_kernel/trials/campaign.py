@@ -276,12 +276,18 @@ def run_trial(design, name, builder, handed, workers):
         rows = [{"values": combo, "met": met[run_id][0], "outcome": results[run_id]["outcome"]} for run_id, combo, _ in grid]
         grid_found = {"inputs": trial["grid"]["inputs"], "runs": rows, "allMet": all(row["met"] == met["nominal"][0] for row in rows)}
     word, findings = record.result(met["nominal"][0], control, ranges, steps, missing, grid_found, covered)
+    hulled = set((runner.facts or {}).get("hulled", []))
+    solid_of = {row.get("surface", row["solid"]): row["solid"] for row in (runner.facts or {}).get("sections", [])}
+    touched = sorted({solid_of[s] for run in results.values() for s in run["contacts"] if solid_of.get(s) in hulled})
+    if touched:     # a filled-in shape was part of what happened, so the outcome may rest on a surface that is not there
+        word += ", on a hulled surface"
+        findings.append("the piece touched a solid that was taken as its convex hull, which fills in its hollows and cuts: " + ", ".join(touched))
     stated, standing = assumptions.stated(trial)
     ranking = record.sensitivity(ranges, nominal["measures"])
     return {"engine": engines.stamp(trial.get("engine", "planar")),
             "definition": case, "assumptions": {"stated": stated, "engine": standing}, "inputs": found, "saw": runner.facts,
             "used": what_it_used(design, builder.assembly(), name, case, runner.facts),
-            "result": word, "findings": findings, "firstUnmet": met["nominal"][1],
+            "result": word, "findings": findings, "touchedHulled": touched, "firstUnmet": met["nominal"][1],
             "nominal": {**run_summary("nominal", {}, nominal, *met["nominal"]), "end": nominal["end"], "trace": nominal["trace"], "contacts": nominal["contacts"]},
             "stepComparison": steps, "control": control, "ranges": ranges, "coverage": covered, "grid": grid_found, "sensitivity": ranking,
             "handForward": record.hand_forward(found, ranges, ranking, control, stated + standing, covered),

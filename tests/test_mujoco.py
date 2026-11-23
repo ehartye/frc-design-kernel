@@ -88,18 +88,75 @@ class Calibration(unittest.TestCase):
         self.assertAlmostEqual(solid_in, flat_in, delta=0.05 * flat_in)
         self.assertLess(solid_up, 200.0)
 
+    def test_forces_agree_with_the_planar_engine(self):
+        """Catches peak force, a signal for squeeze and structure, drifting between engines: at rest both give the weight, and a bounce peaks alike."""
+        lively = {"lively": {**PANEL, "restitution": MEASURED(0.5)}}
+        peaks = {}
+        for engine in ("planar", "mujoco"):
+            trial = bouncing(engine)
+            trial.update(durationS=3.0, measures={"peak": {"peak": "contact.belt bed.forceN"}, "end": {"final": "contact.belt bed.forceN"}})
+            found = one_run(trial, materials=lively)[0]["measures"]
+            self.assertAlmostEqual(found["end"], 0.5 * G, delta=0.001 * 0.5 * G, msg=engine)
+            peaks[engine] = found["peak"]
+        self.assertAlmostEqual(peaks["mujoco"], peaks["planar"], delta=0.05 * peaks["planar"])
+
+    def drop(self, shape, start, design_extra=None, duration=1.5):
+        """A small ball dropped at start onto one extra solid; returns where it comes to rest (x, z in mm) and the scene facts."""
+        trial = {"engine": "mujoco", "assumes": ASSUMES, "plane": {"normal": "y", "atMm": 0}, "stepS": 1e-4, "durationS": duration, "traceS": 0.01,
+                 "piece": {"use": "shot", "start": {"atMm": start}}, "surfaces": [{"solid": "thing", "material": "panel"}],
+                 "events": [{"name": "still", "when": {"all": [{"signal": "tS", "above": 0.3}, {"restFor": 0.2}]}, "outcome": "still"}],
+                 "pass": {"outcomes": ["still"]}, "measures": {"x": {"final": "xMm"}, "z": {"final": "zMm"}}}
+        solids = bench({})["solids"] + [{"name": "thing", "group": "bench", "shape": shape}]
+        found, facts = one_run(trial, solids=solids, **(design_extra or {}))
+        return found["measures"]["x"], found["measures"]["z"], facts
+
+    def test_a_tube_keeps_its_bore_and_a_slot_stays_open(self):
+        """Catches a hollow or cut shape being filled in: a ball must come to rest inside a tube's bore and in a slot, not on top."""
+        tube = {"kind": "tube", "section": "round", "fromMm": [3000, -60, 100], "toMm": [3000, 60, 100], "outerDiameterMm": 200, "wallMm": 10}
+        x, z, facts = self.drop(tube, [3000, 120])
+        self.assertAlmostEqual(z, 100 - 90 + 5, delta=0.5)        # on the bottom of the bore (inner radius 90), not on top of the tube (z = 205)
+        self.assertEqual((facts["hulled"], len(facts["geoms"]["thing"])), ([], 24))
+        self.assertIn("flat facets", facts["faceted"]["thing"])
+        slot = {"kind": "difference", "from": {"kind": "box", "fromMm": [3000, -60, 0], "toMm": [3200, 60, 100]},
+                "cut": [{"kind": "box", "fromMm": [3080, -70, 40], "toMm": [3120, 70, 110]}]}
+        x, z, facts = self.drop(slot, [3100, 140])
+        self.assertAlmostEqual(z, 40 + 5, delta=0.5)              # on the floor of the slot, not on the box's top (z = 105)
+        self.assertEqual((facts["hulled"], facts["faceted"]), ([], {}))
+        vee = {"kind": "prism", "plane": "xz", "fromMm": -60, "toMm": 60, "outlineMm": [[3000, 0], [3200, 0], [3200, 100], [3100, 20], [3000, 100]]}
+        x, z, facts = self.drop(vee, [3110, 140])
+        self.assertAlmostEqual(x, 3100, delta=1.0)                # it settles in the bottom of the vee, not across its rim
+        self.assertLess(z, 40)
+        self.assertEqual(facts["hulled"], [])
+
+    def test_a_result_that_rests_on_a_filled_in_shape_says_so(self):
+        """Control: catches a hulled solid the piece touched going unmentioned in the result word."""
+        cut = {"kind": "difference", "from": {"kind": "box", "fromMm": [3000, -60, 0], "toMm": [3200, 60, 100]},
+               "cut": [{"kind": "cylinder", "fromMm": [3100, -70, 100], "toMm": [3100, 70, 100], "radiusMm": 60}]}       # a round trough: no breakdown from construction
+        x, z, facts = self.drop(cut, [3100, 140])
+        self.assertEqual(facts["hulled"], ["thing"])
+        self.assertAlmostEqual(z, 105, delta=0.5)                 # it sits on the filled-in top, which is exactly what must be flagged
+        trial = rolling("mujoco")
+        trial["surfaces"] = [{"solid": "thing", "material": "panel"}]
+        trial["piece"] = {"use": "shot", "start": {"atMm": [3100, 140]}}
+        trial["events"] = [{"name": "rolled", "when": {"all": [{"signal": "tS", "above": 0.3}, {"restFor": 0.2}]}, "outcome": "rolled"}]
+        trial["measures"] = {}
+        trial["control"] = {"change": {"piece.start.velocityMps": [5, 5]}, "note": "Thrown clear of the block, it never comes to rest on it."}
+        solids = bench({})["solids"] + [{"name": "thing", "group": "bench", "shape": cut}]
+        found = campaign.run_campaign(load_data(bench({"sit": trial}, materials=GRIPPY, solids=solids)).path)["trials"]["sit"]
+        self.assertEqual((found["result"], found["touchedHulled"]), ("passed, on a hulled surface", ["thing"]))
+        self.assertIn("taken as its convex hull", found["findings"][-1])
+
     def test_solids_become_exact_shapes_where_they_can_and_hulls_are_listed(self):
-        """Catches a box turned into a mesh, or a hollow solid silently filled in."""
+        """Catches a box turned into a mesh, or a hull going unlisted."""
         trial = bouncing("mujoco")
-        trial["surfaces"] += [{"solid": "sleeve", "material": "lively"}, {"solid": "ell", "material": "lively"}, {"solid": "wedge", "material": "lively"}]
+        trial["surfaces"] += [{"solid": "ell", "material": "lively"}, {"solid": "wedge", "material": "lively"}]
         solids = bench({})["solids"] + [
-            {"name": "sleeve", "group": "bench", "shape": {"kind": "tube", "section": "round", "fromMm": [900, -50, -700], "toMm": [900, 50, -700], "outerDiameterMm": 60, "wallMm": 5}},
             {"name": "ell", "group": "bench", "place": [{"kind": "rotation", "originMm": [0, 0, 0], "axis": [0, 1, 0], "travelDeg": 10}],
              "shape": {"kind": "union", "of": [{"kind": "box", "fromMm": [1100, -50, -900], "toMm": [1200, 50, -890]},
                                                {"kind": "cylinder", "fromMm": [1100, -50, -885], "toMm": [1100, 50, -885], "radiusMm": 10}]}}]
         _, facts = one_run(trial, materials={"lively": PANEL}, solids=solids)
-        self.assertEqual(facts["geoms"], {"belt bed": ["box"], "sleeve": ["mesh"], "ell": ["box", "cylinder"], "wedge": ["mesh"]})
-        self.assertEqual(facts["hulled"], ["sleeve"])       # the wedge is a convex prism: its mesh is exact
+        self.assertEqual(facts["geoms"], {"belt bed": ["box"], "ell": ["box", "cylinder"], "wedge": ["mesh"]})
+        self.assertEqual(facts["hulled"], [])       # the wedge is a convex prism: its mesh is exact
 
     def test_the_same_method_and_record_surround_a_3d_trial(self):
         """Catches the 3D engine escaping the control, the half-step repeat or the record's engine stamp and assumptions."""
