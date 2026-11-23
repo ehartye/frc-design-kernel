@@ -133,6 +133,18 @@
           },
           "inertiaKgM2": {
             "$ref": "#/$defs/sourced"
+          },
+          "dragCoefficient": {
+            "$ref": "#/$defs/sourced"
+          },
+          "frontalAreaM2": {
+            "$ref": "#/$defs/sourced"
+          },
+          "liftSlope": {
+            "$ref": "#/$defs/sourced"
+          },
+          "liftMax": {
+            "$ref": "#/$defs/sourced"
           }
         }
       }

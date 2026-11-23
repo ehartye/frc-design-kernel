@@ -128,6 +128,7 @@ frc_design_kernel/
     contact.py       round piece against segment or arc; two friction laws
     drives.py        belts, rollers and wheels: imposed or motor-driven
     rules.py         conditions and events as data
+    air.py           drag and Magnus lift on a free piece
     frames.py        the piece's place in a group's own drawing coordinates
     planar.py        the fixed-step solver for one piece in a plane
     record.py        criterion, ranges, step comparison, sensitivity, result word, hand-forward
@@ -748,6 +749,7 @@ be an `=` expression over the design's parameters.
 | `flaps` | Hinged, sprung flaps: hinge point, length, rest direction, inertia, preload, spring, damping, a travel limit. |
 | `commands` | How each drive is commanded: `imposed` (a speed), `voltage`, a `speed` loop or a position `hold`; bus voltage; and `rules` that change the command when a condition holds. |
 | `planar` | Choices that belong to the planar engine only: the friction law (`stick` or `smooth`) and its two constants, and where on the piece a contact acts. |
+| `air` | `{"densityKgM3": ...}`: the piece flies through still air of that density, with the drag and lift numbers its piece entry states (section 13.2). Without it there is no air. |
 | `loads` | The frame the piece rides in speeding up or slowing down: an acceleration along a direction, as a step or a half-sine pulse, at a time or after an event. |
 | `movers` | A steady slide of chosen surfaces, started at a time or after an event: a stated velocity, or a straight motion of a group from the design source. |
 | `frames` | Where the piece is in a group's own drawing coordinates: `{"cassette": {"group": "Cassette", "mover": "approach"}}` adds `cassette.xMm` and `cassette.zMm` (the plane's two axes). They are measured before the group's own `place`, the pose and the mover's motion, so a seat test is written where the mechanism was drawn and holds while the robot drives. When the solids were drawn in another pose (taken from a STEP file, say), the frame's own `place` sets its origin and axes within the drawing. |
@@ -768,9 +770,16 @@ signal. A ready band is a rule on a drive's speed.
   piece is fed back to its drive as a load.
 - **Motors.** Torque from current, back-EMF from speed, winding resistance, gear and efficiency; a winding current
   limit and an optional supply limit. Bus voltage `null` is power off (coasting); 0 is shorted windings (a brake).
+- **Air**, when the trial states `air`. Drag is 1/2 rho Cd A v^2 against the piece's motion through still air. Lift
+  is the spin's Magnus force, 1/2 rho A Cl v^2 along spin x velocity, with Cl = `liftSlope` times the spin ratio
+  (spin times radius over speed), capped at `liftMax` when it is given. `dragCoefficient`, `frontalAreaM2`,
+  `liftSlope` and `liftMax` sit on the piece in the design source and the density on the trial, each a physical input
+  with its source, so ranges, coverage and sensitivity reach them. Spin does not decay and the piece's attitude does
+  not change its area; the record states that as the standing assumption `air-law` in place of `no-air`. The signals
+  `air.dragN` and `air.liftN` give the two forces. Both engines use the same law (`trials/air.py`).
 - **Integration.** Fixed step; forces from the state at the start of the step; speeds advance before positions.
 
-Tests hold the solver to closed-form answers within 1%: free flight, both friction laws at the slope threshold, a
+Tests hold the solver to closed-form answers within 1%: free flight, drag deceleration, terminal speed, the Magnus circle and its cap, both friction laws at the slope threshold, a
 belt bringing a block and a bar to its surface speed, a weight settling a sprung flap, a bounce, and a motor's free
 speed, current limits, speed loop, coast and brake.
 

@@ -180,6 +180,21 @@
         "$ref": "#/$defs/command"
       }
     },
+    "air": {
+      "type": "object",
+      "required": [
+        "densityKgM3"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "densityKgM3": {
+          "$ref": "#/$defs/sourced"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
     "loads": {
       "type": "array",
       "items": {

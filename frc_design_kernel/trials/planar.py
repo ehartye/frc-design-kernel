@@ -9,7 +9,7 @@ import math
 
 from ..kernel.section import AXES
 from . import drives as drive_math
-from . import frames
+from . import air, frames
 from .contact import push, nearest, segment
 from .rules import holds, started
 
@@ -106,6 +106,7 @@ def signal_names(scene):
     names += [f"hinge.{name}.angleDeg" for name in scene["hinges"]]
     names += [f"mover.{name}.offsetMm" for name in scene["movers"]]
     names += frames.names(scene.get("frames", {}), scene.get("normal", "y"))
+    names += ["air.dragN", "air.liftN"] if scene.get("air") else []
     for name in dict.fromkeys(s["name"] for s in scene["surfaces"]):
         names += [f"contact.{name}.forceN", f"contact.{name}.depthMm"]
     return names
@@ -230,6 +231,8 @@ def run(scene, step=None, forces=()):
         cx, cz, turn, loads, touching, pressed, twist = touch(scene, (x, z, vx, vz, w), radius, drive_state, hinge_state, offset, velocity,
                                                               memory, dt, arm_on_piece)
         fx, fz, torque = applied(scene, mass, happened, t, signals, forces)
+        ax, az, drag, lift = air.in_plane(scene.get("air"), vx, vz, w)
+        fx, fz = fx + ax, fz + az
         for name, drive in scene["drives"].items():
             for rule in drive.get("rules", ()):
                 if holds(rule["when"], signals, happened, rest_since, t):
@@ -249,6 +252,8 @@ def run(scene, step=None, forces=()):
         steps += 1
         signals = read_signals(blank, scene["axes"], t, (x, z, vx, vz, w), drive_state, hinge_state, offset, touching, pressed)
         signals.update(in_frames(scene, x, z, happened, t))
+        if scene.get("air"):
+            signals["air.dragN"], signals["air.liftN"] = drag, lift
         resting = signals["speedMps"] < scene["rest"]["speedMps"] and abs(w) * radius < scene["rest"]["rimSpeedMps"]
         rest_since = (t if rest_since is None else rest_since) if resting else None
         recorder.contacts(t, touching)

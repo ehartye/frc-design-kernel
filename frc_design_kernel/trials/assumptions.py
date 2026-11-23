@@ -31,8 +31,11 @@ MUJOCO = [
     {"id": "fixed-step", "text": "Time moves in fixed steps; the half-step repeat is the check on the step."},
 ]
 STANDING = {"planar": PLANAR, "mujoco": MUJOCO}
+AIR = {"id": "air-law", "text": "Air drags the piece by 1/2 rho Cd A v^2 against its motion through still air, and its spin lifts it by the Magnus "
+                               "force with a lift coefficient proportional to the spin ratio, up to its cap. Spin does not decay; attitude does not change the area."}
 
 
 def stated(trial):
-    """(the author's assumptions, the engine's standing ones) for a trial."""
-    return [dict(row) for row in trial.get("assumes", [])], [dict(row) for row in STANDING[trial.get("engine", "planar")]]
+    """(the author's assumptions, the engine's standing ones) for a trial. A trial with air has the air law in place of no air."""
+    standing = [dict(AIR) if row["id"] == "no-air" and trial.get("air") else dict(row) for row in STANDING[trial.get("engine", "planar")]]
+    return [dict(row) for row in trial.get("assumes", [])], standing
