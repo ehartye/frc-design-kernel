@@ -55,6 +55,15 @@ def hold_trial(law="stick", slope_deg=20, duration=1.0, **extra):
     return trial
 
 
+def tilting_trial(**extra):
+    """The block on the wedge again, with every number that depends on the slope written from the slope parameter."""
+    c, s = "cos(radians(slope_deg))", "sin(radians(slope_deg))"
+    trial = hold_trial(**extra)
+    trial["piece"]["start"] = {"atMm": [f"=300 * {c} + 19.95 * {s}", f"=rise - 300 * {s} + 19.95 * {c}"]}
+    trial["events"][0]["when"]["above"] = f"=400 * {c} + 20 * {s}"
+    return trial
+
+
 def bench(trials, **extra):
     data = copy.deepcopy(DESIGN)
     data["trials"] = trials

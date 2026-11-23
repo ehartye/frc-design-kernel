@@ -6,7 +6,9 @@ bounce, a mass, a motor constant. Each one states its source in the design sourc
     {"value": 0.35, "measured": "bench pull test, sheet 3"}
     {"value": 0.35, "assumed": [0.15, 0.5]}
 
-A plain number has no stated source. The record lists it as unstated, and a trial with unstated inputs is incomplete.
+An assumed value with a range is a normal, complete state: a best guess, to be covered by adjustment. A measured
+value simply has no range to cover. A plain number states neither, so nothing says how far it may be off; the
+record lists it as unstated, and a trial with unstated inputs is incomplete.
 """
 import copy
 

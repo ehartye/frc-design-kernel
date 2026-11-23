@@ -50,6 +50,12 @@ def _sphere(entry, where, custom):
     return shapes.sphere(entry["centerMm"], positive(entry, "radiusMm", where))
 
 
+def _torus(entry, where, custom):
+    if positive(entry, "minorRadiusMm", where) >= positive(entry, "majorRadiusMm", where):
+        raise DesignError(where, "minorRadiusMm must be smaller than majorRadiusMm", "A ring needs a hole through its middle")
+    return shapes.torus(entry["centerMm"], entry["axis"], entry["majorRadiusMm"], entry["minorRadiusMm"])
+
+
 def _prism(entry, where, custom):
     if abs(entry["toMm"] - entry["fromMm"]) <= 1e-9:
         raise DesignError(where, "fromMm and toMm are the same level", "Give two different levels; the prism spans between them")
@@ -87,7 +93,7 @@ def _custom(entry, where, custom):
     return custom(entry["use"], entry.get("parameters", {}), where)
 
 
-MAKERS = {"box": _box, "cylinder": _cylinder, "sphere": _sphere, "prism": _prism, "tube": _tube, "union": _union,
+MAKERS = {"box": _box, "cylinder": _cylinder, "sphere": _sphere, "torus": _torus, "prism": _prism, "tube": _tube, "union": _union,
           "difference": _difference, "intersection": _intersection, "custom": _custom}
 
 

@@ -2,7 +2,7 @@
 import math
 
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon, BRepBuilderAPI_MakeWire
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder, BRepPrimAPI_MakePrism, BRepPrimAPI_MakeSphere
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder, BRepPrimAPI_MakePrism, BRepPrimAPI_MakeSphere, BRepPrimAPI_MakeTorus
 from OCP.gp import gp_Ax2, gp_Circ, gp_Dir, gp_Pnt, gp_Vec
 
 PLANES = {"xy": lambda a, b, level: (a, b, level), "xz": lambda a, b, level: (a, level, b), "yz": lambda a, b, level: (level, a, b)}
@@ -27,6 +27,11 @@ def cylinder(start, end, radius, sweep_deg=None, sweep_from=None):
 
 def sphere(centre, radius):
     return BRepPrimAPI_MakeSphere(gp_Pnt(*centre), radius).Shape()
+
+
+def torus(centre, axis, major_radius, minor_radius):
+    """A ring: a circle of minor_radius swept round a circle of major_radius about the axis through centre."""
+    return BRepPrimAPI_MakeTorus(gp_Ax2(gp_Pnt(*centre), gp_Dir(*axis)), major_radius, minor_radius).Shape()
 
 
 def polygon_wire(points):

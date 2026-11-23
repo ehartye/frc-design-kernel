@@ -45,15 +45,15 @@ class Method(unittest.TestCase):
         grip, = self.trial["ranges"]
         self.assertEqual((grip["source"], grip["range"], grip["held"], grip["flips"]), ("assumed", [0.42, 0.8], True, []))
 
-    def test_an_outcome_that_changes_inside_an_assumed_range_is_its_own_result(self):
+    def test_an_outcome_that_changes_inside_an_assumed_range_is_located(self):
         """Catches "passes at the nominal value" hiding that a believable value fails: the range reaches below the slope's threshold."""
         found, _ = campaign_for({"hold": hold_trial()})       # friction assumed 0.2 to 0.8; the block needs tan(20 deg) = 0.364
         trial = found["trials"]["hold"]
-        self.assertEqual(trial["result"], "flips in range")
+        self.assertEqual(trial["result"], "not covered")       # no adjustment is declared that could recover it
         flip, = trial["ranges"][0]["flips"]
         self.assertTrue(flip["changesAt"] < math.tan(math.radians(20)) < flip["holdsAt"])
         self.assertLess(flip["holdsAt"] - flip["changesAt"], 0.6 / 2 ** 3 + 1e-9)      # closed in on by three halvings
-        self.assertIn('the outcome changes inside its assumed range of "materials.panel.friction"', trial["findings"][0])
+        self.assertIn('the outcome changes inside the assumed range of "materials.panel.friction"', trial["findings"][0])
         self.assertEqual(trial["handForward"]["marginalEdges"], [{"input": "materials.panel.friction", **flip}])
         self.assertEqual(trial["handForward"]["passingRanges"]["materials.panel.friction"], [flip["holdsAt"], 0.8])
 

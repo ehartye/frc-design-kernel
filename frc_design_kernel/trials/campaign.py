@@ -14,7 +14,8 @@ from ..source.load import load
 from ..source.uses import parameters_used
 from ..version import generator
 from . import assumptions, custom, fit, inputs, planar, record, scene as scenes
-from .plan import DEFAULT_REFINE, Bracket
+from . import plan as plans_
+from .plan import DEFAULT_REFINE, Bracket, Window
 
 SCHEMA = "frc-design-kernel/trial-campaign@2"
 PARAMETERS = "parameters."
@@ -93,6 +94,25 @@ def grid_changes(design, name, case):
     return [dict(zip(wanted["inputs"], ends)) for ends in itertools.product(*[ranges[path] for path in wanted["inputs"]])]
 
 
+def label(changes):
+    """The run id of a set of changes: the same changes always give the same id."""
+    return " & ".join(f"{path} = {value:g}" for path, value in sorted(changes.items()))
+
+
+def windows_for(design, name, case, plans):
+    """{(input path, end value, adjustment name): Window} for each end of each assumed range and each adjustment the trial names."""
+    trial, where = design.data["trials"][name], f'trials "{name}"'
+    found = {}
+    for adjustment in trial.get("adjustments", []):
+        entry = design.data["adjustments"][adjustment]
+        nominal = current_value(design, case, entry["input"], where)
+        for plan in plans:
+            if plan.range is not None and plan.path != entry["input"]:
+                for end in plan.range:
+                    found[plan.path, end, adjustment] = (Window(*entry["range"], nominal, entry.get("step")), nominal)
+    return found
+
+
 def in_order(trials, names):
     """The named trials and the ones they start after, each after the one it needs."""
     ordered = []
@@ -121,6 +141,7 @@ def estimate(design, names=None):
     for name in in_order(trials, names or list(trials)):
         case, plans, _, _ = method(design, name)
         runs = 2 + ("control" in trials[name]) + sum(plan.most_runs() for plan in plans) + len(grid_changes(design, name, case))
+        runs += sum(window.most_runs() for window, _ in windows_for(design, name, case, plans).values())
         per[name] = {"runs": runs, "steps": math.ceil(trials[name]["durationS"] / trials[name]["stepS"]) * (runs + 1)}
     steps = sum(p["steps"] for p in per.values())
     return {"runs": sum(p["runs"] for p in per.values()), "steps": steps, "aboutSeconds": round(steps / STEPS_PER_SECOND, 1), "trials": per}
@@ -193,6 +214,34 @@ def what_it_used(design, assembly, name, case, facts):
             "tables": {table: sorted(case[table]) for table in inputs.TABLES}}
 
 
+def cover(design, name, case, plans, runner, met, trial, judge):
+    """The coverage campaign: at each end of each assumed range, the window of each named adjustment that passes."""
+    windows = windows_for(design, name, case, plans)
+
+    def changes_for(key, setting):
+        path, end, adjustment = key
+        entry = design.data["adjustments"][adjustment]
+        return {path: end} if setting == windows[key][1] else {path: end, entry["input"]: setting}
+
+    while True:
+        asked = {key: window.ask() for key, (window, _) in windows.items()}
+        wanted = [(label(changes_for(key, setting)), changes_for(key, setting), False) for key, settings in asked.items() for setting in settings]
+        if not wanted:
+            break
+        runner.run(wanted)
+        for run_id, _, _ in wanted:
+            met.setdefault(run_id, record.judge(runner.results[run_id], trial["pass"], judge))
+        for key, settings in asked.items():
+            windows[key][0].tell({setting: met[label(changes_for(key, setting))][0] for setting in settings})
+    rows = []
+    for adjustment in trial.get("adjustments", []):
+        for plan in plans:
+            if plan.range is not None and (plan.path, plan.range[0], adjustment) in windows:
+                low, high = (windows[plan.path, end, adjustment][0].summary(end) for end in plan.range)
+                rows.append(plans_.coverage(plan.path, adjustment, design.data["adjustments"][adjustment], low, high))
+    return rows
+
+
 def run_trial(design, name, builder, handed, workers):
     """Run one trial's whole method and return its part of the record."""
     trial, where = design.data["trials"][name], f'trials "{name}"'
@@ -200,10 +249,9 @@ def run_trial(design, name, builder, handed, workers):
     runner = Runner(design.path, name, builder, handed, workers)
     judge = custom.criterion(design, trial)
     met = {}
-    label = lambda path, value: f"{path} = {value:g}"
-    grid = [(" & ".join(label(p, v) for p, v in combo.items()), combo, False) for combo in grid_changes(design, name, case)]
+    grid = [(label(combo), combo, False) for combo in grid_changes(design, name, case)]
     first = [("nominal", {}, False), ("half step", {}, True)] + ([("control", trial["control"]["change"], False)] if "control" in trial else []) + grid
-    wanted = first + [(label(plan.path, value), {plan.path: value}, False) for plan in plans for value in plan.ask()]
+    wanted = first + [(label({plan.path: value}), {plan.path: value}, False) for plan in plans for value in plan.ask()]
     while wanted:
         runner.run(wanted)
         for run_id, _, _ in wanted:
@@ -211,10 +259,11 @@ def run_trial(design, name, builder, handed, workers):
         for plan in plans:
             plan.nominal_met = met["nominal"][0]
             for value in plan.ask():
-                run_id = label(plan.path, value)
+                run_id = label({plan.path: value})
                 if run_id in met:
                     plan.tell(value, met[run_id][0], runner.results[run_id]["outcome"], runner.results[run_id]["measures"], run_id)
-        wanted = [(label(plan.path, value), {plan.path: value}, False) for plan in plans for value in plan.ask()]
+        wanted = [(label({plan.path: value}), {plan.path: value}, False) for plan in plans for value in plan.ask()]
+    covered = cover(design, name, case, plans, runner, met, trial, judge)
     results, nominal = runner.results, runner.results["nominal"]
     steps = record.step_comparison(nominal, results["half step"], met["nominal"][0], met["half step"][0])
     control = None
@@ -226,7 +275,7 @@ def run_trial(design, name, builder, handed, workers):
     if grid:
         rows = [{"values": combo, "met": met[run_id][0], "outcome": results[run_id]["outcome"]} for run_id, combo, _ in grid]
         grid_found = {"inputs": trial["grid"]["inputs"], "runs": rows, "allMet": all(row["met"] == met["nominal"][0] for row in rows)}
-    word, findings = record.result(met["nominal"][0], control, ranges, steps, missing, grid_found)
+    word, findings = record.result(met["nominal"][0], control, ranges, steps, missing, grid_found, covered)
     stated, standing = assumptions.stated(trial)
     ranking = record.sensitivity(ranges, nominal["measures"])
     made = generator()
@@ -235,8 +284,8 @@ def run_trial(design, name, builder, handed, workers):
             "used": what_it_used(design, builder.assembly(), name, case, runner.facts),
             "result": word, "findings": findings, "firstUnmet": met["nominal"][1],
             "nominal": {**run_summary("nominal", {}, nominal, *met["nominal"]), "end": nominal["end"], "trace": nominal["trace"], "contacts": nominal["contacts"]},
-            "stepComparison": steps, "control": control, "ranges": ranges, "grid": grid_found, "sensitivity": ranking,
-            "handForward": record.hand_forward(found, ranges, ranking, control, stated + standing),
+            "stepComparison": steps, "control": control, "ranges": ranges, "coverage": covered, "grid": grid_found, "sensitivity": ranking,
+            "handForward": record.hand_forward(found, ranges, ranking, control, stated + standing, covered),
             "runs": [run_summary(run_id, runner.changes[run_id], results[run_id], *met[run_id]) for run_id in results],
             "fit": fit.path_operation(nominal["trace"], trial["plane"], trial.get("fitToleranceMm", 10.0))}
 

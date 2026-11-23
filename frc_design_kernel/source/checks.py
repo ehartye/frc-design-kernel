@@ -180,6 +180,33 @@ def check_tables(design, solids):
                 raise unknown(where, "solid", turn["solid"], solids)
 
 
+def check_adjustments(design):
+    for name, entry in design["adjustments"].items():
+        where = f'adjustments "{name}"'
+        if not entry["range"][0] < entry["range"][1]:
+            raise DesignError(where, "its range is not [low, high] with low below high", "Give the two ends the built robot can be set to")
+        if entry["input"].startswith("parameters."):
+            if entry["input"][len("parameters."):] not in design["parameters"]:
+                raise unknown(where, "parameter", entry["input"][len("parameters."):], design["parameters"])
+        elif entry["kind"] == "mechanical":
+            raise DesignError(where, "a mechanical adjustment must change a design parameter", 'Write its input as "parameters.NAME", so the solids move with it')
+
+
+def check_interactions(design, solids):
+    for name, entry in design["interactions"].items():
+        where = f'interactions "{name}"'
+        if entry["piece"] not in design["pieces"]:
+            raise unknown(where, "piece", entry["piece"], design["pieces"])
+        for solid in [*entry["solids"], *entry.get("guides", []), *([entry["pieceSolid"]] if "pieceSolid" in entry else [])]:
+            if solid not in solids:
+                raise unknown(where, "solid", solid, solids)
+        for motion in [*entry.get("motions", []), *([entry["squeezeMotion"]] if "squeezeMotion" in entry else [])]:
+            if motion not in design["motions"]:
+                raise unknown(where, "motion", motion, design["motions"])
+        if "pose" in entry and entry["pose"] not in design["poses"]:
+            raise unknown(where, "pose", entry["pose"], design["poses"])
+
+
 def check_trials(design, solids):
     trials = design["trials"]
     for name, trial in trials.items():
@@ -198,6 +225,9 @@ def check_trials(design, solids):
                 raise unknown(label, "material", surface["material"], design["materials"])
             if "drive" in surface and surface["drive"] not in design["drives"]:
                 raise unknown(label, "drive", surface["drive"], design["drives"])
+        for adjustment in trial.get("adjustments", []):
+            if adjustment not in design["adjustments"]:
+                raise unknown(where, "adjustment", adjustment, design["adjustments"])
         for drive in trial.get("commands", {}):
             if drive not in design["drives"]:
                 raise unknown(f"{where} commands", "drive", drive, design["drives"])
@@ -224,6 +254,8 @@ def check_all(design):
     check_mounts(design, solids)
     check_contacts(design, solids)
     check_tables(design, solids)
+    check_adjustments(design)
+    check_interactions(design, solids)
     check_trials(design, solids)
     check_poses_and_motions(design)
     return used

@@ -68,9 +68,39 @@ def measure(args):
         hold, weight = row["attachment"], row["mass"]
         print(f'{label}: {count(len(row["clearance"]["closer"]), "pair")} closer than the gap; {count(len(hold["notConnectedToBase"]), "solid")} not connected to the base; '
               f'{count(len(hold["fixturesOffFloor"]), "fixture")} off the floor; mass {weight["totalKg"]:.3f} kg.')
+    if args.extremes:
+        from .measure.extremes import at_extremes
+        record["adjustments"] = at_extremes(args.source, args.min_gap, args.depth)
+        for name, found in record["adjustments"].items():
+            for row in found["settings"]:
+                closer = sum(len(m["closer"]) for m in row["motions"].values()) + sum(len(p["closer"]) for p in row["poses"])
+                print(f'Adjustment "{name}" at {row["setting"]:g}: {count(closer, "pair")} closer than the gap over every motion and pose.')
     old = earlier(args.out, "measurements.json") if part else None
     write(args.out, "measurements.json", measures.merged(old, record) if old else record)
     print(f"Wrote measurements.json to {args.out}" + (", keeping the parts that were not measured again." if old else "."))
+
+
+def screen(args):
+    from .builder.assembly import build as build_assembly    # the CAD kernel is needed only from here on
+    from .measure.screen import facts
+    design = load(args.source)
+    assembly = build_assembly(design)
+    names = args.interaction or list(design.data["interactions"])
+    record = {"schema": "frc-design-kernel/screen@1", "generator": generator(), "design": {"name": design.data["name"], "source": design.path.name},
+              "interactions": {name: facts(assembly, name) for name in names}}
+    for name, found in record["interactions"].items():
+        piece = found["piece"]
+        uneven = [f'{solid} by {row["largestDifferenceMm"]:.2f} mm' if row["largestDifferenceMm"] else f"{solid} (it ends inside the width)"
+                  for solid, row in found["sections"].items() if row["largestDifferenceMm"] or row["notCutAtLevelsMm"]]
+        loose = sum(1 for hold in found["sidewaysHold"] for side in ("plus", "minus") if hold[side] is None)
+        ratio = found["squeeze"]["ratio"]
+        print(f'Interaction "{name}": the piece "{piece["name"]}" is a {piece["class"]}; sections differ across its width for '
+              f'{", ".join(uneven) if uneven else "no solid"}; {count(loose, "side")} unguided; {count(len(found["mechanismOutOfPlane"]), "movement")} out of the plane; '
+              f'{count(found["piecesAtOnce"], "piece")} at once; squeeze {"not known" if ratio is None else f"{ratio:.1%} of its thickness"}; '
+              f'{count(len(found["notRigid"]), "solid")} not rigid.')
+    if args.out:
+        write(args.out, "screen.json", record)
+        print(f"Wrote screen.json to {args.out}.")
 
 
 def announce(cost):
@@ -88,10 +118,12 @@ def trials(args):
     for name, found in record["trials"].items():
         control = "no control" if found["control"] is None else ("control rejected" if found["control"]["rejected"] else "control NOT rejected")
         held = sum(1 for r in found["ranges"] if r["held"])
+        cover = [row for row in found["coverage"] if row["someSettingPassesEach"]]
         steps = "half step agrees" if found["stepComparison"]["converged"] else "half step differs"
         first = found["sensitivity"][0]["input"] if found["sensitivity"] else "none"
         print(f'Trial "{name}": {found["result"]}. Nominal outcome "{found["nominal"]["outcome"]}"; {control}; '
-              f'{held} of {count(len(found["ranges"]), "input")} held across its range; {steps}; most sensitive to {first}.')
+              f'{held} of {count(len(found["ranges"]), "input")} held across its range; {steps}; most sensitive to {first}'
+              + (f'; {len(cover)} of {count(len(found["coverage"]), "input-adjustment pair")} covered.' if found["coverage"] else "."))
     old = earlier(args.out, "trials.json") if args.trial else None
     if old:
         record["trials"] = {**old.get("trials", {}), **record["trials"]}
@@ -141,7 +173,13 @@ def main(argv=None):
     gauge.add_argument("--ignore", action="append", default=[], metavar="SOLID", help="a solid to leave out of the attachment record; may be repeated")
     gauge.add_argument("--workers", type=int, help="worker processes (default: half the cores)")
     gauge.add_argument("--depth", type=int, default=9, help="how many times the search may halve the stroke (default 9)")
+    gauge.add_argument("--extremes", action="store_true", help="also measure at both ends of every adjustment of a design parameter")
     gauge.set_defaults(run=measure)
+    sieve = commands.add_parser("screen", help="report plain facts about each interaction: is it the same in every section?")
+    sieve.add_argument("source", help="the design source JSON file")
+    sieve.add_argument("--out", help="the folder to write screen.json into")
+    sieve.add_argument("--interaction", action="append", metavar="NAME", help="an interaction to report (default: all); may be repeated")
+    sieve.set_defaults(run=screen)
     attempt = commands.add_parser("try", help="run the design's physics trials and write trials.json")
     attempt.add_argument("source", help="the design source JSON file")
     attempt.add_argument("--out", help="the folder to write into")

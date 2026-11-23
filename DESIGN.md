@@ -90,6 +90,7 @@ frc_design_kernel/
     step_read.py     STEP file to named solids
     step_write.py    named solids to a STEP file
     quiet.py         stop the kernel's own console chatter
+    mesh.py          a solid as triangles, for drawing or for a physics engine
 
   builder/           the build layer (named builder so the build() function keeps its name)
     shape.py         a shape entry to one solid
@@ -111,6 +112,9 @@ frc_design_kernel/
     attachment.py    what touches what, what is loose, measured mounts
     sets.py          connected sets
     mass.py          mass and centre of mass
+    extremes.py      clearance at both ends of every mechanical adjustment
+    screen.py        screen facts: is an interaction the same in every section?
+    symmetry.py      what kind of shape a solid is, read from its faces
     compression.py   how deep a solid presses into a ball or ring
     run.py           sharing work between worker processes
     summary.py       everything about one design as one record
@@ -290,8 +294,46 @@ The physical facts that trials use live in the design source, once, in physical 
 - A **material** is how the piece meets a surface of that kind: spring, bounce or damping ratio, friction.
 - A **drive** is declared on solids: "this solid turns about this axis" (right-hand rule), with its motor, gear and
   what the motor has to speed up. Which way a surface runs in a section follows from the axis.
-- **Every physical input states its source**: `{"value": v, "measured": "where"}` or `{"value": v, "assumed":
-  [low, high]}`. A plain number has no stated source; a trial that uses it is incomplete (section 13.3).
+- **Every physical input states its source**: `{"value": v, "assumed": [low, high]}` or `{"value": v, "measured":
+  "where"}`. An assumed value with a range is a normal, complete state: a best guess. A measured value only narrows
+  the range to nothing. A plain number states neither, so nothing says how far it may be off; a trial that uses it
+  is incomplete (section 13.3).
+
+### 4.5c Adjustments
+
+The owner's principle: "real measurement can never be the bar for leaving design. we take our best guess and build
+in configurability." So what the built robot can change is design data too:
+
+```json
+"adjustments": {
+  "nip squeeze":   {"input": "parameters.squeeze", "kind": "mechanical", "range": [4, 10], "step": 1, "note": "Slotted bearing blocks."},
+  "flap preload":  {"input": "flaps.flap.preloadNm", "kind": "spring", "range": [0.02, 0.08]},
+  "belt setpoint": {"input": "commands.belt.setpointMps", "kind": "setpoint", "range": [2.0, 4.0]}
+}
+```
+
+`kind` is `mechanical` (a slot, shim or spacer), `spring` (a preload or rate) or `setpoint` (a speed, voltage or
+position set in software). `input` is a design parameter (`parameters.NAME`) or a path into a trial. A mechanical
+adjustment is always a design parameter, so the solids move with it: `measure --extremes` builds and measures the
+design at both ends of each such adjustment, so clearance is known across the range. A trial lists the adjustments
+that apply to it under `adjustments`; the campaign then asks whether they cover its uncertain inputs (section 13.3).
+
+### 4.5d Interactions and what solids are made of
+
+An interaction is a piece meeting some solids in a section plane: the thing a trial would be about. Declaring it lets
+the screen facts (section 12.7) be worked out at the arrangement stage, before any trial exists.
+
+```json
+"interactions": {"pickup": {"piece": "ball", "plane": {"normal": "y", "atMm": 0}, "solids": ["belt module", "bumper"],
+                            "guides": ["side plate left", "side plate right"], "pieceAtMm": [[420, 0, 75]], "motions": ["intake deploy"],
+                            "pieceSolid": "drawn ball", "squeezeMotion": "ball through intake", "piecesAtOnce": 1,
+                            "approach": {"angleDeg": [-10, 10], "offsetMm": [-15, 15]}, "targetOffPlane": false}}
+```
+
+`approach` (the angles and offsets the piece may arrive with) and `targetOffPlane` are things geometry cannot know;
+they are stated here and simply echoed. A solid may also say what it is made of: `"material": {"class": "rigid"}`
+(the default), `"compliant"` (with a `stiffnessNPerM`, or a force-deflection `curve` of points marked measured or
+assumed) or `"flexible"` (`kind`: belt, net, chain, tubing or fabric).
 
 ### 4.6 Poses
 
@@ -633,6 +675,30 @@ The command prints one line per motion and per pose. It prints numbers and count
 placements. Each placement is written as at most one `rotation` and one `translation`, applied in full. An older
 tool can read those as start poses.
 
+### 12.6a Screen facts
+
+`python -m frc_design_kernel screen SOURCE [--out DIR]` reports plain facts about each declared interaction, so a
+tool that judges can decide, before any trial runs, how far a planar trial of it can be trusted. Nothing is labelled
+good or bad, and nothing says which engine to use.
+
+| Fact | What is reported |
+|---|---|
+| Piece symmetry | `sphere`, `body of revolution` (with its axis), `prismatic` or `general`, read from the faces of the piece's 3D shape. A ring is a body of revolution, not a sphere. |
+| Section constancy | Each meeting solid is cut at the centre plane and at four more levels across the piece's width (plus `marginMm`). The largest difference between a section and the centre section is given in mm, with the level; levels where the solid is not cut at all (it ends inside the width); and in words which faces change across the plane: a cone or taper, a dome, a sloped face, a round face lying across. |
+| Sideways hold | At each `pieceAtMm`, the gap from the piece to the nearest guide on each side along the plane's normal, or none (unguided). The probe is the piece's shadow pushed out sideways. |
+| Mechanism in the plane | For each motion named, the moving groups whose hinge is not square to the plane, whose slide crosses it, or whose path or poses leave it. |
+| Pieces at once | The number the interaction declares. |
+| Squeeze ratio | When a drawn piece solid and a motion are named: the deepest any meeting solid presses into the piece along that motion (the compression measure), divided by the piece's thickness, and where. |
+| Not rigid | The involved solids whose `material` is compliant or flexible, with what was declared. |
+| Echoed | `approach` and `targetOffPlane`, as declared. |
+
+### 12.6b For other tools
+
+- `clearance.along(..., displace={solid: [dx, dy, dz]})` and the job field `"displace"` shift named solids for one
+  question, with no second source file: a control that shows a check can report an interference.
+- `frc_design_kernel.placements(design, pose=None, motion=None, t=0.0)` gives `{group: 12 numbers}`.
+- `assembly.mesh(name, deflection_mm)` gives a solid as triangles.
+
 ### 12.6 What the measure layer leaves out
 
 - **Guidelines and verdicts.** No built-in gap, no "floating is an error", no pass or fail.
@@ -702,7 +768,12 @@ The campaign, not the trial, performs the method:
    at a time. If an end changes the outcome, the edge is closed in on by halving between the last value that held
    and the first that did not (three times by default, `rangeRefine`). An input listed under `brackets` is run
    outward from the nominal and **each side stops at its first failure**. Measured inputs are not varied.
-5. **A grid only when asked.** `"grid": {"inputs": [...]}` also runs every combination of those inputs' range ends.
+5. **Coverage.** For each adjustment the trial names: at each end of each uncertain input's range, the adjustment's
+   own range is searched for settings that pass. A few points are tried (both ends and the nominal setting), and
+   the edge between a passing and a failing setting is closed in on by halving, twice. The record then states, per
+   uncertain input and adjustment, the window of settings that passes at the low end and at the high end, whether
+   some setting passes at each, and whether one fixed setting passes at both (and which).
+6. **A grid only when asked.** `"grid": {"inputs": [...]}` also runs every combination of those inputs' range ends.
 
 A change is a path into the trial's case (`materials.tread.friction`, `commands.belt`,
 `loads.braking.accelerationMps2`; list items by name) or a design parameter (`parameters.squeeze`). A parameter
@@ -716,14 +787,16 @@ The result is one word, with findings in plain text:
 | `failed` | The nominal run did not meet the criterion. |
 | `control not rejected` | The control met the criterion, so the trial does not show what it claims. |
 | `not converged` | The outcome changes at half the step. |
-| `flips in range` | The outcome changes somewhere inside an input's assumed range. **A measurement is needed before this result can carry a decision.** The record says which input and between which two values. |
-| `passed` | Criterion met, control rejected, half step agrees, and the outcome holds across every assumed range. |
+| `not covered` | The outcome changes inside an input's assumed range, and no adjustment named by the trial has a setting that passes at each end of that range. The record says which input, between which two values, and what each adjustment could reach. |
+| `covered by adjustment` | The outcome changes inside an assumed range, and an adjustment recovers it: some setting passes at each end. The record gives the windows and whether one fixed setting passes at both. |
+| `passed` | Criterion met, control rejected, half step agrees, and the outcome holds across every assumed range as drawn. |
 
 These words state what the method found. Whether a design may go forward on them is for the tools that judge.
 
 **Sensitivity before fidelity.** From the same one-at-a-time runs the record ranks the inputs by how much they move
 the outcome: first the ones that change it, then by the largest change in any measure as a fraction of its nominal
-value. The top of that list is the measurement that would narrow the result most. It costs no extra runs.
+value. The top of that list is the input the result leans on most: the one an adjustment should reach first. It costs no
+extra runs.
 
 ### 13.4 Cost before it runs, time after
 
@@ -826,8 +899,9 @@ the weight. A trial uses only the solids its plane cut.
   its width, and one piece is enough to answer.
 - **Go to 3D when the answer depends on what planar cannot see**: the piece's orientation (it can tip, yaw or
   arrive skewed), contact off the section plane (an end, a corner, a side wall), or many bodies at once.
-- **Go to 3D when a planar result that a decision hinges on flips inside its range and a measurement cannot settle
-  it.** First look at the sensitivity ranking: if one measurement would settle it, measure.
+- **Go to 3D when a planar result that a decision hinges on is not covered and no adjustment can be added to cover
+  it**, and the doubt is about something planar cannot see. First look at the sensitivity ranking and the coverage
+  windows: a wider slot or a setpoint range is usually cheaper than a fuller engine.
 - **Never run a trial whose outcome could not change a decision.** If both answers lead to the same design, the
   time is better spent elsewhere.
 
