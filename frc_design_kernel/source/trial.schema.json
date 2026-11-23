@@ -141,6 +141,9 @@
             },
             "atRest": {
               "type": "boolean"
+            },
+            "carryDrives": {
+              "type": "boolean"
             }
           }
         }
@@ -544,6 +547,9 @@
               }
             }
           }
+        },
+        "piecesOnDrive": {
+          "$ref": "#/$defs/number"
         }
       }
     },

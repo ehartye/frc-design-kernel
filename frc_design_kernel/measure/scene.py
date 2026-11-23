@@ -21,6 +21,7 @@ class Scene:
     moving: dict        # {name: text that is equal for solids that keep their relative pose}
     straight: dict      # {name: total travel if it only slides straight, else None}
     laws: dict          # {name: per-axis movement laws, or None}
+    placed: dict        # {name: what fixes where the solid stands at fraction 0: its start transform and any shift}
 
     def at(self, name, t):
         """The solid at stroke fraction t."""
@@ -55,16 +56,17 @@ def build_scene(assembly, group_stages, absent=(), displace=None):
     for name, shift in (displace or {}).items():
         if name in drawn:
             drawn[name] = moved(drawn[name], mx.translation(shift))
-    stages, start, boxes, rates, moving, straight, laws = {}, {}, {}, {}, {}, {}, {}
+    stages, start, boxes, rates, moving, straight, laws, placed = {}, {}, {}, {}, {}, {}, {}, {}
     for name in names:
         listed, first, signature, travel, law, moves, lead = by_group[assembly.solids[name].group]
         stages[name], moving[name], straight[name], laws[name] = listed, signature, travel, law
         start[name] = drawn[name] if mx.is_identity(first) else moved(drawn[name], first)
+        placed[name] = (first, tuple((displace or {}).get(name, ())))
         boxes[name] = props.bounds(start[name])
         # The speed limit is taken from the box of the solid where it stands when its moving part begins.
         held = boxes[name] if mx.gap(lead, first) == 0 else props.bounds(moved(drawn[name], lead))
         rates[name] = stage_math.speed_limit(moves, held) if moves else 0.0
-    return Scene(names, drawn, stages, start, boxes, rates, moving, straight, laws)
+    return Scene(names, drawn, stages, start, boxes, rates, moving, straight, laws, placed)
 
 
 def for_motion(assembly, motion, absent=(), displace=None):

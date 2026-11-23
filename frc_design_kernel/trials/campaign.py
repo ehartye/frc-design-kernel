@@ -306,7 +306,7 @@ def run_campaign(source, names=None, max_steps=None, workers=1, announce=None):
     for name in cost["trials"]:
         before = design.data["trials"][name]["piece"]["start"].get("after")
         records[name] = run_trial(design, name, builder, handed.get(before), workers)
-        handed[name] = records[name]["nominal"]["end"]["piece"]
+        handed[name] = records[name]["nominal"]["end"]
     return {"schema": SCHEMA, "generator": generator(), "design": {"name": design.data["name"], "source": design.path.name, "sourceSha256": design.sha256},
             "cost": {"runsAtMost": cost["runs"], "stepsAtMost": cost["steps"], "runs": sum(len(t["runs"]) for t in records.values()),
                      "stepsRun": sum(r["steps"] for t in records.values() for r in t["runs"])},

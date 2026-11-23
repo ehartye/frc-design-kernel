@@ -35,13 +35,22 @@ def row(a, b, method, gap, t, overlap, lower, proven, closer, samples, unresolve
     return out
 
 
-def measure_pair(scene, a, b, min_gap, depth, counts):
-    """One pair along the motion: a row, or None when bounding boxes alone prove it stays farther than min_gap."""
+def measure_pair(scene, a, b, min_gap, depth, counts, memo=None):
+    """One pair along the motion: a row, or None when bounding boxes alone prove it stays farther than min_gap.
+
+    memo remembers the gap and overlap of a pair that keeps its relative pose, by the two solids and where each
+    stands, so the same pair standing the same way in another motion is not measured again.
+    """
     if scene.fixed(a, b):
         if box_gap(scene.boxes[a], scene.boxes[b]) > min_gap + BOX_MARGIN_MM:
             counts["fixedFarApart"] += 1
             return None
-        gap, overlap = gap_and_overlap(scene.start[a], scene.start[b])
+        key = (a, b, scene.placed[a], scene.placed[b])
+        if memo is None or key not in memo:
+            found = gap_and_overlap(scene.start[a], scene.start[b])
+            if memo is not None:
+                memo[key] = found
+        gap, overlap = found if memo is None else memo[key]
         return row(a, b, "fixed relative pose", gap, 0.0, overlap, gap, True, overlap > 0 or gap < min_gap, 1)
     speed = scene.rates[a] + scene.rates[b]
     if (box_gap(scene.boxes[a], scene.boxes[b]) - speed > min_gap
@@ -66,7 +75,7 @@ def measure_pair(scene, a, b, min_gap, depth, counts):
     return row(a, b, "adaptive search", gap, t, 0.0, min(found["floor"], gap), True, False, found["samples"])
 
 
-def share_of(scene, min_gap, contacts, depth=DEFAULT_DEPTH, share=(0, 1), include_still=False):
+def share_of(scene, min_gap, contacts, depth=DEFAULT_DEPTH, share=(0, 1), include_still=False, memo=None):
     """Measure one share of a scene's pairs: every share[1]-th pair starting at pair share[0]. Shares combine in combine()."""
     first, count = share
     rows, counts = [], dict.fromkeys(COUNTS, 0)
@@ -79,7 +88,7 @@ def share_of(scene, min_gap, contacts, depth=DEFAULT_DEPTH, share=(0, 1), includ
         elif scene.still(a) and scene.still(b) and not include_still:
             counts["bothStill"] += 1
         else:
-            found = measure_pair(scene, a, b, min_gap, depth, counts)
+            found = measure_pair(scene, a, b, min_gap, depth, counts, memo)
             if found:
                 counts["measured"] += 1
                 rows.append((index, found))

@@ -15,6 +15,7 @@ from .search import DEFAULT_DEPTH
 PAIRS_PER_SHARE = 500    # a motion with fewer pairs than this is one piece of work
 
 _built = {}
+_fixed = {}      # per process: what fixed pairs of the built design measured, reused across the jobs of that design
 
 
 def default_workers():
@@ -28,6 +29,7 @@ def assembly_for(source):
     if key not in _built:
         from ..builder.assembly import build
         _built.clear()
+        _fixed.clear()
         _built[key] = build(load(source))
     return _built[key]
 
@@ -42,7 +44,7 @@ def work(task):
     source, job, share = task
     motion, min_gap, contacts, absent, depth, include_still, displace = job_fields(job)
     scene = scenes.for_motion(assembly_for(source), motion, absent, displace)
-    return clearance.share_of(scene, min_gap, clearance.declared(contacts, scene.names), depth, share, include_still)
+    return clearance.share_of(scene, min_gap, clearance.declared(contacts, scene.names), depth, share, include_still, _fixed)
 
 
 def shares_for(solids, workers):

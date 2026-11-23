@@ -32,7 +32,10 @@ def supply_limited(current, emf, ohm, bus, limit):
 
 
 def step(drive, state, load, t, dt):
-    """Advance one drive by dt. load is the force (N) the piece's friction takes from the surface, along its run."""
+    """Advance one drive by dt. load is the force (N) the piece's friction takes from the surface, along its run.
+
+    piecesOnDrive says how many pieces load the drive at once, each the same way as the one that is solved.
+    """
     if drive["kind"] == "imposed":
         ramp = drive.get("rampS", 0.0)
         state["u"] = drive["speedMps"] * (min(1.0, t / ramp) if ramp > 0 else 1.0)
@@ -62,5 +65,5 @@ def step(drive, state, load, t, dt):
         torque = count * gear * motor["ktNmPerA"] * current * efficiency
     state["amps"] = current
     state["supply"] = count * current * (emf + current * motor["ohm"]) / bus if bus else 0.0
-    u += ((torque - drive.get("dragNm", 0.0)) / radius - load) / mass * dt
+    u += ((torque - drive.get("dragNm", 0.0)) / radius - load * drive.get("piecesOnDrive", 1)) / mass * dt
     state["u"] = max(0.0, u) if drive.get("oneWay") else u

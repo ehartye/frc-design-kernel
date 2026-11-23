@@ -137,7 +137,7 @@ def piece_body(name, piece, mass, start, normal):
 def start_of(case, handed):
     start = case["piece"]["start"]
     if "after" in start:
-        x, z, vx, vz, w = handed
+        x, z, vx, vz, w = handed["piece"]
         return {"at": [x, z], "velocity": [0.0, 0.0] if start.get("atRest", True) else [vx, vz], "spin": 0.0 if start.get("atRest", True) else w}
     return {"at": [v * MM for v in start["atMm"]], "velocity": list(start.get("velocityMps", [0.0, 0.0])), "spin": start.get("spinRadps", 0.0)}
 
