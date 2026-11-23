@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ehartye/frc-design-kernel/design.schema.json",
+  "title": "frc-design-kernel design source",
+  "type": "object",
+  "required": ["schema", "name", "units", "groups", "solids"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema": {"const": "frc-design-kernel/design@1"},
+    "name": {"type": "string", "minLength": 1},
+    "units": {
+      "type": "object",
+      "required": ["length", "mass"],
+      "additionalProperties": false,
+      "properties": {"length": {"const": "mm"}, "mass": {"const": "kg"}}
+    },
+    "frame": {"type": "string", "description": "Where the origin is and which way the axes point."},
+    "parameters": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$", "fix": "Name a parameter with letters, digits and underscores, starting with a letter"},
+      "additionalProperties": {"$ref": "#/$defs/number"}
+    },
+    "groups": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/group"}
+    },
+    "custom": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$", "fix": "Name a custom shape with lower-case letters, digits and underscores; its code is custom/<name>.py"},
+      "additionalProperties": {"$ref": "#/$defs/customShape"}
+    },
+    "solids": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/solid"}},
+    "fixtures": {"type": "array", "items": {"$ref": "#/$defs/solid"}},
+    "mounts": {"type": "array", "items": {"$ref": "#/$defs/mount"}},
+    "poses": {"type": "object", "additionalProperties": {"$ref": "#/$defs/groupOps"}},
+    "motions": {"type": "object", "additionalProperties": {"$ref": "#/$defs/motion"}}
+  },
+  "$defs": {
+    "number": {
+      "oneOf": [{"type": "number"}, {"type": "string", "pattern": "^="}],
+      "fix": "Give a number, or an expression in quotes that starts with =, such as \"=width / 2\""
+    },
+    "vector": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/number"}},
+    "point2": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/number"}},
+    "each": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "object", "minProperties": 1, "additionalProperties": {"type": ["number", "string"]}}
+    },
+    "group": {
+      "type": "object",
+      "required": ["role"],
+      "additionalProperties": false,
+      "properties": {
+        "role": {"type": "string", "minLength": 1},
+        "carriedBy": {"type": "string"},
+        "place": {"$ref": "#/$defs/ops"},
+        "massKg": {"$ref": "#/$defs/number"},
+        "note": {"type": "string"}
+      }
+    },
+    "customShape": {
+      "type": "object",
+      "required": ["reason", "limits"],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {"type": "string", "minLength": 20, "fix": "Say in a sentence why the listed shapes cannot make this"},
+        "limits": {"type": "string", "minLength": 20, "fix": "Say in a sentence what this shape leaves out or guesses"}
+      }
+    },
+    "solid": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "group": {"type": "string"},
+        "each": {"$ref": "#/$defs/each"},
+        "shape": {"$ref": "#/$defs/shape"},
+        "part": {
+          "type": "object",
+          "required": ["file", "solid"],
+          "additionalProperties": false,
+          "properties": {"file": {"type": "string", "minLength": 1}, "solid": {"type": "string", "minLength": 1}}
+        },
+        "place": {"$ref": "#/$defs/ops"},
+        "massKg": {"$ref": "#/$defs/number"},
+        "densityKgM3": {"$ref": "#/$defs/number"},
+        "note": {"type": "string"}
+      }
+    },
+    "mount": {
+      "type": "object",
+      "required": ["group", "on", "atMm"],
+      "additionalProperties": false,
+      "properties": {
+        "group": {"type": "string"},
+        "member": {"type": "string"},
+        "on": {"type": "string"},
+        "atMm": {"$ref": "#/$defs/vector"},
+        "each": {"$ref": "#/$defs/each"},
+        "note": {"type": "string"}
+      }
+    },
+    "groupOps": {"type": "object", "additionalProperties": {"$ref": "#/$defs/ops"}},
+    "motion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "from": {"type": "string"},
+        "to": {"type": "string"},
+        "moves": {"$ref": "#/$defs/groupOps"},
+        "through": {"type": "array", "minItems": 2, "items": {"type": "string"}},
+        "note": {"type": "string"}
+      }
+    },
+    "ops": {"type": "array", "items": {"$ref": "#/$defs/op"}},
+    "op": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "travelMm"],
+          "additionalProperties": false,
+          "properties": {"kind": {"const": "translation"}, "travelMm": {"$ref": "#/$defs/vector"}}
+        },
+        {
+          "type": "object",
+          "required": ["kind", "originMm", "axis", "travelDeg"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "rotation"},
+            "originMm": {"$ref": "#/$defs/vector"},
+            "axis": {"$ref": "#/$defs/vector"},
+            "travelDeg": {"$ref": "#/$defs/number"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "fallMm", "quadraticFraction"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "gravity-drop"},
+            "fallMm": {"$ref": "#/$defs/number"},
+            "quadraticFraction": {"$ref": "#/$defs/number"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "throughMm", "curve"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "path"},
+            "throughMm": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/vector"}},
+            "curve": {"enum": ["straight", "arc", "smooth"]}
+          }
+        }
+      ]
+    },
+    "shape": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "fromMm", "toMm"],
+          "additionalProperties": false,
+          "properties": {"kind": {"const": "box"}, "fromMm": {"$ref": "#/$defs/vector"}, "toMm": {"$ref": "#/$defs/vector"}}
+        },
+        {
+          "type": "object",
+          "required": ["kind", "fromMm", "toMm", "radiusMm"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "cylinder"},
+            "fromMm": {"$ref": "#/$defs/vector"},
+            "toMm": {"$ref": "#/$defs/vector"},
+            "radiusMm": {"$ref": "#/$defs/number"},
+            "sweepDeg": {"$ref": "#/$defs/number"},
+            "sweepFrom": {"$ref": "#/$defs/vector"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "centerMm", "radiusMm"],
+          "additionalProperties": false,
+          "properties": {"kind": {"const": "sphere"}, "centerMm": {"$ref": "#/$defs/vector"}, "radiusMm": {"$ref": "#/$defs/number"}}
+        },
+        {
+          "type": "object",
+          "required": ["kind", "plane", "outlineMm", "fromMm", "toMm"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "prism"},
+            "plane": {"enum": ["xy", "xz", "yz"]},
+            "outlineMm": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/point2"}},
+            "fromMm": {"$ref": "#/$defs/number"},
+            "toMm": {"$ref": "#/$defs/number"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "section", "fromMm", "toMm", "wallMm"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "tube"},
+            "section": {"enum": ["round", "rectangular"]},
+            "fromMm": {"$ref": "#/$defs/vector"},
+            "toMm": {"$ref": "#/$defs/vector"},
+            "wallMm": {"$ref": "#/$defs/number"},
+            "outerDiameterMm": {"$ref": "#/$defs/number"},
+            "widthMm": {"$ref": "#/$defs/number"},
+            "heightMm": {"$ref": "#/$defs/number"},
+            "up": {"$ref": "#/$defs/vector"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "of"],
+          "additionalProperties": false,
+          "properties": {"kind": {"const": "union"}, "of": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/shape"}}}
+        },
+        {
+          "type": "object",
+          "required": ["kind", "from", "cut"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "difference"},
+            "from": {"$ref": "#/$defs/shape"},
+            "cut": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/shape"}}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "of"],
+          "additionalProperties": false,
+          "properties": {"kind": {"const": "intersection"}, "of": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/shape"}}}
+        },
+        {
+          "type": "object",
+          "required": ["kind", "use"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "custom"},
+            "use": {"type": "string"},
+            "parameters": {"type": "object", "additionalProperties": {"type": ["number", "string"]}}
+          }
+        }
+      ]
+    }
+  }
+}
