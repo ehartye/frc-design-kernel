@@ -8,6 +8,11 @@ twentieth of the spring's depth.
 
 One rule is added for three dimensions: where a piece touches one surface at several points, the surface's spring
 is shared among them by depth, so a ring lying flat is held by one spring, not by one spring per point.
+
+Where a round piece (a ball, or a ring's round segment) meets a shape MuJoCo collides by its general convex method (a
+mesh or a cylinder), the touching point is worked out again from the piece's core: the nearest point of the shape to
+the core gives the true direction and depth. At an edge or a corner MuJoCo's general method reports a face's
+direction instead, up to 37 degrees off on a bevelled lip, and too shallow a depth.
 """
 import math
 
@@ -40,6 +45,34 @@ def velocity_at(mujoco, model, data, body, at, seen):
     return mx.add(move, mx.cross(turn, mx.sub(at, origin)))
 
 
+ROUND, GENERAL = (2, 3), (5, 7)        # MuJoCo geom types: sphere, capsule; cylinder, mesh
+
+
+def from_core(mujoco, model, data, piece_geom, other_geom, at):
+    """The true (point, normal, depth) where a round piece geom meets a general convex shape, or None where they do not meet.
+
+    The core is the ball's centre, or the nearest point of the capsule's centre line to MuJoCo's point. A probe point
+    put there is measured against the shape by MuJoCo's distance query, which is exact when the two are apart.
+    Returns False when the core is inside the shape, so MuJoCo's own point is kept.
+    """
+    import numpy
+    centre, radius = data.geom_xpos[piece_geom], float(model.geom_size[piece_geom][0])
+    core = numpy.array(centre)
+    if model.geom_type[piece_geom] == 3:
+        axis, half = data.geom_xmat[piece_geom].reshape(3, 3)[:, 2], float(model.geom_size[piece_geom][1])
+        core = core + axis * max(-half, min(half, float(numpy.dot(numpy.array(at) - centre, axis))))
+    probe = model.geom("probe").id
+    data.geom_xpos[probe] = core
+    ends = numpy.zeros(6)
+    gap = mujoco.mj_geomDistance(model, data, probe, other_geom, radius, ends)
+    if gap <= 1e-9:
+        return False
+    if gap >= radius:
+        return None
+    normal = (core - ends[3:]) / gap
+    return [float(v) for v in ends[3:] - normal * (radius - gap) / 2], [float(v) for v in normal], radius - gap
+
+
 def touching_points(mujoco, model, data, scene, pieces, drive_state):
     """Every point where a piece overlaps a surface or another piece: {(piece body, what it touches): [point, ...]}."""
     groups, seen, count = {}, {}, {}
@@ -55,7 +88,13 @@ def touching_points(mujoco, model, data, scene, pieces, drive_state):
             continue
         name = model.geom(geoms[1 - side]).name
         normal = [float(v) * (1.0 if side == 1 else -1.0) for v in contact.frame[:3]]      # out of what is touched, toward the piece
-        at = [float(v) for v in contact.pos]
+        at, depth = [float(v) for v in contact.pos], -float(contact.dist)
+        if model.geom_type[geoms[side]] in ROUND and model.geom_type[geoms[1 - side]] in GENERAL:
+            exact = from_core(mujoco, model, data, geoms[side], geoms[1 - side], at)
+            if exact is None:
+                continue
+            if exact:
+                at, normal, depth = exact
         against, driven, along = velocity_at(mujoco, model, data, other, at, seen), scene["driven"].get(name), None
         if driven:      # a driven surface also runs at its drive's speed, across the turn's axis
             along = mx.cross(driven["axis"], normal)
@@ -63,7 +102,7 @@ def touching_points(mujoco, model, data, scene, pieces, drive_state):
         between = other in pieces
         count[geoms] = count.get(geoms, 0) + 1
         groups.setdefault((on, ("piece", other) if between else ("surface", scene["surfaceOf"][name])), []).append({
-            "key": (*geoms, count[geoms]), "at": at, "normal": normal, "depth": -float(contact.dist), "other": other, "driven": driven, "along": along,
+            "key": (*geoms, count[geoms]), "at": at, "normal": normal, "depth": depth, "other": other, "driven": driven, "along": along,
             "rel": mx.sub(velocity_at(mujoco, model, data, on, at, seen), against), "material": scene["between"] if between else scene["materialOf"][name]})
     return groups
 

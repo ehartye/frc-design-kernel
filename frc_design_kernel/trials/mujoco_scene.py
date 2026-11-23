@@ -25,8 +25,9 @@ from .scene import drives_for
 from .ready import breakdown
 
 LAW = ("the library's own spring, damper and friction law at the points MuJoCo finds; where a piece touches one surface at several points, "
-       "the surface's spring is shared among them by depth")
+       "the surface's spring is shared among them by depth; a round piece's point against a mesh or a cylinder is worked out again from the piece's core")
 NOT_YET = ("forces",)
+PROBE = '<geom name="probe" type="sphere" size="1e-9" contype="0" conaffinity="0"/>'      # a point the contact law measures from
 
 
 def primitive(shape, placed_at):
@@ -146,7 +147,7 @@ def build(assembly, name, a_case, handed=None):
     body, velocity, radius = piece_body(use, piece, mass, start, plane["normal"], segments)
     gravity = [0.0, 0.0, 0.0 if plane["normal"] == "z" else -case.get("gravityMps2", 9.80665)]
     xml = (f'<mujoco><option timestep="{case["stepS"]:.9g}" gravity="{text(gravity)}"><flag multiccd="enable"/></option>'
-           f'<asset>{"".join(model.meshes)}</asset><worldbody>{bodies_xml(model, moving)}{other_xml}{body}</worldbody></mujoco>')
+           f'<asset>{"".join(model.meshes)}</asset><worldbody>{PROBE}{bodies_xml(model, moving)}{other_xml}{body}</worldbody></mujoco>')
     drives = drives_for(case, where) if model.driven_geoms else {}
     facts = {"plane": plane, "pose": case.get("pose"), "geoms": model.kinds, "hulled": sorted(set(model.hulled)),
              "faceted": model.faceted, "sections": sections, "typedSurfaces": [], "bodies": {key: entry["kind"] for key, entry in moving.items()},
