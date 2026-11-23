@@ -102,6 +102,20 @@ def check_mounts(design, solids):
             raise DesignError(where, f'member "{mount["member"]}" is not a solid of the group "{mount["group"]}"', "Name a solid that belongs to the mounted group")
 
 
+def check_contacts(design, solids):
+    for i, contact in enumerate(design["contacts"]):
+        where = f"contacts[{i}]"
+        a, b = contact["pair"]
+        for name in (a, b):
+            if name not in solids:
+                raise unknown(where, "solid", name, solids)
+        if a == b:
+            raise DesignError(where, "names the same solid twice", "A contact is between two different solids")
+        for motion in contact.get("during", []):
+            if motion not in design["motions"]:
+                raise unknown(f"{where} during", "motion", motion, design["motions"])
+
+
 def check_group_ops(table, where, groups):
     for group, ops in table.items():
         if group not in groups:
@@ -131,5 +145,6 @@ def check_all(design):
     solids = check_solids(design)
     used = check_custom(design)
     check_mounts(design, solids)
+    check_contacts(design, solids)
     check_poses_and_motions(design)
     return used

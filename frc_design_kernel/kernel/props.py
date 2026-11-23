@@ -33,3 +33,10 @@ def bounds(shape):
     box = Bnd_Box()
     BRepBndLib.AddOptimal_s(shape, box, False, False)
     return [*box.CornerMin().Coord(), *box.CornerMax().Coord()]
+
+
+def centre(shape):
+    """The centre of the shape's volume [x, y, z] in millimetres: its centre of mass if it is the same stuff throughout."""
+    properties = GProp_GProps()
+    BRepGProp.VolumeProperties_s(shape, properties, True)
+    return list(properties.CentreOfMass().Coord())
