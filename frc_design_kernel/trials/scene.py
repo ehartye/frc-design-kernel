@@ -95,6 +95,9 @@ def runtime_drive(name, drive, motors, command, where):
         return {"kind": "imposed", "speedMps": command.get("speedMps", 0.0), "rampS": command.get("rampS", 0.0)}
     if "motor" not in drive:
         fail(where, f'the drive "{name}" has no motor, so it can only be commanded with "mode": "imposed"', "Give the drive a motor, or impose its speed")
+    needs = {"speed": "setpointMps", "hold": "fullTorqueAtRad"}.get(command["mode"])
+    if needs and needs not in command:
+        fail(where, f'the command for the drive "{name}" is in "{command["mode"]}" mode but has no {needs}', f"Give commands.{name}.{needs}")
     out = {"kind": "motor", "motor": motors[drive["motor"]], "radiusM": drive["radiusMm"] * MM, "gear": drive.get("gear", 1.0),
            "count": drive.get("count", 1), "efficiency": drive.get("efficiency", 1.0), "statorLimitA": drive["statorLimitA"],
            "dragNm": drive.get("dragNm", 0.0), "busV": command.get("busV", 12.0), "startMps": command.get("startMps", 0.0),

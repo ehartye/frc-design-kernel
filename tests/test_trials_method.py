@@ -198,6 +198,20 @@ class Cost(unittest.TestCase):
         self.assertAlmostEqual(cost["hold in 3D"]["aboutSeconds"], 100 * cost["hold"]["aboutSeconds"], delta=1.0)
 
 
+class Changes(unittest.TestCase):
+    def test_a_change_to_null_removes_a_thing_but_switches_off_a_bus(self):
+        """Catches a control that sets busV to null (the power off) silently deleting the key, so the drive runs at 12 V."""
+        case = {"commands": {"belt": {"mode": "speed", "setpointMps": 1.0, "busV": 12.0, "rampS": 0.1}}}
+        out = campaign.changed(case, {"commands.belt.busV": None, "commands.belt.rampS": None}, "test")
+        self.assertEqual(out["commands"]["belt"], {"mode": "speed", "setpointMps": 1.0, "busV": None})
+
+    def test_a_hold_command_without_its_torque_angle_is_refused_by_name(self):
+        """Catches a hold command missing fullTorqueAtRad reaching a worker and dying there with a KeyError."""
+        from frc_design_kernel.trials import scene
+        with self.assertRaisesRegex(DesignError, 'the command for the drive "arm" is in "hold" mode but has no fullTorqueAtRad'):
+            scene.runtime_drive("arm", {"motor": "m", "radiusMm": 10, "statorLimitA": 10}, {"m": {}}, {"mode": "hold", "busV": 12}, "test")
+
+
 class HandOff(unittest.TestCase):
     def test_one_trials_end_state_starts_the_next(self):
         """Catches a hand-off that restarts from the drawing: the second trial must begin where the first one came to rest."""
