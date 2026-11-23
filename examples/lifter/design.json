@@ -10,7 +10,7 @@
     "post_d": 30,
     "post_top": "=base_t + 450",
     "lift": 220,
-    "fork_z": 80,
+    "fork_z": 95,
     "tine_len": 180
   },
   "groups": {
@@ -52,10 +52,10 @@
      "shape": {"kind": "cylinder", "fromMm": [60, 35, "=base_t + 22"], "toMm": [60, 65, "=base_t + 22"], "radiusMm": 15}},
     {"name": "sleeve {side}", "group": "carriage",
      "each": [{"side": "left", "s": 1}, {"side": "right", "s": -1}],
-     "shape": {"kind": "tube", "section": "round", "fromMm": ["=post_x", "=s * post_y", 60],
-               "toMm": ["=post_x", "=s * post_y", 140], "outerDiameterMm": "=post_d + 10", "wallMm": 4}},
+     "shape": {"kind": "tube", "section": "round", "fromMm": ["=post_x", "=s * post_y", 75],
+               "toMm": ["=post_x", "=s * post_y", 155], "outerDiameterMm": "=post_d + 10", "wallMm": 4}},
     {"name": "carriage plate", "group": "carriage",
-     "shape": {"kind": "box", "fromMm": ["=post_x + 20", "=-post_y - 20", 70], "toMm": ["=post_x + 26", "=post_y + 20", 130]}},
+     "shape": {"kind": "box", "fromMm": ["=post_x + 20", "=-post_y - 20", 85], "toMm": ["=post_x + 26", "=post_y + 20", 145]}},
     {"name": "tine {side}", "group": "carriage",
      "each": [{"side": "left", "s": 1}, {"side": "right", "s": -1}],
      "shape": {"kind": "custom", "use": "tine", "parameters": {"lengthMm": "=tine_len", "widthMm": 20, "rootMm": 24, "tipMm": 6}},
@@ -74,6 +74,11 @@
      "note": "Motor clamp bolts to the base plate."},
     {"group": "load", "member": "crate", "on": "tine left", "atMm": [0, 60, "=fork_z"],
      "note": "The crate rests on both tines."}
+  ],
+  "contacts": [
+    {"pair": ["crate", "tine {side}"], "each": [{"side": "left"}, {"side": "right"}],
+     "note": "The crate rests on the tines until it is handed off."},
+    {"pair": ["gearmotor shaft", "spool"], "note": "The spool is pinned to the shaft end."}
   ],
   "poses": {
     "lowered": {},

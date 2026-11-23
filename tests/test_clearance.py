@@ -126,7 +126,7 @@ class KnownGaps(unittest.TestCase):
         self.assertEqual(once, clearance.along(self.assembly, "swing", min_gap=4.0))
         scene = clearance.scenes.for_motion(self.assembly, "swing")
         parts = [clearance.share_of(scene, 4.0, set(), share=(n, 3)) for n in (2, 0, 1)]
-        self.assertEqual(clearance.combine(parts, clearance.header("motion", "swing", 4.0, 9, set(), ())), once)
+        self.assertEqual(clearance.combine(parts, clearance.header("motion", "swing", 4.0, 9, set(), (), False)), once)
 
 
 class Controls(unittest.TestCase):

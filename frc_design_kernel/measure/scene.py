@@ -48,15 +48,17 @@ def build_scene(assembly, group_stages, absent=()):
     by_group = {}
     for group, listed in group_stages.items():
         by_group[group] = (listed, stage_math.at(listed, 0.0), stage_math.signature(listed), stage_math.straight_travel(listed),
-                           stage_math.axis_laws(listed), bool(stage_math.moving_part(listed)))
+                           stage_math.axis_laws(listed), stage_math.moving_part(listed), stage_math.lead(listed))
     drawn = {name: assembly.solids[name].shape for name in names}
     stages, start, boxes, rates, moving, straight, laws = {}, {}, {}, {}, {}, {}, {}
     for name in names:
-        listed, first, signature, travel, law, moves = by_group[assembly.solids[name].group]
+        listed, first, signature, travel, law, moves, lead = by_group[assembly.solids[name].group]
         stages[name], moving[name], straight[name], laws[name] = listed, signature, travel, law
         start[name] = drawn[name] if mx.is_identity(first) else moved(drawn[name], first)
         boxes[name] = props.bounds(start[name])
-        rates[name] = stage_math.speed_limit(listed, props.bounds(drawn[name])) if moves else 0.0
+        # The speed limit is taken from the box of the solid where it stands when its moving part begins.
+        held = boxes[name] if mx.gap(lead, first) == 0 else props.bounds(moved(drawn[name], lead))
+        rates[name] = stage_math.speed_limit(moves, held) if moves else 0.0
     return Scene(names, drawn, stages, start, boxes, rates, moving, straight, laws)
 
 

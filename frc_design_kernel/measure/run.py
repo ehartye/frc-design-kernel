@@ -33,15 +33,16 @@ def assembly_for(source):
 
 
 def job_fields(job):
-    return (job["motion"], job.get("minGapMm", 0.0), job.get("contacts", ()), job.get("absent", ()), job.get("depth", DEFAULT_DEPTH))
+    return (job["motion"], job.get("minGapMm", 0.0), job.get("contacts", ()), job.get("absent", ()), job.get("depth", DEFAULT_DEPTH),
+            bool(job.get("includeStill", False)))
 
 
 def work(task):
     """Measure one share of one job. Runs in a worker process (or in the caller's, with one worker)."""
     source, job, share = task
-    motion, min_gap, contacts, absent, depth = job_fields(job)
+    motion, min_gap, contacts, absent, depth, include_still = job_fields(job)
     scene = scenes.for_motion(assembly_for(source), motion, absent)
-    return clearance.share_of(scene, min_gap, clearance.declared(contacts, scene.names), depth, share)
+    return clearance.share_of(scene, min_gap, clearance.declared(contacts, scene.names), depth, share, include_still)
 
 
 def shares_for(solids, workers):
@@ -52,8 +53,8 @@ def shares_for(solids, workers):
 def clearances(source, jobs, workers=None):
     """Clearance along several motions of one design source, shared between workers.
 
-    jobs is a list of {"motion": name, "minGapMm": 0.0, "contacts": [[a, b], ...], "absent": [names], "depth": 9}; only
-    "motion" is required. Returns one clearance result per job, in job order, the same as clearance.along gives.
+    jobs is a list of {"motion": name, "minGapMm": 0.0, "contacts": [[a, b], ...], "absent": [names], "depth": 9,
+    "includeStill": False}; only "motion" is required. Returns one clearance result per job, in job order, the same as clearance.along gives.
     """
     workers = default_workers() if workers is None else max(1, int(workers))
     design = load(source)
@@ -70,7 +71,7 @@ def clearances(source, jobs, workers=None):
             parts = list(pool.map(work, tasks))
     results = []
     for job, (start, count) in zip(jobs, spans):
-        motion, min_gap, contacts, absent, depth = job_fields(job)
+        motion, min_gap, contacts, absent, depth, include_still = job_fields(job)
         pairs = clearance.declared(contacts, set(names) - set(absent))
-        results.append(clearance.combine(parts[start:start + count], clearance.header("motion", motion, min_gap, depth, pairs, absent)))
+        results.append(clearance.combine(parts[start:start + count], clearance.header("motion", motion, min_gap, depth, pairs, absent, include_still)))
     return results

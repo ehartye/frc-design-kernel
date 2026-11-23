@@ -99,23 +99,24 @@ def combine(parts, header):
             "pairs": rows}
 
 
-def header(kind, name, min_gap, depth, contacts, absent):
+def header(kind, name, min_gap, depth, contacts, absent, include_still=False):
     if not (isinstance(min_gap, (int, float)) and math.isfinite(min_gap) and min_gap >= 0):
         raise DesignError("", "the minimum gap must be zero or more millimetres", "Give min_gap as a number")
     return {kind: name, "minGapMm": float(min_gap), "depthLimit": depth, "declaredContacts": [list(p) for p in sorted(contacts)],
-            "absent": sorted(absent)}
+            "absent": sorted(absent), "includeStill": include_still}
 
 
-def along(assembly, motion, min_gap=0.0, contacts=(), absent=(), depth=DEFAULT_DEPTH, share=(0, 1)):
+def along(assembly, motion, min_gap=0.0, contacts=(), absent=(), depth=DEFAULT_DEPTH, include_still=False):
     """Clearance of every pair that moves relative to another, over the whole of a named motion.
 
     Returns plain data. Each row of "pairs" gives the smallest gap sampled and its stroke fraction t, any shared
     volume, a proven lower bound on the gap over the whole stroke, and "proven": False only when the search reached
     its depth limit before it could settle the pair. Pairs that boxes prove far apart get no row; they are counted.
+    Pairs where neither solid moves are left to at_pose unless include_still is set.
     """
     scene = scenes.for_motion(assembly, motion, absent)
     pairs = declared(contacts, scene.names)
-    return combine([share_of(scene, min_gap, pairs, depth, share)], header("motion", motion, min_gap, depth, pairs, absent))
+    return combine([share_of(scene, min_gap, pairs, depth, (0, 1), include_still)], header("motion", motion, min_gap, depth, pairs, absent, include_still))
 
 
 def at_pose(assembly, pose=None, min_gap=0.0, contacts=(), absent=()):
@@ -134,4 +135,4 @@ def at_pose(assembly, pose=None, min_gap=0.0, contacts=(), absent=()):
         gap, overlap = gap_and_overlap(scene.start[a], scene.start[b])
         if overlap > 0 or gap < min_gap:
             rows.append((index, row(a, b, "fixed relative pose", gap, 0.0, overlap, gap, True, True, 1)))
-    return combine([{"rows": rows, "counts": counts}], header("pose", pose, min_gap, 0, pairs, absent))
+    return combine([{"rows": rows, "counts": counts}], header("pose", pose, min_gap, 0, pairs, absent, True))

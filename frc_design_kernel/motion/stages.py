@@ -56,6 +56,16 @@ def moving_part(stages):
     return []
 
 
+def lead(stages):
+    """The placement a body holds before its moving part begins: its leading fixed stages as one transform."""
+    total = mx.IDENTITY
+    for kind, value in tidy(stages):
+        if kind != "fixed":
+            break
+        total = mx.compose(value, total)
+    return total
+
+
 def signature(stages):
     """Text that is equal for two bodies exactly when their moving parts are the same."""
     return json.dumps(moving_part(stages), sort_keys=True)
@@ -101,8 +111,9 @@ def through_speed(placements, points, so_far):
 def speed_limit(stages, box):
     """A proven limit on the speed of every point of a body, in mm per unit of t, over the whole stroke.
 
-    box is the body's bounding box as drawn, before any stage. The limit is conservative: the real speed is never
-    higher, and is often lower.
+    box is the body's bounding box before the first of these stages. The limit is conservative: the real speed is
+    never higher, and is often lower. A tighter box gives a tighter limit, so pass moving_part(stages) with the box
+    of the body where it stands when the moving part begins.
     """
     points, limit = corners(box), 0.0
     for kind, value in stages:
