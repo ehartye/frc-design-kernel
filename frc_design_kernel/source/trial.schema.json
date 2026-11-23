@@ -209,6 +209,9 @@
             "type": "string",
             "minLength": 1
           },
+          "place": {
+            "type": "array"
+          },
           "note": {
             "type": "string"
           }

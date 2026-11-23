@@ -747,7 +747,7 @@ be an `=` expression over the design's parameters.
 | `planar` | Choices that belong to the planar engine only: the friction law (`stick` or `smooth`) and its two constants, and where on the piece a contact acts. |
 | `loads` | The frame the piece rides in speeding up or slowing down: an acceleration along a direction, as a step or a half-sine pulse, at a time or after an event. |
 | `movers` | A steady slide of chosen surfaces, started at a time or after an event: a stated velocity, or a straight motion of a group from the design source. |
-| `frames` | Where the piece is in a group's own drawing coordinates: `{"cassette": {"group": "Cassette", "mover": "approach"}}` adds `cassette.xMm` and `cassette.zMm` (the plane's two axes). They are measured before the group's own `place`, the pose and the mover's motion, so a seat test is written where the mechanism was drawn and holds while the robot drives. |
+| `frames` | Where the piece is in a group's own drawing coordinates: `{"cassette": {"group": "Cassette", "mover": "approach"}}` adds `cassette.xMm` and `cassette.zMm` (the plane's two axes). They are measured before the group's own `place`, the pose and the mover's motion, so a seat test is written where the mechanism was drawn and holds while the robot drives. When the solids were drawn in another pose (taken from a STEP file, say), the frame's own `place` sets its origin and axes within the drawing. |
 | `events`, `measures`, `pass` | What counts as what; numbers to keep; the criterion. |
 | `control`, `brackets`, `grid` | The method inputs. See 13.3. |
 | `stepS`, `durationS` | The fixed step and the longest a run may last. |

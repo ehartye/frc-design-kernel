@@ -4,6 +4,10 @@ A trial may name frames: {"cassette": {"group": "Cassette", "mover": "approach"}
 the trial's plane, `cassette.xMm` and `cassette.zMm` for a plane square to y: the piece's centre in the coordinates
 the group's solids were drawn in, before the group's own `place`, the trial's pose and the mover's motion. A seat
 test written there holds while the robot drives, and does not have to be turned into world numbers by hand.
+
+When the solids were not drawn square to the mechanism (taken from a STEP file in another pose, say), `place` puts
+the frame within those drawing coordinates: operations applied in full, as a solid's `place` is. The signals are
+then the piece's centre in that placed frame, so a seat test can still be written along the deck and off it.
 Both engines read frames the same way. Nothing here imports MuJoCo.
 """
 from ..builder import placement
@@ -22,7 +26,9 @@ def build(case, data, where):
         at, group = f'{where} frame "{name}"', entry["group"]
         if group not in data["groups"]:
             raise DesignError(at, f'names the group "{group}", which the design does not have', f"Known groups: {', '.join(data['groups'])}")
-        frame = {"drawn": ops.at(data["groups"][group].get("place", [])), "posed": posed[group], "stages": None}
+        ops.check(entry.get("place", []), f"{at} place")
+        within = ops.at(entry.get("place", []))        # the frame placed within the group's drawing coordinates
+        frame = {"drawn": mx.compose(ops.at(data["groups"][group].get("place", [])), within), "posed": posed[group], "stages": None}
         if "mover" in entry:
             mover = case.get("movers", {}).get(entry["mover"])
             if mover is None or "motion" not in mover:
