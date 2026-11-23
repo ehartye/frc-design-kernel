@@ -7,7 +7,7 @@ import math
 import unittest
 
 from .test_mujoco import one_run
-from .trial_cases import ASSUMES, G, MEASURED, PANEL, bench
+from .trial_cases import ENGINES, ASSUMES, G, MEASURED, PANEL, bench
 
 HAVE = importlib.util.find_spec("mujoco") is not None
 BOX = lambda low, high: {"kind": "box", "fromMm": low, "toMm": high}
@@ -66,7 +66,7 @@ class Rollers(unittest.TestCase):
         """
         lean = math.asin(1 / 45)
         expected = 1.0 * G * (math.sin(lean) + 0.5 * math.cos(lean)) / (math.cos(lean) - 0.5 * math.sin(lean))
-        for engine in ("planar", "mujoco"):
+        for engine in ENGINES:
             forward = dragged(engine)[0]["measures"]
             self.assertAlmostEqual(forward["plus"], expected, delta=0.03 * expected, msg=engine)
             self.assertAlmostEqual(forward["minus"], 0.0, delta=0.01, msg=engine)
@@ -78,7 +78,7 @@ class Rollers(unittest.TestCase):
         lean = math.asin(1 / 45)
         drag = 0.5 * 1.0 * G / (math.cos(lean) - 0.5 * math.sin(lean))       # friction at the roller: mu times the normal force there
         expected = drag * 0.025 / (2.0 * 0.02)
-        for engine in ("planar", "mujoco"):
+        for engine in ENGINES:
             found, _ = dragged(engine, motor=True)
             self.assertAlmostEqual(found["measures"]["amps"], expected, delta=0.05 * expected, msg=engine)
 
@@ -86,7 +86,7 @@ class Rollers(unittest.TestCase):
         """Catches a belt that does not drag: a block set down on it gains speed at friction * g, then rides at belt speed."""
         design, command = rig()
         design["drives"]["spin"]["turns"] = [{"solid": "belt bed", "axis": [0, 1, 0]}]
-        for engine in ("planar", "mujoco"):
+        for engine in ENGINES:
             speeds = {}
             for seconds in (0.1, 0.4):
                 trial = {"engine": engine, "assumes": ASSUMES, "plane": {"normal": "y", "atMm": 0}, "stepS": 1e-4, "durationS": seconds, "traceS": 0.01,

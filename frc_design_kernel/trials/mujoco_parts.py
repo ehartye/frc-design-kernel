@@ -138,29 +138,35 @@ def flap_of(entry, plane, where):
     """A flap as a body on a sprung hinge about the plane's normal, between a stop at rest and a stop at its limit."""
     if "solid" not in entry:
         fail(where, "the MuJoCo engine needs a flap to name the solid that is the flap", 'Draw the flap at rest as a solid and add "solid" to the flap')
-    if "mover" in entry:
-        fail(where, "the MuJoCo engine does not run a flap on a mover yet", "Run this trial with the planar engine")
     across = "xyz".index(plane["normal"])
     iu, iv = AXES[plane["normal"]]
     anchor, axis = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
     anchor[iu], anchor[iv], anchor[across] = entry["hingeMm"][0] * MM, entry["hingeMm"][1] * MM, plane["atMm"] * MM
     axis[across] = -1.0 if plane["normal"] == "y" else 1.0     # the planar angle grows counter-clockwise in (u, v)
+    if entry["limitDeg"] < 0:      # a negative limit opens clockwise; the angle reported is still how far it has opened
+        axis[across] = -axis[across]
     return {"kind": "flap", "flap": entry["name"], "axis": axis, "anchor": anchor, "inertia": entry["inertiaKgM2"], "preloadNm": entry.get("preloadNm", 0.0),
-            "joint": f'limited="true" range="0 {entry["limitDeg"]:.9g}" solreflimit="0.002 1" stiffness="{entry["springNmPerRad"]:.9g}" '
+            "joint": f'limited="true" range="0 {abs(entry["limitDeg"]):.9g}" solreflimit="0.002 1" stiffness="{entry["springNmPerRad"]:.9g}" '
                      f'damping="{entry.get("dampingNmSPerRad", 0.0):.9g}"'}
 
 
 def bodies_xml(model, moving):
-    """The fixed geoms, then one body per moved group or flap with its joint."""
+    """The fixed geoms, then one body per moved group or flap with its joint. A flap on a moved group sits inside that group's body."""
     parts = ["".join(g for _, _, g, body in model.geoms if body == "world")]
     for key, entry in moving.items():
-        geoms = "".join(g for _, _, g, body in model.geoms if body == key)
-        if entry["kind"] == "path":
-            parts.append(f'<body name="{key}" mocap="true">{geoms}</body>')
+        if entry.get("parent"):
             continue
-        joint = "slide" if entry["kind"] == "slide" else "hinge"
-        more = entry["joint"] if entry["kind"] == "flap" else f'armature="{ARMATURE}"'
-        inertia = entry.get("inertia", 1.0)
-        parts.append(f'<body name="{key}"><joint name="{key}" type="{joint}" axis="{text(entry["axis"])}" pos="{text(entry["anchor"])}" {more}/>'
-                     f'<inertial pos="{text(entry["anchor"])}" mass="{min(1.0, inertia * 100):.9g}" diaginertia="{text([inertia] * 3)}"/>{geoms}</body>')
+        parts.append(one_body(model, moving, key, entry))
     return "".join(parts)
+
+
+def one_body(model, moving, key, entry):
+    geoms = "".join(g for _, _, g, body in model.geoms if body == key)
+    geoms += "".join(one_body(model, moving, child, found) for child, found in moving.items() if found.get("parent") == key)
+    if entry["kind"] == "path":
+        return f'<body name="{key}" mocap="true">{geoms}</body>'
+    joint = "slide" if entry["kind"] == "slide" else "hinge"
+    more = entry["joint"] if entry["kind"] == "flap" else f'armature="{ARMATURE}"'
+    inertia = entry.get("inertia", 1.0)
+    return (f'<body name="{key}"><joint name="{key}" type="{joint}" axis="{text(entry["axis"])}" pos="{text(entry["anchor"])}" {more}/>'
+            f'<inertial pos="{text(entry["anchor"])}" mass="{min(1.0, inertia * 100):.9g}" diaginertia="{text([inertia] * 3)}"/>{geoms}</body>')
