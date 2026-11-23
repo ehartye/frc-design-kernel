@@ -141,6 +141,17 @@ def push(mujoco, model, data, scene, law, pieces, masses, drive_state, happened,
     return pressed, loads
 
 
+def rough_touched(model, data, scene, pieces, found):
+    """Add to found the solids whose hulled pieces a piece overlaps now: only those, not their exact pieces, may rest on a filled-in surface."""
+    for index in range(data.ncon):
+        contact = data.contact[index]
+        if contact.dist < 0:
+            for mine, other in ((contact.geom1, contact.geom2), (contact.geom2, contact.geom1)):
+                solid = scene["roughGeoms"].get(model.geom(other).name)
+                if solid and int(model.geom_bodyid[mine]) in pieces:
+                    found.add(solid)
+
+
 def run(scene, step=None, forces=()):
     """Run one MuJoCo scene. Returns the same summary a planar run gives, with two more signals: offPlaneMm and tiltDeg."""
     mujoco = engine()
@@ -148,7 +159,7 @@ def run(scene, step=None, forces=()):
     model, data, pieces, masses = start(mujoco, scene, dt)
     law = mujoco_contact.Law(scene, masses)
     drive_state = {name: drive_math.start(d) for name, d in scene["drives"].items()}
-    happened, events, rest_since, steps, outcome = {}, [], None, 0, "timeout"
+    happened, events, rest_since, steps, outcome, touched_rough = {}, [], None, 0, "timeout", set()
     names = signal_names(scene)
     blank = dict.fromkeys(names, 0.0)
     recorder = Recorder(scene, [n for n in names if not n.startswith("contact.") and n != "speedMps"])
@@ -159,6 +170,8 @@ def run(scene, step=None, forces=()):
         mujoco.mj_fwdPosition(model, data)      # where everything is now, and what overlaps
         mujoco.mj_fwdVelocity(model, data)      # how everything moves now
         pressed, loads = push(mujoco, model, data, scene, law, pieces, masses, drive_state, happened, t, dt)
+        if scene.get("roughGeoms"):
+            rough_touched(model, data, scene, pieces, touched_rough)
         signals, touching = read(model, data, scene, blank, drive_state, pieces, pressed)
         signals.update(frames.read(scene["frames"], scene["normal"], [float(v) * 1e3 for v in data.qpos[-7:-4]], happened, t))
         if scene.get("air"):
@@ -193,4 +206,5 @@ def run(scene, step=None, forces=()):
                     "drives": {n: s["u"] for n, s in drive_state.items()}, "hingesDeg": {name: signals[f"hinge.{name}.angleDeg"] for name in scene["hinges"]},
                     "offPlaneMm": signals["offPlaneMm"], "tiltDeg": signals["tiltDeg"]},
             "trace": {"columns": recorder.columns, "rows": recorder.trace},
-            "contacts": {name: [[r[0], r[1], round(r[2], 4)] for r in rows] for name, rows in recorder.rows.items()}}
+            "contacts": {name: [[r[0], r[1], round(r[2], 4)] for r in rows] for name, rows in recorder.rows.items()},
+            "touchedRough": sorted(touched_rough)}

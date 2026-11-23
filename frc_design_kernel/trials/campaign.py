@@ -289,10 +289,13 @@ def run_trial(design, name, builder, handed, workers):
     word, findings = record.result(met["nominal"][0], control, ranges, steps, missing, grid_found, covered)
     hulled = set((runner.facts or {}).get("hulled", []))
     solid_of = {row.get("surface", row["solid"]): row["solid"] for row in (runner.facts or {}).get("sections", [])}
-    touched = sorted({solid_of[s] for run in results.values() for s in run["contacts"] if solid_of.get(s) in hulled})
+    if any("touchedRough" in run for run in results.values()):      # the 3D engine says which hulled pieces were touched
+        touched = sorted({solid for run in results.values() for solid in run.get("touchedRough", [])})
+    else:
+        touched = sorted({solid_of[s] for run in results.values() for s in run["contacts"] if solid_of.get(s) in hulled})
     if touched:     # a filled-in shape was part of what happened, so the outcome may rest on a surface that is not there
         word += ", on a hulled surface"
-        findings.append("the piece touched a solid that was taken as its convex hull, which fills in its hollows and cuts: " + ", ".join(touched))
+        findings.append("the piece touched a part of a solid that was taken as its convex hull, which fills in its hollows and cuts: " + ", ".join(touched))
     stated, standing = assumptions.stated(trial)
     ranking = record.sensitivity(ranges, nominal["measures"])
     return {"engine": engines.stamp(trial.get("engine", "planar")),

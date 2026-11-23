@@ -15,7 +15,7 @@ ANGLE = {"kind": "prism", "plane": "xz", "fromMm": 0, "toMm": 50, "outlineMm": [
 
 def pieces(shape):
     solid = make(shape, "test", None)
-    done, rough = split.convex_pieces(solid)
+    done, rough, _ = split.convex_pieces(solid)
     return solid, done, rough
 
 
