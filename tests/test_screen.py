@@ -15,7 +15,7 @@ from frc_design_kernel.motion import matrix as mx
 from frc_design_kernel.trials import campaign
 
 from .helpers import load_data
-from .trial_cases import bench, tilting_trial
+from .trial_cases import PANEL, bench, tilting_trial
 
 TAPER = ("from OCP.BRepPrimAPI import BRepPrimAPI_MakeCone\nfrom OCP.gp import gp_Ax2, gp_Dir, gp_Pnt\n\n\ndef build(parameters):\n"
          "    return BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0, -50, 0), gp_Dir(0, 1, 0)), 20.0, 30.0, 100.0).Shape()\n")
@@ -163,9 +163,20 @@ class Adjustments(unittest.TestCase):
         some = extremes.at_extremes(path, min_gap=2.0, workers=1, motions=["press"], poses=["home"])["channel gap"]["settings"][0]
         self.assertEqual((list(some["motions"]), [p["pose"] for p in some["poses"]]), (["press"], ["home"]))
 
-    def tilting(self, low, high):
+    def tilting(self, low, high, **design_extra):
         trials = {"hold": tilting_trial(adjustments=["tilt"])}
-        return campaign.run_campaign(load_data(bench(trials, adjustments={"tilt": {"input": "parameters.slope_deg", "kind": "mechanical", "range": [low, high], "step": 1}})).path)
+        return campaign.run_campaign(load_data(bench(trials, adjustments={"tilt": {"input": "parameters.slope_deg", "kind": "mechanical", "range": [low, high], "step": 1}},
+                                                     **design_extra)).path)
+
+    def test_coverage_is_searched_only_for_an_input_that_changes_the_outcome(self):
+        """Catches an adjustment's window being searched at both ends of an input that held across its range: runs spent on
+        nothing. The bounce does not change whether the block holds; the friction does."""
+        bouncy = {"panel": {**PANEL, "restitution": {"value": 0.2, "assumed": [0.1, 0.3]}}}
+        found = self.tilting(8, 24, materials=bouncy)
+        trial = found["trials"]["hold"]
+        self.assertEqual([row["input"] for row in trial["coverage"]], ["materials.panel.friction"])
+        self.assertTrue(next(r for r in trial["ranges"] if r["input"] == "materials.panel.restitution")["held"])
+        self.assertEqual(trial["result"], "covered by adjustment")
 
     def test_an_adjustment_that_covers_the_uncertainty_is_reported_with_its_windows(self):
         """Catches a best guess being called a failure when the built robot can be set to pass at either end of the guess."""

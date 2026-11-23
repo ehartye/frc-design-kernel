@@ -794,14 +794,15 @@ The campaign, not the trial, performs the method:
    at a time. If an end changes the outcome, the edge is closed in on by halving between the last value that held
    and the first that did not (three times by default, `rangeRefine`). An input listed under `brackets` is run
    outward from the nominal and **each side stops at its first failure**. Measured inputs are not varied.
-5. **Coverage.** For each adjustment the trial names: at each end of each uncertain input's range, the adjustment's
+5. **Coverage.** For each adjustment the trial names: at each end of each uncertain input's range where the outcome
+   changed (an input that held needs no adjustment, and costs no runs), the adjustment's
    own range is searched for settings that pass. A few points are tried (both ends and the nominal setting), and
    the edge between a passing and a failing setting is closed in on by halving, twice. The record then states, per
    uncertain input and adjustment, the window of settings that passes at the low end and at the high end, whether
    some setting passes at each, and whether one fixed setting passes at both (and which).
 6. **A grid only when asked.** `"grid": {"inputs": [...]}` also runs every combination of those inputs' range ends.
 
-A change is a path into the trial's case (`materials.tread.friction`, `commands.belt`,
+A change to null removes the thing it names, except a `busV`, where null is the power off. A change is a path into the trial's case (`materials.tread.friction`, `commands.belt`,
 `loads.braking.accelerationMps2`; list items by name) or a design parameter (`parameters.squeeze`). A parameter
 change rebuilds the design, so the real solids move.
 

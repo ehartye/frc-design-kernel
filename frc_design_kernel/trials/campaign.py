@@ -41,14 +41,18 @@ def walk(case, path, where):
         node = node[part]
 
 
+KEEPS_NULL = ("busV",)      # fields where null is itself a value: a bus voltage of null is the power off
+
+
 def changed(case, changes, where):
-    """A copy of the case with the changes made to it. A change to null removes the thing. Parameter changes are not made here."""
+    """A copy of the case with the changes made to it. A change to null removes the thing, except a field where null is a
+    value (a busV of null switches the power off). Parameter changes are not made here."""
     out = copy.deepcopy(case)
     for path, value in changes.items():
         if path.startswith(PARAMETERS):
             continue
         node, key = walk(out, path, where)
-        if value is None:
+        if value is None and key not in KEEPS_NULL:
             del node[key]
         else:
             node[key] = value
@@ -220,8 +224,10 @@ def what_it_used(design, assembly, name, case, facts):
 
 
 def cover(design, name, case, plans, runner, met, trial, judge):
-    """The coverage campaign: at each end of each assumed range, the window of each named adjustment that passes."""
-    windows = windows_for(design, name, case, plans)
+    """The coverage campaign: at each end of each assumed range whose outcome changed inside it, the window of each named
+    adjustment that passes. An input that held across its range needs no adjustment, so nothing is run for it."""
+    flipped = {plan.path for plan in plans if plan.range is not None and not plan.summary()["held"]}
+    windows = {key: value for key, value in windows_for(design, name, case, plans).items() if key[0] in flipped}
 
     def changes_for(key, setting):
         path, end, adjustment = key
