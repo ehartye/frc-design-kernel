@@ -984,6 +984,13 @@ MuJoCo.
   flat touches at dozens), the surface's spring is shared among the points by depth: the surface presses with its
   stiffness times the deepest overlap, split between the points in proportion to their depths. One point gets it
   all, as in planar.
+- **A round piece meets an edge or a corner at its true direction.** Where a ball or a ring's round segment meets a
+  shape MuJoCo collides by its general convex method (a mesh or a cylinder), MuJoCo reports the nearest face's
+  direction at an edge or a corner, and too shallow a depth. On a ring pressed onto a bevelled lip the direction was
+  22 to 37 degrees off, so the lip pushed the ring along the floor instead of lifting it. The library works each such
+  point out again from the piece's core (the ball's centre, or the segment's centre line): the nearest point of the
+  shape to the core gives the direction and the depth, measured by MuJoCo's own distance query, which is exact while
+  the core is outside the shape. Boxes, balls and the floor already come out exact and are left as MuJoCo gives them.
 - **A driven surface** is any solid a declared drive turns (`turns`): a roller, a wheel or a belt. It stays a still
   shape. Its surface runs at the drive's speed across the turn's axis, and the friction law sees that speed. The
   friction along the surface loads the drive's motor model, so current and sag come out as in planar.
