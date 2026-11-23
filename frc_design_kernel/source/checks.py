@@ -212,8 +212,12 @@ def check_trials(design, solids):
     for name, trial in trials.items():
         where = f'trials "{name}"'
         check_sourced(trial.get("flaps", []), f"{where} flaps")
-        if trial["piece"]["use"] not in design["pieces"]:
-            raise unknown(f"{where} piece", "piece", trial["piece"]["use"], design["pieces"])
+        for label, use in [("piece", trial["piece"]["use"])] + [(f'others "{other["name"]}"', other["use"]) for other in trial.get("others", [])]:
+            if use not in design["pieces"]:
+                raise unknown(f"{where} {label}", "piece", use, design["pieces"])
+        if trial.get("others") and trial.get("betweenPieces") not in design["materials"]:
+            raise DesignError(f"{where} betweenPieces", "a trial with more than one piece must name the material of piece against piece",
+                              'Add "betweenPieces" with the name of a material')
         for i, surface in enumerate([*trial["surfaces"], *trial.get("flaps", [])]):
             label = f'{where} surface "{surface.get("name", surface.get("solid", i))}"'
             if "hingeMm" not in surface:

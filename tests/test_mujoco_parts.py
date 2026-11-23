@@ -5,6 +5,8 @@ Where there is a closed form the engine is held to it; otherwise the same trial 
 import importlib.util
 import unittest
 
+from frc_design_kernel import DesignError
+
 from .test_mujoco import one_run
 from .trial_cases import ASSUMES, G, MEASURED, PANEL, bench
 
@@ -89,6 +91,53 @@ class Parts(unittest.TestCase):
         self.assertAlmostEqual(found["measures"]["speed"], 0.5 + 1.0, delta=0.03)
         self.assertEqual((facts["bodies"], facts["driven"]), ({"cart:go": "slide"}, {"deck": "spin"}))
         self.assertLess(0.5 * G * 0.45, 2.5)       # friction could have taken it further: the speed is set by the surfaces, not by the time
+
+
+def struck(engine="mujoco", **extra):
+    """One block slides into another just like it on a slick bed."""
+    trial = {**BASE, "engine": engine, "durationS": 0.3, "piece": {"use": "block", "start": {"atMm": [0, -480], "velocityMps": [1, 0]}},
+             "others": [{"name": "second", "use": "block", "atMm": [100, -480]}], "betweenPieces": "lively",
+             "surfaces": [{"solid": "belt bed", "material": "slick"}],
+             "measures": {"first": {"final": "speedMps"}, "second": {"final": "other.second.speedMps"}, "hit": {"peak": "contact.piece second.forceN"}}}
+    trial.update(extra)
+    return one_run(trial, materials={"slick": SLICK, "lively": {**PANEL, "restitution": MEASURED(0.5)}})
+
+
+class OnePieceOnly(unittest.TestCase):
+    def test_the_planar_engine_refuses_a_second_piece_by_name(self):
+        """Catches a second piece being silently left out of a planar run."""
+        with self.assertRaisesRegex(DesignError, "the planar engine runs one piece"):
+            struck("planar")
+
+    def test_piece_against_piece_needs_a_named_material(self):
+        """Catches pieces meeting with a made-up friction and bounce."""
+        with self.assertRaisesRegex(DesignError, "must name the material of piece against piece"):
+            struck(betweenPieces="missing")
+
+
+@unittest.skipUnless(HAVE, "MuJoCo is not installed (the optional extra)")
+class Pieces(unittest.TestCase):
+    def test_two_alike_pieces_share_speed_as_the_bounce_value_says(self):
+        """Catches a second piece that is not there, is not hit, or gains momentum: with bounce e the two leave at (1 - e) / 2 and (1 + e) / 2."""
+        found, facts = struck()
+        first, second = found["measures"]["first"], found["measures"]["second"]
+        self.assertAlmostEqual(first + second, 1.0, delta=0.01)      # momentum is kept
+        self.assertAlmostEqual(second, 0.75, delta=0.04)
+        self.assertGreater(found["measures"]["hit"], 10.0)
+        self.assertEqual(facts["others"], {"second": "block"})
+
+    def test_a_belt_carries_a_piece_beside_the_trials_plane_too(self):
+        """Catches driven-surface friction reaching only the trial's own piece: a second block beside it must come up to belt speed as well."""
+        design = bench({})
+        design["drives"] = {"spin": {"radiusMm": 25, "turns": [{"solid": "belt bed", "axis": [0, 1, 0]}]}}
+        trial = {**BASE, "engine": "mujoco", "durationS": 0.4, "piece": {"use": "block", "start": {"atMm": [0, -480]}},
+                 "others": [{"name": "beside", "use": "block", "atMm": [0, -480], "acrossMm": 45}], "betweenPieces": "panel",
+                 "commands": {"spin": {"mode": "imposed", "speedMps": 1.0}}, "surfaces": [{"solid": "belt bed", "material": "panel"}],
+                 "measures": {"own": {"final": "speedMps"}, "beside": {"final": "other.beside.speedMps"}, "off": {"final": "other.beside.offPlaneMm"}}}
+        found, _ = one_run(trial, drives=design["drives"])
+        self.assertAlmostEqual(found["measures"]["own"], 1.0, delta=0.02)
+        self.assertAlmostEqual(found["measures"]["beside"], 1.0, delta=0.02)
+        self.assertAlmostEqual(found["measures"]["off"], 45.0, delta=0.5)
 
 
 if __name__ == "__main__":

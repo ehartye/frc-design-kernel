@@ -211,6 +211,8 @@ def build(assembly, name, a_case, handed=None):
     where = f'trials "{name}"'
     case = plain(a_case)
     plane, options = case["plane"], case.get("planar", {})
+    if case.get("others"):
+        fail(where, "the planar engine runs one piece", 'Run a trial with more than one piece with "engine": "mujoco"')
     use = case["piece"]["use"]
     piece = case["pieces"][use]
     radius_mm, factor = piece_section(use, piece, plane["normal"], where)

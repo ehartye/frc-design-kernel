@@ -317,6 +317,41 @@
           "$ref": "#/$defs/number"
         }
       }
+    },
+    "others": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "use",
+          "atMm"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "use": {
+            "type": "string",
+            "minLength": 1
+          },
+          "atMm": {
+            "$ref": "#/$defs/point2"
+          },
+          "acrossMm": {
+            "$ref": "#/$defs/number"
+          },
+          "velocityMps": {
+            "$ref": "#/$defs/point2"
+          }
+        }
+      }
+    },
+    "betweenPieces": {
+      "type": "string",
+      "minLength": 1
     }
   },
   "$defs": {
