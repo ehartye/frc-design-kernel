@@ -6,7 +6,8 @@ Short rules for people and coding agents who change this library. The reasons ar
 
 - No module over **600 lines**. No function over **120 lines**. No circular imports. Tests enforce all three.
 - Aim far below the ceilings. One small module does one job.
-- The only dependency is `cadquery-ocp`. Everything else is the standard library.
+- The only dependency is `cadquery-ocp`. Everything else is the standard library. MuJoCo is an optional extra:
+  only `trials/mujoco_run.py` may import it, and nothing may need it unless a trial names that engine.
 - Scope is **build, measure, try**. Do not add guidelines, pass or fail verdicts, receipts, review pages, publishing
   or CI policy. Tools that judge a design own those.
 

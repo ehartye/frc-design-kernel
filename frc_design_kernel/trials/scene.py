@@ -135,9 +135,9 @@ def mover(entry, assembly, plane, where):
     return out
 
 
-def check_names(case, scene, where):
-    """Every signal and event a trial's conditions, measures and limits name must exist."""
-    signals = set(signal_names(scene))
+def check_names(case, scene, where, names=None):
+    """Every signal and event a trial's conditions, measures and limits name must exist. names are the engine's signals."""
+    signals = set(names or signal_names(scene))
     events = {event["name"] for event in scene["events"]}
     used = [(event["when"], f'event "{event["name"]}"') for event in scene["events"]]
     used += [(rule["when"], f'drive "{name}" rule') for name, d in scene["drives"].items() for rule in d.get("rules", ())]

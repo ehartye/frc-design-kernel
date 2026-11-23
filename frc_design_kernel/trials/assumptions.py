@@ -14,7 +14,16 @@ PLANAR = [
     {"id": "no-air", "text": "No air drag or lift, unless a custom force law adds one."},
     {"id": "fixed-step", "text": "Time moves in fixed steps; the half-step repeat is the check on the step."},
 ]
-STANDING = {"planar": PLANAR}
+MUJOCO = [
+    {"id": "rigid-bodies", "text": "Every body is rigid. All give is in the contact between the piece and a surface."},
+    {"id": "single-piece", "text": "One free piece. No other piece is present or touches it."},
+    {"id": "convex-shapes", "text": "A solid that is hollow, cut or imported is used as its convex hull; the record lists which."},
+    {"id": "mapped-contact", "text": "Each material's spring and damper are handed to the engine's own soft contact for the piece's mass; the engine's friction is a hard limit, not a spring."},
+    {"id": "fixed-surfaces", "text": "Surfaces stand still. Drives, flaps, loads and movers are not run by this engine yet."},
+    {"id": "no-air", "text": "No air drag or lift."},
+    {"id": "fixed-step", "text": "Time moves in fixed steps; the half-step repeat is the check on the step."},
+]
+STANDING = {"planar": PLANAR, "mujoco": MUJOCO}
 
 
 def stated(trial):

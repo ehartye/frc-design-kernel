@@ -13,7 +13,7 @@ from ..errors import DesignError
 from ..source.load import load
 from ..source.uses import parameters_used
 from ..version import generator
-from . import assumptions, custom, fit, inputs, planar, record, scene as scenes
+from . import assumptions, custom, engines, fit, inputs, record
 from . import plan as plans_
 from .plan import DEFAULT_REFINE, Bracket, Window
 
@@ -151,7 +151,7 @@ def execute(task):
     """One run, in this process or a worker: (source path, trial name, scene, step)."""
     source, name, scene, step = task
     design = load(source)
-    return planar.run(scene, step, custom.force_laws(design, design.data["trials"][name]))
+    return engines.run(scene, step, custom.force_laws(design, design.data["trials"][name]))
 
 
 class Builder:
@@ -184,7 +184,7 @@ class Runner:
                 continue
             assembly = self.builder.assembly(changes)
             case = changed(inputs.case(assembly.data, assembly.data["trials"][self.name]), changes, self.where)
-            scene = scenes.build(assembly, self.name, case, self.handed)
+            scene = engines.build(assembly, self.name, case, self.handed)
             self.facts = self.facts or scene["facts"]
             scene.pop("facts")
             tasks.append((self.source, self.name, scene, scene["stepS"] / 2 if half else scene["stepS"]))
@@ -278,8 +278,7 @@ def run_trial(design, name, builder, handed, workers):
     word, findings = record.result(met["nominal"][0], control, ranges, steps, missing, grid_found, covered)
     stated, standing = assumptions.stated(trial)
     ranking = record.sensitivity(ranges, nominal["measures"])
-    made = generator()
-    return {"engine": {"name": trial.get("engine", "planar"), "version": made["version"], "commit": made["commit"]},
+    return {"engine": engines.stamp(trial.get("engine", "planar")),
             "definition": case, "assumptions": {"stated": stated, "engine": standing}, "inputs": found, "saw": runner.facts,
             "used": what_it_used(design, builder.assembly(), name, case, runner.facts),
             "result": word, "findings": findings, "firstUnmet": met["nominal"][1],
