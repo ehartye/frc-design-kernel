@@ -11,7 +11,7 @@ from ..builder import placement
 from ..errors import DesignError
 from ..kernel.section import AXES, outlines
 from ..motion import stages as stage_math
-from . import contact, frames, rules
+from . import air, contact, frames, rules
 from .inputs import plain
 from .planar import signal_names
 
@@ -238,6 +238,7 @@ def build(assembly, name, a_case, handed=None):
         "surfaces": surfaces, "hinges": hinges, "drives": drives, "movers": movers,
         "loads": case.get("loads", []), "events": case.get("events", []), "measures": case.get("measures", {}), "facts": facts,
         "frames": frames.build(case, assembly.data, where), "normal": plane["normal"], "levelMm": plane["atMm"],
+        "air": air.params(case, use, radius, where),
     }
     check_names(case, scene, where)
     return scene

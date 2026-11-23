@@ -12,7 +12,7 @@ from ..errors import DesignError
 from ..motion import matrix as mx
 from ..motion import stages as stage_math
 from . import drives as drive_math
-from . import frames, mujoco_contact
+from . import air, frames, mujoco_contact
 from .mujoco_scene import quaternion
 from .planar import Recorder, fire, load_force
 from .rules import holds, started
@@ -38,6 +38,7 @@ def signal_names(scene):
         names += [f"drive.{name}.speedMps", f"drive.{name}.currentA", f"drive.{name}.supplyA"]
     names += [f"hinge.{name}.angleDeg" for name in scene["hinges"]]
     names += frames.names(scene["frames"], scene["normal"])
+    names += ["air.dragN", "air.liftN"] if scene.get("air") else []
     for name in scene["others"]:
         names += [f"other.{name}.{a}Mm", f"other.{name}.{b}Mm", f"other.{name}.offPlaneMm", f"other.{name}.speedMps", f"contact.piece {name}.forceN"]
     for name in dict.fromkeys(scene["surfaceOf"].values()):
@@ -127,6 +128,15 @@ def push(mujoco, model, data, scene, law, pieces, masses, drive_state, happened,
             along = load_force(load, masses[body], happened, t)
             wrench[iu] += along[0]
             wrench[iv] += along[1]
+        p = scene.get("air") if pieces[body] is None else scene["others"][pieces[body]].get("air")
+        if p:       # drag and lift through still air, from the piece's velocity and spin in the world
+            import numpy
+            moving = numpy.zeros(6)
+            mujoco.mj_objectVelocity(model, data, mujoco.mjtObj.mjOBJ_BODY, body, moving, 0)
+            push_, drag, lift = air.force(p, [float(v) for v in moving[3:]], [float(v) for v in moving[:3]])
+            wrench[:3] = [a + b for a, b in zip(wrench[:3], push_)]
+            if pieces[body] is None:
+                scene["airNow"] = (drag, lift)
         data.xfrc_applied[body] = wrench
     return pressed, loads
 
@@ -151,6 +161,8 @@ def run(scene, step=None, forces=()):
         pressed, loads = push(mujoco, model, data, scene, law, pieces, masses, drive_state, happened, t, dt)
         signals, touching = read(model, data, scene, blank, drive_state, pieces, pressed)
         signals.update(frames.read(scene["frames"], scene["normal"], [float(v) * 1e3 for v in data.qpos[-7:-4]], happened, t))
+        if scene.get("air"):
+            signals["air.dragN"], signals["air.liftN"] = scene.get("airNow", (0.0, 0.0))
         if steps == 0:
             recorder.sample(0.0, signals, 0, dt, force=True)
         else:

@@ -20,7 +20,7 @@ from ..kernel.props import bounds, volume
 from ..kernel.section import AXES
 from ..motion import matrix as mx
 from ..motion import ops
-from . import convex, frames
+from . import air, convex, frames
 from .inputs import plain
 from .mujoco_parts import MM, bodies_xml, driven_by, fail, flap_of, mover_of, piece_body, quaternion, start_of, text
 from .scene import drives_for
@@ -165,7 +165,7 @@ def build(assembly, name, a_case, handed=None):
                  "level": (plane["atMm"] + other.get("acrossMm", 0.0)) * MM}
         found = piece_body(other["use"], another, another["massKg"], begin, plane["normal"], segments, f'other:{other["name"]}')
         other_xml += found[0]
-        others[other["name"]] = {"velocity": found[1], "massKg": another["massKg"]}
+        others[other["name"]] = {"velocity": found[1], "massKg": another["massKg"], "air": air.params(case, other["use"], found[2], where)}
     body, velocity, radius = piece_body(use, piece, mass, start, plane["normal"], segments)
     gravity = [0.0, 0.0, 0.0 if plane["normal"] == "z" else -case.get("gravityMps2", 9.80665)]
     xml = (f'<mujoco><option timestep="{case["stepS"]:.9g}" gravity="{text(gravity)}"><flag multiccd="enable"/></option>'
@@ -183,4 +183,4 @@ def build(assembly, name, a_case, handed=None):
             "rest": {"speedMps": 0.005, "rimSpeedMps": 0.005, **case.get("rest", {})}, "moving": moving, "driven": model.driven_geoms, "materialOf": model.material_of,
             "materials": case["materials"], "between": case.get("betweenPieces"), "options": case.get("planar", {}),
             "events": case.get("events", []), "measures": case.get("measures", {}), "drives": drives,
-            "hinges": {flap["flap"]: f"flap:{flap['flap']}" for _, flap in flaps}, "movers": {}, "frames": frames.build(case, assembly.data, where), "loads": case.get("loads", []), "surfaces": [], "facts": facts}
+            "hinges": {flap["flap"]: f"flap:{flap['flap']}" for _, flap in flaps}, "movers": {}, "frames": frames.build(case, assembly.data, where), "air": air.params(case, use, radius, where), "loads": case.get("loads", []), "surfaces": [], "facts": facts}

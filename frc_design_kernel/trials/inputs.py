@@ -14,7 +14,7 @@ import copy
 
 TABLES = ("pieces", "materials", "motors", "drives")
 PHYSICAL = {
-    "pieces": ("massKg", "inertiaKgM2"),
+    "pieces": ("massKg", "inertiaKgM2", "dragCoefficient", "frontalAreaM2", "liftSlope", "liftMax"),
     "materials": ("stiffnessNPerM", "restitution", "dampingRatio", "friction"),
     "motors": ("ktNmPerA", "ohm", "keVsPerRad"),
     "drives": ("efficiency", "movingKg", "inertiaKgM2", "dragNm"),
@@ -71,4 +71,13 @@ def physical_inputs(a_case):
                 else:
                     row["source"] = "unstated"
                 found.append(row)
+    if "air" in a_case:         # the air the piece flies through: one entry with no name
+        item, row = a_case["air"]["densityKgM3"], {"path": "air.densityKgM3", "value": val(a_case["air"]["densityKgM3"])}
+        if isinstance(item, dict) and "measured" in item:
+            row.update(source="measured", reference=item["measured"])
+        elif isinstance(item, dict) and "assumed" in item:
+            row.update(source="assumed", range=list(item["assumed"]))
+        else:
+            row["source"] = "unstated"
+        found.append(row)
     return found
