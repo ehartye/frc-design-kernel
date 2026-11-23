@@ -12,7 +12,7 @@ from ..errors import DesignError
 from ..motion import matrix as mx
 from ..motion import stages as stage_math
 from . import drives as drive_math
-from . import mujoco_contact
+from . import frames, mujoco_contact
 from .mujoco_scene import quaternion
 from .planar import Recorder, fire, load_force
 from .rules import holds, started
@@ -37,6 +37,7 @@ def signal_names(scene):
     for name in scene["drives"]:
         names += [f"drive.{name}.speedMps", f"drive.{name}.currentA", f"drive.{name}.supplyA"]
     names += [f"hinge.{name}.angleDeg" for name in scene["hinges"]]
+    names += frames.names(scene["frames"], scene["normal"])
     for name in scene["others"]:
         names += [f"other.{name}.{a}Mm", f"other.{name}.{b}Mm", f"other.{name}.offPlaneMm", f"other.{name}.speedMps", f"contact.piece {name}.forceN"]
     for name in dict.fromkeys(scene["surfaceOf"].values()):
@@ -149,6 +150,7 @@ def run(scene, step=None, forces=()):
         mujoco.mj_fwdVelocity(model, data)      # how everything moves now
         pressed, loads = push(mujoco, model, data, scene, law, pieces, masses, drive_state, happened, t, dt)
         signals, touching = read(model, data, scene, blank, drive_state, pieces, pressed)
+        signals.update(frames.read(scene["frames"], scene["normal"], [float(v) * 1e3 for v in data.qpos[-7:-4]], happened, t))
         if steps == 0:
             recorder.sample(0.0, signals, 0, dt, force=True)
         else:

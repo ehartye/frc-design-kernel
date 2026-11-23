@@ -181,13 +181,21 @@ class Cost(unittest.TestCase):
         path = load_data(bench({"hold": hold_trial()}, materials=GRIPPY)).path
         told = []
         found = campaign.run_campaign(path, announce=told.append)
-        self.assertEqual(told, [{"runs": 11, "steps": 120000, "aboutSeconds": 0.6, "trials": {"hold": {"runs": 11, "steps": 120000}}}])
+        self.assertEqual(told, [{"runs": 11, "steps": 120000, "aboutSeconds": 0.6, "trials": {"hold": {"runs": 11, "steps": 120000, "aboutSeconds": 0.6}}}])
         self.assertEqual((found["cost"]["runsAtMost"], found["cost"]["runs"]), (11, 5))
         self.assertLess(found["cost"]["stepsRun"], found["cost"]["stepsAtMost"])
         told.clear()
         with self.assertRaisesRegex(DesignError, "needs up to 120000 steps in up to 11 runs, over the cap of 50000"):
             campaign.run_campaign(path, max_steps=50000, announce=told.append)
         self.assertEqual(len(told), 1)      # the cost was still stated before the refusal
+
+
+    def test_a_3d_trial_is_timed_at_the_3d_engines_pace(self):
+        """Catches a 3D campaign announced at the planar engine's pace: a hundred times too quick, so nobody can plan on it."""
+        design = load_data(bench({"hold": hold_trial(), "hold in 3D": {**hold_trial(), "engine": "mujoco"}}, materials=GRIPPY))
+        cost = campaign.estimate(design)["trials"]
+        self.assertEqual(cost["hold in 3D"]["steps"], cost["hold"]["steps"])
+        self.assertAlmostEqual(cost["hold in 3D"]["aboutSeconds"], 100 * cost["hold"]["aboutSeconds"], delta=1.0)
 
 
 class HandOff(unittest.TestCase):
