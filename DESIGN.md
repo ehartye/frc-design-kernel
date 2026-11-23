@@ -214,6 +214,9 @@ the whole group; its solids then must not carry their own mass, so nothing is co
 `place` on a group moves every solid in it once, when the design is built. Use it to draw a mechanism in its own
 handy coordinates and then put it in the robot frame.
 
+**One group, one rigid body.** If a left hook and a right hook turn in opposite directions, they are two groups, even
+though a person would call them "the hooks". Solids that never move relative to each other belong in one group.
+
 ### 4.4 Fixtures
 
 Fixtures are solids that are not part of the robot: field elements, a test stand, a game piece. They take the same
@@ -266,6 +269,31 @@ A motion says how groups get from one pose to another. There are two ways to wri
 Between each pair of poses a group turns and slides at an even rate along the one natural path between them (a turn
 about a fixed axis plus a slide along that axis). An arm drawn at two angles about its pivot therefore swings about
 that pivot. The poses share the stroke evenly.
+
+### 4.8 What the source does not say, and where it goes
+
+A hand-written builder program can do anything. A design source cannot, on purpose. This table says where each thing
+a builder used to do now lives.
+
+| A builder used to... | Now |
+|---|---|
+| Work out sizes from other sizes, with trig | `parameters` and `=` expressions (4.1) |
+| Loop over left and right, or four corners | `each` rows (4.2) |
+| Join, cut or clip simple shapes into one solid | `union`, `difference`, `intersection` (4.2) |
+| Draw a pie slice of a cylinder, a hollow tube, a ball | `cylinder` with `sweepDeg`, `tube`, `sphere` (4.2) |
+| Place a supplier's solid, picked by name | `part` (4.2) |
+| Move a mechanism's members together, and what rides on them | groups and `carriedBy` (4.3) |
+| Split a curved move into many straight cases | one `path` operation or one `through` motion (4.7, 5) |
+| Draw a second copy of a mechanism in its other position | a named pose (4.6) |
+| Fix the STEP header time and names so builds repeat | the library does it (7) |
+| Revolve a profile, sweep or loft a section | a custom shape (6), until two projects need the same one |
+| Change a supplier's solid (stretch a shaft, trim a housing) | not offered. A part is placed, never changed. Draw the changed solid, or use a custom shape that builds it from numbers |
+| Simplify a detailed supplier assembly into a few envelope blocks | not offered. Do it once outside the library and keep the result as a STEP file used through `part` |
+| Read numbers from a trial result or another file | not offered. The source holds the numbers; whoever produces new numbers edits the source |
+| Fit moves to a recorded trace | not offered here. This will belong with the try layer, which owns traces |
+| Pick a variant with an `if` | not offered. A variant is its own source file |
+| Check clearances, starting size or reach, and stop the build | not here, ever. The measure layer will report numbers; tools that judge decide |
+| Write budgets, records, review pages | not here, ever (section 2) |
 
 ## 5. The motion vocabulary
 
@@ -353,6 +381,17 @@ kind, volume, bounding box, mass and where the mass came from); each group (role
 poses and motions with every number worked out; parts used (file, fingerprint, solid name); custom shapes used; mass
 totals and the solids with no mass; and the library version and commit.
 
+`validate SOURCE` checks everything that needs no CAD kernel: the schema, names, loops, files present. `build` then
+checks the rest: every shape is one valid solid, every part's solid name exists in its file, every motion with a
+`to` really ends there. `build --pose NAME` exports the solids at a named pose; without it they are exported as
+drawn.
+
+The manifest also gives the box around the whole robot as exported and at every named pose.
+
+**One body per name.** A moved or imported solid is, inside the CAD kernel, a shared body plus a placement. Written
+to STEP like that, the name lands on the wrong level of the file. The export works the placement into the geometry
+first, so each name in the file holds exactly one plain solid.
+
 **Deterministic.** The same source gives the same manifest, byte for byte, and the same STEP files. The STEP header
 carries a fixed timestamp for that reason. A test builds twice and compares.
 
@@ -410,3 +449,7 @@ These were the simpler choice at the time. Any of them may change while the libr
 10. **Solid names are plain ASCII text.** The CAD kernel damages accented letters and symbols when it writes a STEP
     file, so the build refuses them. Names read from a supplier's STEP file are repaired where possible.
 11. **No revolve, sweep or loft shapes.** They are custom-shape cases until a second project needs one.
+12. **A group is one rigid body**, so mirrored members that move differently are separate groups. If that makes
+    group lists long, add a way to gather groups under one heading for the reader.
+13. **Fixtures move like any group.** A tool that draws the field moving past a still robot poses the fixture
+    groups. There is no separate idea of "the robot drives".
