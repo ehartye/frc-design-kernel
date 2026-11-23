@@ -125,7 +125,7 @@ class Example(unittest.TestCase):
         """Control: the sameness test can fail."""
         data = json.loads(EXAMPLE.read_text(encoding="utf-8"))
         data["parameters"]["lift"] = 221
-        changed = load_data({k: v for k, v in data.items() if k not in ("custom", "fixtures", "mounts", "contacts")} | {
+        changed = load_data({k: v for k, v in data.items() if k not in ("custom", "fixtures", "mounts", "contacts", "trials")} | {
             "solids": [s for s in data["solids"] if "part" not in s and s["shape"]["kind"] != "custom"]})
         self.assertNotEqual(kernel.export(kernel.build(changed), self.out / "c")["poses"], self.manifest["poses"])
 

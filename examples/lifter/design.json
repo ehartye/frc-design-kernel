@@ -96,5 +96,29 @@
                  "moves": {"load": [{"kind": "path", "curve": "arc",
                                      "throughMm": [[0, 0, 350], [130, 0, 400], [260, 0, 350]]}]}},
     "whole cycle": {"through": ["lowered", "raised", "set down"]}
+  },
+  "trials": {
+    "bar stays on the tines": {
+      "note": "A round bar lies across the tines against the carriage plate. The lifter is braked; the bar must stay put.",
+      "plane": {"normal": "y", "atMm": 60},
+      "stepS": 0.0001, "durationS": 1.5, "traceS": 0.01, "fitToleranceMm": 2,
+      "piece": {"radiusMm": 15, "massKg": 0.4, "inertiaFactor": 0.5, "start": {"atMm": ["=post_x + 26 + 15", "=fork_z + 15"]}},
+      "materials": {"steel": {"stiffnessNPerM": 200000, "restitution": 0.2, "friction": 0.4, "law": "stick"}},
+      "surfaces": [
+        {"name": "tine", "solid": "tine left", "material": "steel"},
+        {"name": "carriage plate", "solid": "carriage plate", "material": "steel"}
+      ],
+      "loads": [{"name": "braking", "along": [1, 0], "accelerationMps2": 3, "startS": 0.2, "durationS": 0.3,
+                 "note": "The frame speeds up toward +X, so the bar is pressed back against the plate."}],
+      "events": [
+        {"name": "rolled off", "when": {"signal": "zMm", "below": "=fork_z - 40"}, "outcome": "rolled off the tines"},
+        {"name": "stayed", "when": {"all": [{"signal": "tS", "above": 0.8}, {"restFor": 0.3}]}, "outcome": "stayed"}
+      ],
+      "measures": {"travelX": {"final": "xMm"}, "pressN": {"peak": "contact.carriage plate.forceN"}},
+      "pass": {"outcomes": ["stayed"]},
+      "control": {"change": {"loads.braking.accelerationMps2": -6},
+                  "note": "Braked the other way, nothing stops the bar and it must roll off the tips."},
+      "brackets": [{"input": "loads.braking.accelerationMps2", "unit": "m/s2", "values": [-6, -1, 3, 9]}]
+    }
   }
 }

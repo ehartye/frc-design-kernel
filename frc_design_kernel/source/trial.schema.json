@@ -189,6 +189,7 @@
       "required": ["along", "accelerationMps2", "durationS"],
       "additionalProperties": false,
       "properties": {
+        "name": {"type": "string", "minLength": 1},
         "along": {"$ref": "#/$defs/point2"},
         "accelerationMps2": {"$ref": "#/$defs/number"},
         "shape": {"enum": ["step", "halfSine"]},

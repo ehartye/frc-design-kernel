@@ -53,7 +53,7 @@ class Recorder:
     """Keeps what a run reports: contact rows per surface, measures, and the trace."""
 
     def __init__(self, scene, columns):
-        self.rows, self.open, self.trace, self.next = {}, {}, [], 0.0
+        self.rows, self.open, self.trace = {}, {}, []
         self.every, self.columns = scene.get("traceS", 0.002), columns
         self.measures = scene.get("measures", {})
         self.values = {name: None for name in self.measures}
@@ -76,10 +76,11 @@ class Recorder:
                 if best is None or (value > best if kind == "peak" else value < best):
                     self.values[name] = value
 
-    def sample(self, t, signals, force=False):
-        if self.every and (force or t >= self.next):
-            self.trace.append([round(t, 5)] + [round(signals[c], 4) for c in self.columns[1:]])
-            self.next += self.every
+    def sample(self, t, signals, steps, dt, force=False):
+        """Add a trace row every traceS of run time, counted in whole steps so the rows land on exact times."""
+        if self.every and (force or steps % max(1, round(self.every / dt)) == 0):
+            if not self.trace or self.trace[-1][0] != round(t, 5):
+                self.trace.append([round(t, 5)] + [round(signals[c], 4) for c in self.columns[1:]])
 
     def finish(self, signals, happened):
         for name, spec in self.measures.items():
@@ -140,7 +141,8 @@ def touch(scene, piece_state, radius, drive_state, hinge_state, offset, velocity
             touching[name] = max(touching.get(name, 0.0), found[5])
             pressed[name] = pressed.get(name, 0.0) + found[3]
             if drive:
-                loads[drive] += surface["ratio"] * surface["sign"] * (found[0] * tx + found[1] * tz)
+                # Only friction loads a drive: the part of it that lies along the way the surface runs.
+                loads[drive] += surface["ratio"] * surface["sign"] * found[4] * (found[6] * tx + found[7] * tz)
             if hinge:
                 twist[hinge] += reach * (-found[0] * swing[0] - found[1] * swing[1])
     return fx, fz, torque, loads, touching, pressed, twist
@@ -204,7 +206,7 @@ def run(scene, step=None, forces=()):
     arm_on_piece = scene.get("contactPoint") == "onPiece"
     t, steps, outcome = 0.0, 0, "timeout"
     signals = read_signals(blank, scene["axes"], 0.0, (x, z, vx, vz, w), drive_state, hinge_state, offset, {}, {})
-    recorder.sample(0.0, signals, force=True)
+    recorder.sample(0.0, signals, 0, dt, force=True)
     while t < scene["durationS"]:
         velocity = {name: mover_velocity(m, happened, t) for name, m in scene["movers"].items()}
         cx, cz, turn, loads, touching, pressed, twist = touch(scene, (x, z, vx, vz, w), radius, drive_state, hinge_state, offset, velocity,
@@ -232,12 +234,12 @@ def run(scene, step=None, forces=()):
         rest_since = (t if rest_since is None else rest_since) if resting else None
         recorder.contacts(t, touching)
         recorder.measure(signals)
-        recorder.sample(t, signals)
+        recorder.sample(t, signals, steps, dt)
         stop = fire(scene, signals, happened, events, rest_since, t)
         if stop is not None:
             outcome = stop
             break
-    recorder.sample(t, signals, force=True)
+    recorder.sample(t, signals, steps, dt, force=True)
     return {"outcome": outcome, "endS": t, "steps": steps, "stepS": dt, "events": events, "measures": recorder.finish(signals, happened),
             "end": {"piece": [x, z, vx, vz, w], "drives": {n: s["u"] for n, s in drive_state.items()},
                     "hingesDeg": {n: math.degrees(s["angle"]) for n, s in hinge_state.items()}},

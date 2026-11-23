@@ -49,7 +49,10 @@ def damping(stiffness, mass, restitution=None, ratio=None):
 
 
 def push(key, memory, state, radius, q, mat, surface_velocity, dt, arm_on_piece):
-    """The force of one contact on the piece: (fx, fz, torque, normal force, friction force), or None when not touching.
+    """The force of one contact on the piece, or None when not touching.
+
+    Returns (fx, fz, torque, normal force, friction force, depth, tangent x, tangent z); the friction force acts
+    along the tangent.
 
     state is (x, z, vx, vz, spin). q is the closest surface point. memory holds the stick law's spring stretch per
     contact key; it is dropped when the contact opens. arm_on_piece puts the contact point on the undeformed rim of
@@ -67,9 +70,9 @@ def push(key, memory, state, radius, q, mat, surface_velocity, dt, arm_on_piece)
     relx, relz = vx - w * rz - surface_velocity[0], vz + w * rx - surface_velocity[1]
     vn = relx * nx + relz * nz
     fn = mat["k"] * depth - mat["c"] * vn
-    if fn <= 0:
+    if fn <= 0:         # overlapping but parting fast enough that the spring and damper cancel: touching, no force
         memory.pop(key, None)
-        return None
+        return 0.0, 0.0, 0.0, 0.0, 0.0, depth, -nz, nx
     tx, tz = -nz, nx
     vt = relx * tx + relz * tz
     if mat["law"] == "smooth":
@@ -83,4 +86,4 @@ def push(key, memory, state, radius, q, mat, surface_velocity, dt, arm_on_piece)
             stretch = -ft / mat["kt"]
         memory[key] = stretch
     fx, fz = fn * nx + ft * tx, fn * nz + ft * tz
-    return fx, fz, rx * fz - rz * fx, fn, ft, depth
+    return fx, fz, rx * fz - rz * fx, fn, ft, depth, tx, tz

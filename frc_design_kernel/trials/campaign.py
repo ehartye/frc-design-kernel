@@ -32,19 +32,23 @@ def walk(trial, path, where):
         node = node[part]
 
 
+def parameter_changes(changes):
+    """The design parameters a set of changes replaces: {name: value}."""
+    return {path[len(PARAMETERS):]: value for path, value in changes.items() if path.startswith(PARAMETERS)}
+
+
 def changed(trial, changes, where):
-    """(a copy of the trial with the changes made, design parameter overrides). A change to null removes the thing."""
-    out, overrides = copy.deepcopy(trial), {}
+    """A copy of the trial with the changes made to it. A change to null removes the thing. Parameter changes are not made here."""
+    out = copy.deepcopy(trial)
     for path, value in changes.items():
         if path.startswith(PARAMETERS):
-            overrides[path[len(PARAMETERS):]] = value
             continue
         node, key = walk(out, path, where)
         if value is None:
             del node[key]
         else:
             node[key] = value
-    return out, overrides
+    return out
 
 
 def nominal_value(design, trial, path, where):
@@ -170,8 +174,10 @@ def run_campaign(source, names=None, max_steps=None, workers=1, announce=None):
         runs = planned_runs(design, name)
         tasks = []
         for run_id, changes, half in runs:
-            variant, overrides = changed(trial, changes, where)
-            scene = scenes.build(builder.assembly(overrides), name, variant, handed.get(trial["piece"]["start"].get("after")))
+            # A changed design parameter moves the solids and every trial number worked out from it.
+            assembly = builder.assembly(parameter_changes(changes))
+            variant = changed(assembly.data["trials"][name], changes, where)
+            scene = scenes.build(assembly, name, variant, handed.get(trial["piece"]["start"].get("after")))
             tasks.append((str(source), name, run_id, scene, scene["stepS"] / 2 if half else scene["stepS"]))
         if workers > 1 and len(tasks) > 1:
             with ProcessPoolExecutor(max_workers=workers) as pool:
