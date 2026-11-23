@@ -19,13 +19,13 @@ from ..kernel.section import AXES
 from ..motion import matrix as mx
 from ..motion import ops
 from . import convex
-from .contact import damping
 from .inputs import plain
 from .mujoco_parts import MM, bodies_xml, driven_by, fail, flap_of, mover_of, piece_body, quaternion, start_of, text
 from .scene import drives_for
 from .ready import breakdown
 
-IMPEDANCE = 0.95        # MuJoCo's contact "impedance": how much of the asked-for spring force it delivers
+LAW = ("the library's own spring, damper and friction law at the points MuJoCo finds; where a piece touches one surface at several points, "
+       "the surface's spring is shared among them by depth")
 NOT_YET = ("forces",)
 
 
@@ -48,19 +48,19 @@ class Model:
     """Collects the meshes and geoms of a scene and writes them as MJCF."""
 
     def __init__(self):
-        self.meshes, self.geoms, self.hulled, self.kinds, self.faceted, self.body, self.driven, self.driven_geoms = [], [], [], {}, {}, "world", None, {}
+        self.meshes, self.geoms, self.hulled, self.kinds, self.faceted, self.body, self.driven, self.driven_geoms, self.material_of = [], [], [], {}, {}, "world", None, {}, {}
 
-    def add(self, solid, surface, shape, placed_at, friction, solref):
+    def add(self, solid, surface, shape, placed_at, material):
         """Add the geoms of one shape entry, part by part where it is a union."""
         if shape["kind"] == "union":
             for part in shape["of"]:
-                self.add(solid, surface, part, placed_at, friction, solref)
+                self.add(solid, surface, part, placed_at, material)
             return
         found = primitive(shape, placed_at)
         broken = convex.pieces(shape) if found is None and breakdown(shape) != "convex" else None
         if broken is not None:      # its true convex pieces, from how it was built: nothing is filled in
             for points in broken[0]:
-                self.geom(solid, surface, self.mesh([mx.scale(mx.apply(placed_at, p), MM) for p in points]), friction, solref)
+                self.geom(solid, surface, self.mesh([mx.scale(mx.apply(placed_at, p), MM) for p in points]), material)
             if broken[1]:
                 self.faceted[solid] = broken[1]
             return
@@ -70,26 +70,22 @@ class Model:
             found = self.mesh(points)
             if breakdown(shape) != "convex" and solid not in self.hulled:
                 self.hulled.append(solid)
-        self.geom(solid, surface, found, friction, solref)
+        self.geom(solid, surface, found, material)
 
     def mesh(self, points):
         name = f"mesh{len(self.meshes)}"
         self.meshes.append(f'<mesh name="{name}" vertex="{text(v for p in points for v in p)}"/>')
         return {"type": "mesh", "mesh": name}
 
-    def geom(self, solid, surface, found, friction, solref):
+    def geom(self, solid, surface, found, material):
+        """One shape of a surface. It is found touching a piece, never another surface."""
         name = f"g{len(self.geoms)}"
         fields = " ".join(f'{key}="{value}"' for key, value in found.items())
-        if self.driven:     # friction of a driven surface is applied as a force, so the engine's own is switched off
+        if self.driven:
             self.driven_geoms[name] = self.driven
-        self.geoms.append((name, surface, f'<geom name="{name}" {fields} friction="{friction:.9g} 0.005 0.0001" solref="{text(solref)}" '
-                                          f'solimp="{IMPEDANCE} {IMPEDANCE} 0.001" priority="1" condim="{1 if self.driven else 3}" contype="0" conaffinity="1"/>', self.body))
+        self.material_of[name] = material
+        self.geoms.append((name, surface, f'<geom name="{name}" {fields} contype="0" conaffinity="1"/>', self.body))
         self.kinds.setdefault(solid, []).append(found["type"])
-
-
-def solref_for(material, mass):
-    stiffness = material["stiffnessNPerM"]
-    return (-stiffness / (mass * IMPEDANCE), -damping(stiffness, mass, material.get("restitution"), material.get("dampingRatio")) / (mass * IMPEDANCE))
 
 
 def build(assembly, name, a_case, handed=None):
@@ -113,42 +109,37 @@ def build(assembly, name, a_case, handed=None):
         solid, surface = entry["solid"], entry.get("name", entry["solid"])
         if solid not in built:
             fail(f'{where} "{surface}"', f'names the solid "{solid}", which the design does not have', "Name a solid or fixture of the design")
-        material = case["materials"][entry["material"]]
         source = built[solid]
         group, where_at = source["group"], posed[source["group"]]
         turned = None if flap else driven_by(case, solid)
         moved = flap or mover_of(case, assembly, group, entry.get("mover"), where)
         model.body = "world" if not moved else f"flap:{surface}" if flap else f"{group}:{moved['mover']}"
-        model.driven = turned and {**turned, "mu": material["friction"], "eps": case.get("planar", {}).get("slipSpeedMps", 0.01),
-                                   "body": model.body if moved and moved["kind"] != "path" else None}
+        model.driven = turned
         if moved:
             moving[model.body] = moved
             where_at = moved.get("start", where_at)       # a moved group is drawn where its motion starts
         sections.append({"solid": solid, "surface": surface})
         if "shape" in source and source["shape"]["kind"] != "custom":
             at = mx.chain([ops.at(source.get("place", [])), ops.at(groups[group].get("place", [])), where_at])
-            model.add(solid, surface, source["shape"], at, material["friction"], solref_for(material, mass))
+            model.add(solid, surface, source["shape"], at, entry["material"])
         else:       # an imported part or a custom shape: no construction to read, so its placed surface is hulled
             shift = mx.compose(where_at, mx.inverse(posed[group]))
             points = [mx.scale(mx.apply(shift, v), MM) for v in triangles(placed[solid], 0.2)["vertices"]]
-            model.geom(solid, surface, model.mesh(points), material["friction"], solref_for(material, mass))
+            model.geom(solid, surface, model.mesh(points), entry["material"])
             model.hulled.append(solid)
     start = {**start_of(case, handed), "level": plane["atMm"] * MM}
     segments = int(case.get("mujoco", {}).get("ringSegments", 32))
-    touch, others, other_xml = 'friction="0 0 0"', {}, ""
-    if case.get("others"):      # piece against piece takes one named material; surfaces still set their own friction
-        between = case["materials"][case["betweenPieces"]]
-        touch = f'friction="{between["friction"]:.9g} 0.005 0.0001" solref="{text(solref_for(between, mass))}" solimp="{IMPEDANCE} {IMPEDANCE} 0.001"'
+    others, other_xml = {}, ""
     for other in case.get("others", []):
         another = case["pieces"][other["use"]]
         begin = {"at": [v * MM for v in other["atMm"]], "velocity": list(other.get("velocityMps", [0.0, 0.0])), "spin": 0.0,
                  "level": (plane["atMm"] + other.get("acrossMm", 0.0)) * MM}
-        found = piece_body(other["use"], another, another["massKg"], begin, plane["normal"], segments, f'other:{other["name"]}', touch)
+        found = piece_body(other["use"], another, another["massKg"], begin, plane["normal"], segments, f'other:{other["name"]}')
         other_xml += found[0]
         others[other["name"]] = {"velocity": found[1], "massKg": another["massKg"]}
-    body, velocity, radius = piece_body(use, piece, mass, start, plane["normal"], segments, touch=touch)
+    body, velocity, radius = piece_body(use, piece, mass, start, plane["normal"], segments)
     gravity = [0.0, 0.0, 0.0 if plane["normal"] == "z" else -case.get("gravityMps2", 9.80665)]
-    xml = (f'<mujoco><option timestep="{case["stepS"]:.9g}" gravity="{text(gravity)}" cone="elliptic" impratio="10"/>'
+    xml = (f'<mujoco><option timestep="{case["stepS"]:.9g}" gravity="{text(gravity)}"><flag multiccd="enable"/></option>'
            f'<asset>{"".join(model.meshes)}</asset><worldbody>{bodies_xml(model, moving)}{other_xml}{body}</worldbody></mujoco>')
     drives = drives_for(case, where) if model.driven_geoms else {}
     facts = {"plane": plane, "pose": case.get("pose"), "geoms": model.kinds, "hulled": sorted(set(model.hulled)),
@@ -156,10 +147,11 @@ def build(assembly, name, a_case, handed=None):
              "driven": {row["solid"]: turned["drive"] for row in sections for turned in [driven_by(case, row["solid"])] if turned},
              "others": {other["name"]: other["use"] for other in case.get("others", [])},
              "piece": {"piece": use, "shape": piece["shape"]["kind"], "radiusMm": round(radius / MM, 6), **({"ringSegments": segments} if piece["shape"]["kind"] == "torus" else {})},
-             "contactMapping": f"spring k and damper c of each material are given to MuJoCo as solref = (-k / (m d), -c / (m d)) with piece mass m and impedance d = {IMPEDANCE}"}
+             "contactLaw": LAW}
     return {"engine": "mujoco", "xml": xml, "surfaceOf": {g: surface for g, surface, _, _ in model.geoms},
             "axes": ["xyz"[i] for i in AXES[plane["normal"]]], "normal": plane["normal"], "levelM": plane["atMm"] * MM, "startVelocity": velocity, "radiusM": radius,
             "massKg": mass, "others": others, "stepS": case["stepS"], "durationS": case["durationS"], "traceS": case.get("traceS", 0.002),
-            "rest": {"speedMps": 0.005, "rimSpeedMps": 0.005, **case.get("rest", {})}, "moving": moving, "driven": model.driven_geoms,
+            "rest": {"speedMps": 0.005, "rimSpeedMps": 0.005, **case.get("rest", {})}, "moving": moving, "driven": model.driven_geoms, "materialOf": model.material_of,
+            "materials": case["materials"], "between": case.get("betweenPieces"), "options": case.get("planar", {}),
             "events": case.get("events", []), "measures": case.get("measures", {}), "drives": drives,
             "hinges": {flap["flap"]: f"flap:{flap['flap']}" for _, flap in flaps}, "movers": {}, "loads": case.get("loads", []), "surfaces": [], "facts": facts}

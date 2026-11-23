@@ -135,6 +135,8 @@ frc_design_kernel/
     engines.py       which engine builds and runs a trial; the engine stamp
     mujoco_scene.py  a trial's case as a MuJoCo model (plain text; no MuJoCo import)
     convex.py        a hollow or cut shape as its true convex pieces, from how it was built
+    mujoco_parts.py  the piece, moved groups and flaps of that model
+    mujoco_contact.py  the library's own contact law at the points MuJoCo finds
     mujoco_run.py    run that model and report it like a planar run (the only module that imports MuJoCo)
 ```
 
@@ -966,16 +968,25 @@ MuJoCo.
   outcome may rest on a surface that is not there.
 - The piece is a free body built from its one 3D definition: its shape, its mass, and the inertia that shape gives.
   The planar start (point, velocity, spin) is placed on the trial's plane.
-- Each material's spring `k` and damper `c` are handed to MuJoCo's soft contact as `solref = (-k / (m d), -c / (m d))`
-  for the piece's mass `m` and impedance `d` = 0.95, so the same physical numbers serve both engines. Friction is the
-  material's coefficient; MuJoCo treats it as a hard limit.
+- **The contact law is the library's own, the same one the planar engine uses** (`trials/mujoco_contact.py`).
+  MuJoCo does two jobs: it finds where shapes overlap, and it moves the bodies. At each touching point the library
+  works out the spring and damper force along the normal and the friction across it (the stick law by default, or
+  the smooth law, as the trial's `planar` options say) and applies it to the piece, and back onto a flap or another
+  piece. So a material's stiffness, bounce and friction mean the same thing in both engines. Each step is two
+  passes: one with MuJoCo's contacts on, only to find the overlaps, and one with them off, to move everything.
+- **Why not MuJoCo's own contact forces.** They were tried first, with each material's spring and damper mapped
+  onto MuJoCo's soft contact. One contact at a time agreed with planar within a few percent. A squeeze did not: a
+  block pressed 1 mm into each of two surfaces of 200 N/mm should feel 200 N, and MuJoCo gave 4200 N. Across the
+  settings tried the error ran from 4 to 21 times. A resting piece also sank to a twentieth of the spring's depth,
+  and a contact that kept slipping raised its own pressing force and chattered. Squeeze force is a decision signal
+  for grip and structure, so the engine's own solver is not used for contact.
+- **One rule is added for three dimensions.** Where a piece touches one surface at several points (a ring lying
+  flat touches at dozens), the surface's spring is shared among the points by depth: the surface presses with its
+  stiffness times the deepest overlap, split between the points in proportion to their depths. One point gets it
+  all, as in planar.
 - **A driven surface** is any solid a declared drive turns (`turns`): a roller, a wheel or a belt. It stays a still
-  shape with the engine's own friction switched off. Its surface runs at the drive's speed across the turn's axis,
-  and its friction is the planar engine's smooth law (friction times the pressing force, against the slip), applied
-  to the piece as a force at the point of contact, one step late. The same force loads the drive's motor model, so
-  current and sag come out as in planar. Why not a spinning body with the engine's friction: at a contact that keeps
-  slipping, MuJoCo's solver raises the pressing force to buy more friction, and the piece chatters. Measured on a
-  block dragged against a wall, the wall force swung between 0 and 16 N around a true 5.2 N.
+  shape. Its surface runs at the drive's speed across the turn's axis, and the friction law sees that speed. The
+  friction along the surface loads the drive's motor model, so current and sag come out as in planar.
 - **A moved group** is a group whose surface names a mover that follows a design motion. One slide becomes a slider,
   one turn becomes a hinge, and its joint is set each step so contact feels its speed. Any other motion (several
   steps, a path, a motion through poses) is carried along its path, and its speed is not felt in contact; the record
@@ -999,30 +1010,31 @@ MuJoCo.
   assumption `in-plane` has been tested and found wanting.
 
 **Calibration.** The same trial definition is run in both engines on cases that truly are planar, as part of the
-engine's own tests:
+engine's own tests. With one contact law the two agree far more closely than a decision needs:
 
 | Case | Closed form | Planar | MuJoCo |
 |---|---|---|---|
-| Ball rolling 100 mm down a 20 degree slope | 0.2889 s | 0.2890 s | 0.2889 s |
+| Ball rolling 100 mm down a 20 degree slope | 0.2889 s | 0.2890 s | 0.2890 s |
 | Bar rolling the same | 0.2991 s | 0.2992 s | 0.2991 s |
-| Bounce from 200 mm, bounce value 0.5: rebound | | 60.2 mm | 59.1 mm |
-| Same bounce: deepest press | | 2.34 mm | 2.25 mm |
-| Same bounce: peak contact force | | 523 N | 538 N |
-| Contact force at rest | the weight | the weight | the weight |
+| Bounce from 200 mm, bounce value 0.5: rebound | | 60.22 mm | 60.22 mm |
+| Same bounce: deepest press | | 2.345 mm | 2.345 mm |
+| Same bounce: peak contact force | | 523.4 N | 523.4 N |
+| 1 kg at rest on 200 N/mm: force and depth | 9.807 N, 0.049 mm | 9.807 N, 0.049 mm | 9.807 N, 0.049 mm |
+| Block squeezed 1 mm into each of two surfaces of 200 N/mm: lid, bed | 195.1 N, 204.9 N | 195.1 N, 204.9 N | 195.1 N, 204.9 N |
+| Block on a 20 degree slope at friction 0.5 | holds | holds, no creep | holds, no creep |
+| Same on 30 degrees | slides | slides | slides |
 | Block dragged by a roller against a slick wall: wall force | 5.18 N | within 3% | within 3% |
 | Same, holding speed: motor current | 3.10 A | within 5% | within 5% |
 | Block set on a belt at 1 m/s: speed at 0.1 s, then at 0.4 s | 0.49, 1.00 m/s | within 0.02 | within 0.02 |
 | Ball pushed by a sliding gate: distance | | (reference) | within 5% |
 | Load of 3 m/s2 for 0.1 s, then 0.2 s coasting: travel | 75 mm | within 1 mm | within 1 mm |
-| Block thrown back by a sprung flap: most the flap opens | | 32.6 deg | 34.4 deg |
+| Block thrown back by a sprung flap: most the flap opens | | 32.62 deg | 32.59 deg |
 | Block on a 1 m/s belt on a cart moving at 0.5 m/s: speed | 1.5 m/s | | within 0.03 |
-| One block strikes another like it, bounce value 0.5: speeds after | 0.25 and 0.75 m/s | | within 0.04, momentum within 1% |
+| One block strikes another like it, bounce value 0.5: speeds after | 0.25 and 0.75 m/s | | 0.23 and 0.77, momentum within 1% |
 | Ring dropped over a post that fits its hole: rests | on the floor | | on the floor (and on the post when the post is too wide) |
 
-Outcome and timing agree within 0.5%, spin within 1%, rebound and peak force within 3%, depth within 4%. One thing
-does not compare: under a steady load MuJoCo holds the piece at almost no depth, where the planar spring sinks by
-weight over stiffness. Forces compare; resting depths do not (assumption `no-resting-depth`). A piece started
-already sunk by the planar depth shows a short force spike in MuJoCo for that reason.
+What still differs between the engines is geometry, which is the reason to run the 3D one: the piece can leave the
+plane, tip, and touch a surface at more than one place across its width.
 
 **Stages.**
 
