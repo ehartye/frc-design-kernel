@@ -19,9 +19,10 @@
     },
     "engine": {
       "enum": [
-        "planar"
+        "planar",
+        "mujoco"
       ],
-      "fix": "Only the planar engine is built. Leave engine out, or write \"planar\""
+      "fix": "Leave engine out for the planar engine, or write \"mujoco\" for the 3D engine"
     },
     "assumes": {
       "type": "array",

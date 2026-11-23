@@ -11,6 +11,9 @@ license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = ["cadquery-ocp>=8.0.1"]
 
+[project.optional-dependencies]
+mujoco = ["mujoco>=3.2"]
+
 [project.urls]
 Source = "https://github.com/ehartye/frc-design-kernel"
 

@@ -132,6 +132,9 @@ frc_design_kernel/
     fit.py           a trace reduced to one path operation
     custom.py        custom force laws and criteria through the narrow door
     campaign.py      plan the runs, count the cost, run them, write the record
+    engines.py       which engine builds and runs a trial; the engine stamp
+    mujoco_scene.py  a trial's case as a MuJoCo model (plain text; no MuJoCo import)
+    mujoco_run.py    run that model and report it like a planar run (the only module that imports MuJoCo)
 ```
 
 **Import direction.** `motion` imports nothing from the rest. `source` imports `motion` (to check operations).
@@ -562,8 +565,9 @@ These were the simpler choice at the time. Any of them may change while the libr
     pivot, which costs samples, never correctness.
 16. **Measure results are not rounded.** The same source gives the same numbers on one machine; tiny differences
     between machines or kernel versions are possible in the last digits.
-17. **Trials in three dimensions and with several bodies are not built yet.** The owner has decided: option A below,
-    an optional engine adapter with MuJoCo as an optional extra, is built next. The options are kept for the record.
+17. **Trials in three dimensions.** The owner has decided: option A below, an optional engine adapter with MuJoCo
+    as an optional extra. Its first stage is built (section 16); "bring your own results" (option B) is not wanted.
+    The options are kept for the record.
     What was weighed: **Trials in three dimensions and with several bodies.** A flow of many balls, a chain climb, a ring
     modelled as linked capsules and anything a general physics engine does are outside the planar solver. The owner
     decides how they come under the same trial definition and record. The options, with cost and dependency:
@@ -723,7 +727,7 @@ be an `=` expression over the design's parameters.
 
 | Part | What it says |
 |---|---|
-| `engine` | Which engine runs it. `planar` is the default and the only one built. A second engine will read the same definition. |
+| `engine` | Which engine runs it. `planar` is the default. `mujoco` is the optional 3D engine (section 16). Both read the same definition. |
 | `assumes` | What this trial takes for granted beyond the engine's standing assumptions: a list of `{"id", "text"}`. Without it the trial is incomplete. |
 | `plane` | The flat section the trial lives in: square to one axis (`normal`), at a level (`atMm`). Gravity acts down the second in-plane axis. |
 | `pose` | The named pose the solids are in. |
@@ -925,3 +929,50 @@ trials with no re-authoring.
 7. **Results hand forward.** Each trial's `handForward` block gives the nominal inputs, the range each held over,
    the marginal edges, the sensitivity order and the control, so a later engine can run the nominal case and only
    the marginal edges, with the same control.
+
+## 16. The MuJoCo engine (optional, in stages)
+
+A trial that writes `"engine": "mujoco"` is run in three dimensions by MuJoCo, behind the same trial definition, the
+same method (nominal, half step, control, ranges, coverage) and the same record. The record stamps the engine's name
+and version, and repeats the engine's own standing assumptions.
+
+**Optional.** MuJoCo is an extra:
+
+```
+pip install "frc-design-kernel[mujoco] @ git+https://github.com/ehartye/frc-design-kernel"
+```
+
+The library never imports it unless a trial names that engine. Without it, such a trial is refused with that
+install line. `mujoco_scene.py` writes the model as plain text and imports nothing; only `mujoco_run.py` imports
+MuJoCo.
+
+**How the scene is made from the design source (stage one).**
+
+- Each solid the trial names becomes a fixed body at the trial's pose. A box, a ball and a full cylinder become that
+  exact primitive. A union becomes its parts. A prism with a convex outline becomes its exact hull.
+- Anything else (a hollow tube, a cut shape, a custom shape, an imported part) is used as its convex hull. The
+  record lists every solid treated this way under `saw.hulled`, and the engine's assumptions say so.
+- The piece is a free body built from its one 3D definition: its shape, its mass, and the inertia that shape gives.
+  The planar start (point, velocity, spin) is placed on the trial's plane.
+- Each material's spring `k` and damper `c` are handed to MuJoCo's soft contact as `solref = (-k / (m d), -c / (m d))`
+  for the piece's mass `m` and impedance `d` = 0.95, so the same physical numbers serve both engines. Friction is the
+  material's coefficient; MuJoCo treats it as a hard limit.
+- Two signals are added to the planar ones: `offPlaneMm` (how far the piece has left the trial's plane) and
+  `tiltDeg` (how far it has tipped). On a case that truly is planar both stay at zero; when they do not, the planar
+  assumption `in-plane` has been tested and found wanting.
+
+**Calibration.** The same trial definition is run in both engines on cases that truly are planar, and both are held
+to the closed form: a ball and a bar rolling down a slope arrive at the exact rolling time within 0.5% in each
+engine and agree on spin within 1%; a bounce agrees on rebound height and deepest press within 5%.
+
+**Stages.**
+
+| Stage | What | State |
+|---|---|---|
+| 1 | Fixed surfaces from the named solids, one free piece, the shared method and record, calibration against planar | Built |
+| 2 | Drives: a roller as a hinged solid with a motor from the declared motor and gear; groups as bodies with `carriedBy` as the tree; hinges and sliders from single-axis motions; path-driven groups otherwise | Not built |
+| 3 | Moving belt surfaces: the belt stays a fixed geom and the moving-surface friction is added as a force law, the same law the planar engine uses | Not built |
+| 4 | Flaps, loads and movers; a ring piece; more than one piece | Not built |
+
+A trial that uses a part the engine does not run yet is refused by name; nothing is silently left out.
+

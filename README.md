@@ -36,6 +36,12 @@ pip install git+https://github.com/ehartye/frc-design-kernel
 
 Needs Python 3.11 or newer. The only dependency is `cadquery-ocp`, the CAD kernel.
 
+Trials can also be run in 3D by MuJoCo, an optional extra that is only loaded when a trial names it:
+
+```
+pip install "frc-design-kernel[mujoco] @ git+https://github.com/ehartye/frc-design-kernel"
+```
+
 There are no numbered releases to choose from. **`main` is the release.** What runs on a machine is whatever was last
 installed there; run the command again to update. Every file the library writes records the library version and
 commit. That record is information for the reader. Nothing checks it or refuses to run because of it.
