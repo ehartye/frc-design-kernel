@@ -16,12 +16,12 @@ CHECKED = {"$ref", "type", "const", "enum", "properties", "required", "additiona
            "items", "minItems", "maxItems", "minLength", "pattern", "oneOf"}
 NOTES = {"$schema", "$id", "$defs", "title", "description", "fix"}
 KEYWORDS = CHECKED | NOTES
-TYPES = {"object": dict, "array": list, "string": str, "number": (int, float), "boolean": bool}
-WORDS = {"object": "an object in { }", "array": "a list in [ ]", "string": "text in quotes", "number": "a number", "boolean": "true or false"}
+TYPES = {"object": dict, "array": list, "string": str, "number": (int, float), "boolean": bool, "null": type(None)}
+WORDS = {"object": "an object in { }", "array": "a list in [ ]", "string": "text in quotes", "number": "a number", "boolean": "true or false", "null": "null"}
 
 
-def load_schema():
-    return json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
+def load_schema(name="design"):
+    return json.loads(SCHEMA_FILE.with_name(f"{name}.schema.json").read_text(encoding="utf-8"))
 
 
 def describe(value):

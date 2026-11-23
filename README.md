@@ -12,7 +12,7 @@ The library does three things and nothing else:
 |---|---|---|
 | **Build** | Turns one design source file (JSON) into named solids, poses, motions, a STEP file and a manifest. | Here now |
 | **Measure** | Clearance along a motion with a proof that nothing was missed, what touches what, mass and centre of mass. | Here now |
-| **Try** | Physics trials described as data. | Empty slot, planned |
+| **Try** | Physics trials described as data: one round piece in a plane, with a control, brackets and a half-step repeat. | Here now (planar) |
 
 It builds and measures. It does not judge. Clearance guidelines, pass or fail criteria, review pages and publishing
 belong to the tools that use it. The full design is in [DESIGN.md](DESIGN.md).
@@ -88,6 +88,16 @@ python -m frc_design_kernel measure swing-arm.json --out out
 stroke; for every pose, what touches what, what is not connected to the base, and the mass with its centre. The
 closeness is proven, not sampled at fixed steps: the library knows how fast each solid can move, so it knows what
 cannot happen between two samples.
+
+Trials are data in the same file. Run them with:
+
+```
+python -m frc_design_kernel try swing-arm.json --out out
+```
+
+`try` first prints what the campaign will cost (runs and steps), then writes `out/trials.json`. A trial is only
+reported as passed when its method is complete: a control that was rejected, brackets, and a repeat at half the step
+that agrees. See [DESIGN.md](DESIGN.md) section 13.
 
 The same thing from Python:
 

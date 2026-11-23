@@ -57,7 +57,7 @@ class CustomShapes(unittest.TestCase):
 
     def test_the_file_must_define_build(self):
         """Catches a custom file with the wrong entry point failing obscurely."""
-        self.expect("def make(parameters):\n    return None\n", "has no build\\(parameters\\) function")
+        self.expect("def make(parameters):\n    return None\n", "has no build\\(...\\) function")
 
     def test_several_bodies_are_refused(self):
         """Catches a custom shape that returns more than one body, which the contract forbids."""

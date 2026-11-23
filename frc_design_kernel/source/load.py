@@ -17,7 +17,7 @@ class Design:
     path: Path
     data: dict
     sha256: str
-    custom_used: dict    # {custom shape name: [names of the solids that use it]}
+    custom_used: dict    # {custom code name: [names of the solids or trials that use it]}
 
     @property
     def folder(self):
@@ -60,12 +60,30 @@ def check_files(design):
             raise DesignError(f'custom "{name}"', f"its code file {CUSTOM_FOLDER}/{name}.py does not exist", f"Create {CUSTOM_FOLDER}/{name}.py beside the design source, with a build(parameters) function")
 
 
-def load(path):
-    """Read, check and expand the design source at path. Raises DesignError for the first problem found."""
+def read_trials(raw, folder):
+    """Each trial as its own definition: one written in the source, or one in a file the source names."""
+    trial_schema = schema.load_schema("trial")
+    for name, entry in raw.get("trials", {}).items():
+        where = f'trials "{name}"'
+        if set(entry) == {"file"}:
+            target = (folder / str(entry["file"])).resolve()
+            if not target.is_relative_to(folder.resolve()):
+                raise DesignError(where, f'the trial file "{entry["file"]}" is outside the design folder', "Keep trial files beside the design source")
+            raw["trials"][name] = entry = read_json(target)
+        schema.check(entry, trial_schema, where=where)
+
+
+def load(path, parameters=None):
+    """Read, check and expand the design source at path. Raises DesignError for the first problem found.
+
+    parameters replaces the values of named parameters, so a variant of the design can be built without editing
+    the file. Everything worked out from those parameters follows.
+    """
     path = Path(path)
     raw = read_json(path)
     schema.check(raw, schema.load_schema())
-    data = expand(raw)
+    read_trials(raw, path.parent)
+    data = expand(raw, parameters)
     design = Design(path=path, data=data, sha256=hashlib.sha256(path.read_bytes()).hexdigest(), custom_used=checks.check_all(data))
     check_files(design)
     return design

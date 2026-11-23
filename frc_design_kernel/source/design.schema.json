@@ -36,7 +36,8 @@
     "mounts": {"type": "array", "items": {"$ref": "#/$defs/mount"}},
     "contacts": {"type": "array", "items": {"$ref": "#/$defs/contact"}},
     "poses": {"type": "object", "additionalProperties": {"$ref": "#/$defs/groupOps"}},
-    "motions": {"type": "object", "additionalProperties": {"$ref": "#/$defs/motion"}}
+    "motions": {"type": "object", "additionalProperties": {"$ref": "#/$defs/motion"}},
+    "trials": {"type": "object", "additionalProperties": {"type": "object"}}
   },
   "$defs": {
     "number": {
@@ -67,6 +68,7 @@
       "required": ["reason", "limits"],
       "additionalProperties": false,
       "properties": {
+        "kind": {"enum": ["shape", "force", "criterion"]},
         "reason": {"type": "string", "minLength": 20, "fix": "Say in a sentence why the listed shapes cannot make this"},
         "limits": {"type": "string", "minLength": 20, "fix": "Say in a sentence what this shape leaves out or guesses"}
       }

@@ -16,6 +16,7 @@ tines. A gearmotor and a spool sit on the base.
 | A moving group that carries another | `carriage` carries `load` |
 | Fixtures | `bench top` (imported), `crate` (drawn) |
 | Declared contacts | the crate on the tines, the spool on the shaft |
+| A physics trial with a control and a bracket | `bar stays on the tines` |
 | Poses | `lowered`, `raised`, `set down` |
 | A motion by operations, checked against its end pose | `lift` |
 | A curved move as one operation | `hand off` (an arc) |
@@ -31,6 +32,12 @@ Measure it:
 
 ```
 python -m frc_design_kernel measure examples/lifter/design.json --out out --touch-gap 1
+```
+
+Try it (the cost is printed before anything runs):
+
+```
+python -m frc_design_kernel try examples/lifter/design.json --out out
 ```
 
 The two STEP files in `parts/` are invented stand-ins for a supplier's file. `parts/make_parts.py` made them.

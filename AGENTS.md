@@ -32,7 +32,9 @@ Short rules for people and coding agents who change this library. The reasons ar
 
 ## The escape hatch
 
-- Custom shapes follow the contract in DESIGN.md section 6. Do not widen it without the owner's say.
+- Custom shapes follow the contract in DESIGN.md section 6, and custom trial code the one in section 13.6. Do not
+  widen either without the owner's say.
+- Custom trial code never replaces the control, the brackets or the half-step repeat.
 - A new built-in shape is better than a custom shape that two projects both wrote.
 
 ## Git

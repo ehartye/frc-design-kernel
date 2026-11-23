@@ -42,7 +42,7 @@ The owner's ruling: **build, measure, try — nothing else.**
 |---|---|---|---|
 | Build | Design source to named solids, poses, motions, STEP and manifest | `source/`, `motion/`, `kernel/`, `builder/` | Here now |
 | Measure | Clearance along a motion with a proof, what touches what, mass and centre of mass | `measure/` | Here now |
-| Try | Physics trials defined as data | `trials/` | Empty slot |
+| Try | Physics trials defined as data | `trials/` | Here now: planar trials. 3D is undecided (section 11) |
 
 Out of scope, for good: clearance guidelines, receipts, readiness criteria, review pages, publishing and CI policy.
 Those belong to tools that judge a design. This library reports numbers; it never says pass or fail.
@@ -57,7 +57,7 @@ library that a robot project and a tooling plugin can both import.
 frc_design_kernel/
   __init__.py        the public functions: load, build, export
   __main__.py        python -m frc_design_kernel
-  cli.py             the build, validate and measure commands
+  cli.py             the build, validate, measure and try commands
   errors.py          DesignError: where, what is wrong, how to fix it
   version.py         library version and commit, for information
 
@@ -73,6 +73,7 @@ frc_design_kernel/
     expressions.py   safe arithmetic for "=..." values
     schema.py        a small JSON Schema checker with plain messages
     design.schema.json
+    trial.schema.json
     expand.py        "each" rows and "=..." values turned into plain numbers
     checks.py        cross-references: names exist, no loops, no double mass
     load.py          file to checked, plain design
@@ -82,6 +83,7 @@ frc_design_kernel/
     booleans.py      union, difference, intersection
     props.py         volume, bounds, validity, solid count, centre of volume
     between.py       the gap between two shapes, shared volume, facing contact area
+    section.py       a solid cut by a plane: its outline as segments and arcs
     transform.py     apply a rigid transform to a shape
     step_read.py     STEP file to named solids
     step_write.py    named solids to a STEP file
@@ -90,7 +92,7 @@ frc_design_kernel/
   builder/           the build layer (named builder so the build() function keeps its name)
     shape.py         a shape entry to one solid
     parts.py         solids taken from STEP files by name
-    custom.py        the escape hatch: load, call and check a custom shape
+    custom.py        the escape hatch: load, check and report custom code
     placement.py     who is carried by whom; transforms per group
     assembly.py      the built design: solids as drawn, placed at a pose or along a motion
     manifest.py      the manifest
@@ -109,15 +111,21 @@ frc_design_kernel/
     compression.py   how deep a solid presses into a ball or ring
     run.py           sharing work between worker processes
     summary.py       everything about one design as one record
-  trials/            EMPTY SLOT. Reads an Assembly and trial data; writes results.
+  trials/            the try layer. Reads an Assembly and trial data; writes results. See section 13.
+    scene.py         a trial definition and named solids turned into a runnable scene
+    contact.py       round piece against segment or arc; two friction laws
+    drives.py        belts, rollers and wheels: imposed or motor-driven
+    rules.py         conditions and events as data
+    planar.py        the fixed-step solver for one piece in a plane
+    record.py        criterion, control, brackets, step comparison, result word
+    fit.py           a trace reduced to one path operation
+    custom.py        custom force laws and criteria through the narrow door
+    campaign.py      plan the runs, count the cost, run them, write the record
 ```
-
-**What will go in `trials/`:** a trial described as data (bodies, contacts, drives, a stop condition), a solver, and
-a result record. It takes solids and masses from the `Assembly` so a trial and the layout cannot disagree.
 
 **Import direction.** `motion` imports nothing from the rest. `source` imports `motion` (to check operations).
 `kernel` imports only OCP. `builder` imports `source`, `motion` and `kernel`. `measure` imports `builder`, `motion`
-and `kernel`; `trials` will too. Nothing imports upward, and nothing imports in a circle. A test enforces the
+and `kernel`; `trials` does too. Nothing imports upward, and nothing imports in a circle. A test enforces the
 no-circle rule.
 
 ## 4. The design source
@@ -481,6 +489,23 @@ These were the simpler choice at the time. Any of them may change while the libr
     pivot, which costs samples, never correctness.
 16. **Measure results are not rounded.** The same source gives the same numbers on one machine; tiny differences
     between machines or kernel versions are possible in the last digits.
+17. **Trials in three dimensions and with several bodies are not built.** A flow of many balls, a chain climb, a ring
+    modelled as linked capsules and anything a general physics engine does are outside the planar solver. The owner
+    decides how they come under the same trial definition and record. The options, with cost and dependency:
+
+    | Option | What it is | Cost | Needs |
+    |---|---|---|---|
+    | A. Engine adapter | An optional module turns the trial definition and the named solids (as meshes or primitives) into a scene for an external physics engine, runs it, and reads the result back into the same record. The campaign still runs the control, brackets and half-step repeat itself. | About 600 to 900 lines here, plus a mapping per body kind. Results depend on the engine's contact model, which differs from the planar laws. | An optional dependency such as MuJoCo, installed only by projects that use it. The core stays on `cadquery-ocp` alone. |
+    | B. Bring-your-own results | The project runs its own 3D solver and hands the campaign run summaries in the record's run format. The library does the method (criterion, control, brackets, step comparison, fit) and stamps the record. | About 100 lines here: a checked import of run summaries. No shared physics; each project keeps a solver. | Nothing new. |
+    | C. Native 3D solver | Extend the solver to spheres and rigid bodies in 3D with body-to-body contact. | The largest: likely 1,500 lines or more, and the hardest to prove correct. Fights the size rule. | Nothing new, but probably `numpy` to be fast enough. |
+    | D. Planar reductions | Keep to planes: a second free piece, piece-to-piece contact and a rigid polygon body, so more cases fit the planar solver. | About 300 to 400 lines. Covers a second pipe and a hung robot in side view, not a flow of balls or a chain. | Nothing new. |
+
+    A and B can both be had; B first is cheapest and keeps one record format for everything. D is independent of
+    the others and closes most of the planar gaps listed in section 13.7.
+18. **A trial's solver runs in plain Python.** It manages about 200,000 steps a second. If campaigns grow past a few
+    million steps, the inner loop is the place to spend effort.
+19. **Brackets move one input at a time.** A change of several inputs together is only possible as the control.
+20. **A hand-off passes the piece's end state only.** Drive speeds and flap angles start fresh in the next trial.
 
 ## 12. The measure layer
 
@@ -583,3 +608,146 @@ tool can read those as start poses.
 - **Progress lines, receipts and advice text.**
 - **Line-of-sight checks** and the advisory test for a solid that turns about its own axis. They can be added as
   measures when a second project needs them.
+
+## 13. The try layer: planar trials
+
+A trial answers "does this work?" with physics: does the piece get picked up, does it stay seated when the robot is
+hit, does it reach the wheel. The layer runs trials that are written as data and wraps every one in the same method,
+so a result means the same thing in every project.
+
+### 13.1 What a trial is
+
+A trial is data in the design source under `trials`, or a file beside the source that the source names
+(`"trials": {"receive": {"file": "trials/receive.json"}}`). Its schema is `source/trial.schema.json`. Any number may
+be an `=` expression over the design's parameters.
+
+| Part | What it says |
+|---|---|
+| `plane` | The flat section the trial lives in: square to one axis (`normal`), at a level (`atMm`). Gravity acts down the second in-plane axis. |
+| `pose` | The named pose the solids are in. |
+| `piece` | The one free body: a round piece with `radiusMm`, `massKg`, an inertia (`inertiaFactor` times mass times radius squared, or `inertiaKgM2`), and a `start` (point, velocity, spin) or `{"after": trial}` to start where another trial's piece ended. |
+| `materials` | Named contact materials: spring `stiffnessNPerM`, a damper from `restitution` (bounce) or `dampingRatio`, `friction`, and the friction `law`: `stick` or `smooth`. |
+| `surfaces` | What the piece can touch. Each names a `material` and one of: `solid` (the outline where the plane cuts that named solid), `segmentsMm` (a polyline), `circleMm`. A surface may move along itself: `speedMps`, or a `drive` with a `ratio`. |
+| `flaps` | Hinged, sprung flaps: hinge point, length, rest direction, inertia, preload, spring, damping, a travel limit. |
+| `drives` | Belts, rollers, wheels. `imposed` (a speed, with an optional ramp) or `motor` (motor constants, gear, efficiency, radius, moving mass or inertia, current limits, bus voltage, and a command: `voltage`, `speed` loop or position `hold`). `rules` change the command when a condition holds. |
+| `loads` | The frame the piece rides in speeding up or slowing down: an acceleration along a direction, as a step or a half-sine pulse, at a time or after an event. |
+| `movers` | A steady slide of chosen surfaces, started at a time or after an event: a stated velocity, or a straight motion of a group from the design source. |
+| `events` | What counts as what: a name and a condition; with an `outcome` the event ends the run. |
+| `measures` | Numbers to keep: the peak, lowest or final value of a signal, or the time of an event. |
+| `pass` | The criterion: allowed `outcomes`, `limits` on measures, an optional custom criterion. |
+| `control`, `brackets` | The method inputs. See 13.3. |
+| `stepS`, `durationS` | The fixed step and the longest a run may last. |
+
+**Solids are the geometry.** A surface named by `solid` is the real outline of that solid where the plane cuts it:
+straight edges become segments, round edges become arcs. A trial and the layout therefore cannot disagree about where
+a surface is. Outlines run counter-clockwise with the material on the left, so a belt's surface speed has one
+meaning: positive runs counter-clockwise round the outline (`"runs": "clockwise"` turns it round).
+
+**Conditions are data.** `{"signal": name, "above": n}`, `{"after": event, "delayS": s}`, `{"notYet": event}`,
+`{"restFor": s}`, and `all`, `any`, `not` over those. Signals are the time, the piece's position, speed and spin,
+each drive's speed and currents, each flap's angle, each mover's travel, and each surface's contact force and depth.
+A sensor lag is a `delayS`. An interlock is a drive rule on a signal. A ready band is a rule on a drive's speed.
+
+### 13.2 The physics
+
+- **Contact.** A spring and damper along the normal that never pulls. The damper comes from a bounce value or a
+  damping ratio.
+- **Friction, two laws.** `smooth`: Coulomb friction eased near zero slip. It is simple, and a piece on a slope
+  always creeps. `stick`: a tangential spring capped at friction times normal force, with memory per contact. A
+  clamped or resting piece holds still. Both are needed; each project uses one or both.
+- **Moving surfaces.** A belt, roller or wheel is a surface with a speed along itself. The friction it gives the
+  piece is fed back to its drive as a load.
+- **Motors.** Torque from current, back-EMF from speed, winding resistance, gear and efficiency; a winding current
+  limit and an optional supply limit. Bus voltage `null` is power off (coasting); 0 is shorted windings (a brake).
+- **Integration.** Fixed step; forces from the state at the start of the step; speeds advance before positions. No
+  adaptive step. The half-step repeat (13.3) is the check on the step.
+
+Tests hold the solver to closed-form answers: free flight, both friction laws at the slope threshold, a belt bringing
+a block and a disc to its surface speed, a weight settling a sprung flap, a bounce that gives back less than it got,
+and a motor's free speed, current limit, speed loop, coast and brake.
+
+### 13.3 The method every trial gets
+
+The campaign, not the trial, performs the method. For each trial it runs:
+
+1. **Nominal**: the trial as written.
+2. **Half step**: the same at half the step. If the outcome changes, the result is `not converged`.
+3. **Control**: the trial with the `control.change` made. It must *not* meet the criterion. A control that passes
+   means the trial does not show what it claims.
+4. **Brackets**: one run per value of each bracketed input. For each input the record gives the passing value
+   nearest a failing one and the failing value nearest the nominal.
+
+A change is a path into the trial (`materials.tread.friction`, `drives.belt`, `loads.braking.accelerationMps2`;
+list items by name) or a design parameter (`parameters.squeeze`). A parameter change rebuilds the design, so the real
+solids move.
+
+The result is one word, with findings in plain text:
+
+| Result | Meaning |
+|---|---|
+| `incomplete` | No control, or no brackets. Reported as incomplete even if the nominal run met the criterion. |
+| `failed` | The nominal run did not meet the criterion. |
+| `control not rejected` | The control met the criterion. |
+| `not converged` | The outcome changes at half the step. |
+| `passed` | Criterion met, control rejected, half step agrees. Inputs with no failing value in their range are listed as findings. |
+
+These words state what the method found. Whether a design may go forward on them is for the tools that judge.
+
+### 13.4 Cost before it runs
+
+`campaign.estimate` counts runs and steps (an upper limit; a run that reaches a stop event ends early). `try`
+prints that count before anything runs, and `--estimate` prints it and stops. `--max-steps` refuses a campaign whose
+estimate is larger. How long a campaign ought to take is a judgement that lives elsewhere; the library reports the
+number.
+
+### 13.5 The record
+
+`try SOURCE --out DIR` writes `DIR/trials.json`, schema `frc-design-kernel/trial-campaign@1`, with the generator
+stamp, the cost, the custom code used, and per trial: the definition as run; the result word and findings; the
+nominal run with a **replayable trace** (rows of time, position, spin, drive speeds, flap angles) and contact rows
+per surface (`[start, end, deepest mm]`); the step comparison; the control; the brackets; **every run's inputs and
+outcome**; and `fit`: the piece's path as **one `path` operation** within `fitToleranceMm` of every trace sample, ready
+to be a motion in the design source. The same source gives the same record.
+
+### 13.6 The escape hatch for trials
+
+The same narrow door as custom shapes (section 6): registered by name under `custom` with a `kind`, a `reason` and
+`limits`; code only in `custom/<name>.py`; a fixed function; checked before it runs; listed in the record with its
+file, line count and fingerprint.
+
+| Kind | Function | May do |
+|---|---|---|
+| `force` | `force(signals, parameters)` returns `(fx, fz, torque)` on the piece | Add a force law the layer lacks: drag, lift, rolling resistance, a magnet. |
+| `criterion` | `judge(run, parameters)` returns true or false | Decide pass from a run's outcome, events, measures and end state. |
+
+Custom trial code may import only `math`. It **cannot** replace the control, the brackets or the half-step repeat,
+and it never writes the record: the campaign runs all of those around it, and reports the custom code beside them.
+
+What counts as misuse:
+
+- A force law that moves the piece where the author wants it (a "guide" force), so the trial cannot fail.
+- A force law that stands in for a contact, drive or load the layer already has.
+- A criterion that returns true whatever the run shows, or reads only what flatters the design.
+- A criterion that re-implements the outcome logic that belongs in `events`, hiding what counts as success.
+- Keeping trial numbers inside custom code so brackets cannot reach them.
+- State kept between calls, so two runs of the same inputs differ.
+- Many custom laws in one trial. One short law is normal.
+
+### 13.7 What the planar layer covers, and what it does not
+
+Covered: one round piece in a plane, against fixed and moving surfaces, sprung flaps, motor-driven or imposed
+drives with controller rules, frame accelerations, sliding surfaces, events and stops, hand-off of the piece from one
+trial to the next, one-at-a-time brackets.
+
+Not expressible yet, each a known gap and not a place for project code to hide:
+
+- A second free piece, or piece-to-piece contact.
+- A body that is not round (a robot hung on hooks, a box).
+- More than one piece loading the same drive at once.
+- A drive's speed or a flap's angle carried from one trial into the next.
+- Surfaces carried by a turning motion of the design (only straight slides).
+- A flap that is not a one-way sprung flap (a powered or two-way hinge).
+- A rope, winch or spring between bodies.
+- Brackets over several inputs at once (a full grid).
+- Anything in three dimensions (section 11, item 17).
+

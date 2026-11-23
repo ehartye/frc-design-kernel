@@ -59,6 +59,30 @@ def measure(args):
     print(f"Wrote measurements.json to {args.out}.")
 
 
+def announce(cost):
+    print(f'Campaign: {count(len(cost["trials"]), "trial")}, {count(cost["runs"], "run")}, up to {cost["steps"]} steps.')
+
+
+def trials(args):
+    import json
+    from pathlib import Path
+    from .trials import campaign    # the CAD kernel is needed only from here on
+    if args.estimate:
+        announce(campaign.estimate(load(args.source), args.trial or None))
+        return
+    record = campaign.run_campaign(args.source, args.trial or None, args.max_steps, args.workers or 1, announce)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "trials.json").write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8", newline="\n")
+    for name, found in record["trials"].items():
+        control = "no control" if found["control"] is None else ("control rejected" if found["control"]["rejected"] else "control NOT rejected")
+        inside = sum(1 for b in found["brackets"] if b["bracketed"])
+        steps = "half step agrees" if found["stepComparison"]["converged"] else "half step differs"
+        print(f'Trial "{name}": {found["result"]}. Nominal outcome "{found["nominal"]["outcome"]}"; {control}; '
+              f'{inside} of {count(len(found["brackets"]), "input")} bracketed; {steps}.')
+    print(f'Ran {record["cost"]["stepsRun"]} steps. Wrote trials.json to {args.out}.')
+
+
 def main(argv=None):
     made = generator()
     parser = argparse.ArgumentParser(prog="python -m frc_design_kernel", description="Build a preliminary robot design from a design source.")
@@ -82,7 +106,17 @@ def main(argv=None):
     gauge.add_argument("--workers", type=int, help="worker processes (default: half the cores)")
     gauge.add_argument("--depth", type=int, default=9, help="how many times the search may halve the stroke (default 9)")
     gauge.set_defaults(run=measure)
+    attempt = commands.add_parser("try", help="run the design's physics trials and write trials.json")
+    attempt.add_argument("source", help="the design source JSON file")
+    attempt.add_argument("--out", help="the folder to write into")
+    attempt.add_argument("--trial", action="append", default=[], metavar="NAME", help="a trial to run (default: all); may be repeated")
+    attempt.add_argument("--max-steps", type=int, help="refuse a campaign whose estimate is above this many steps")
+    attempt.add_argument("--workers", type=int, help="worker processes for the runs (default 1)")
+    attempt.add_argument("--estimate", action="store_true", help="print the cost and stop")
+    attempt.set_defaults(run=trials)
     args = parser.parse_args(argv)
+    if args.command == "try" and not (args.out or args.estimate):
+        parser.error("try needs --out DIR, or --estimate")
     try:
         args.run(args)
     except DesignError as problem:
