@@ -5,6 +5,8 @@ import math
 G = 9.80665
 # Every engine the library has. A calibration test loops over this, so an engine added here must pass the whole set.
 ENGINES = ("planar", "mujoco")
+# Every engine that runs a piece in 3D. The standing seating case (test_mujoco_seating.py) loops over it.
+ENGINES_3D = ("mujoco",)
 MEASURED = lambda value: {"value": value, "measured": "invented bench sheet 1"}
 BOX = lambda low, high: {"kind": "box", "fromMm": low, "toMm": high}
 PANEL = {"stiffnessNPerM": MEASURED(2.0e5), "restitution": MEASURED(0.2), "friction": {"value": 0.5, "assumed": [0.2, 0.8]}}
