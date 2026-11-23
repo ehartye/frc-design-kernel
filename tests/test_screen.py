@@ -146,10 +146,10 @@ class Adjustments(unittest.TestCase):
         row, = trial["coverage"]
         self.assertEqual(trial["result"], "covered by adjustment")
         self.assertEqual((row["atLow"]["passes"], row["atHigh"]["passes"]), ([8, 11], [8, 24]))      # tan(11.3 deg) = 0.2
-        self.assertEqual((row["someSettingPassesEach"], row["oneSettingPassesBoth"], row["setting"]), (True, True, 9.5))
-        self.assertIn('the adjustment "tilt" covers it: settings 8 to 11 pass at the low end, 8 to 24 at the high end, and one setting (9.5) passes at both ends',
+        self.assertEqual((row["someSettingPassesEach"], row["oneSettingPassesBoth"], row["setting"]), (True, True, 10))      # the 1 degree step nearest the middle of 8 to 11
+        self.assertIn('the adjustment "tilt" covers it: settings 8 to 11 pass at the low end, 8 to 24 at the high end, and one setting (10) passes at both ends',
                       trial["findings"][0])
-        self.assertEqual(trial["handForward"]["adjustmentSettings"], [{"input": "materials.panel.friction", "adjustment": "tilt", "setting": 9.5}])
+        self.assertEqual(trial["handForward"]["adjustmentSettings"], [{"input": "materials.panel.friction", "adjustment": "tilt", "setting": 10}])
 
     def test_an_adjustment_that_cannot_reach_is_not_covered(self):
         """Control: catches coverage being claimed when no setting in the adjustment's range passes at one end."""

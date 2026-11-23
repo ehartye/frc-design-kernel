@@ -107,4 +107,14 @@ def coverage(path, adjustment, entry, low, high):
     both = bool(shared and shared[0] <= shared[1])
     return {"input": path, "adjustment": adjustment, "kind": entry["kind"], "adjusts": entry["input"], "range": entry["range"],
             "atLow": low, "atHigh": high, "someSettingPassesEach": bool(a and b), "oneSettingPassesBoth": both,
-            "setting": (shared[0] + shared[1]) / 2 if both else None}
+            "setting": middle(shared, entry) if both else None}
+
+
+def middle(shared, entry):
+    """A setting in the middle of a window; for a stepped adjustment, the step nearest the middle that is inside it."""
+    centre, step = (shared[0] + shared[1]) / 2, entry.get("step")
+    if not step:
+        return centre
+    low = entry["range"][0]
+    near = sorted({low + round((centre - low) / step + shift) * step for shift in (-1, 0, 1)}, key=lambda v: abs(v - centre))
+    return next((v for v in near if shared[0] <= v <= shared[1]), shared[0])
