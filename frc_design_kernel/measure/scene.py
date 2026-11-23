@@ -43,13 +43,18 @@ def present(assembly, absent):
     return tuple(sorted(name for name in assembly.solids if name not in set(absent)))
 
 
-def build_scene(assembly, group_stages, absent=()):
+def build_scene(assembly, group_stages, absent=(), displace=None):
+    """displace shifts named solids by [dx, dy, dz] before anything else: a control that shows a check can fail."""
     names = present(assembly, absent)
+    present(assembly, displace or ())
     by_group = {}
     for group, listed in group_stages.items():
         by_group[group] = (listed, stage_math.at(listed, 0.0), stage_math.signature(listed), stage_math.straight_travel(listed),
                            stage_math.axis_laws(listed), stage_math.moving_part(listed), stage_math.lead(listed))
     drawn = {name: assembly.solids[name].shape for name in names}
+    for name, shift in (displace or {}).items():
+        if name in drawn:
+            drawn[name] = moved(drawn[name], mx.translation(shift))
     stages, start, boxes, rates, moving, straight, laws = {}, {}, {}, {}, {}, {}, {}
     for name in names:
         listed, first, signature, travel, law, moves, lead = by_group[assembly.solids[name].group]
@@ -62,9 +67,9 @@ def build_scene(assembly, group_stages, absent=()):
     return Scene(names, drawn, stages, start, boxes, rates, moving, straight, laws)
 
 
-def for_motion(assembly, motion, absent=()):
+def for_motion(assembly, motion, absent=(), displace=None):
     """The scene for a named motion."""
-    return build_scene(assembly, placement.motion_stages(assembly.data, motion), absent)
+    return build_scene(assembly, placement.motion_stages(assembly.data, motion), absent, displace)
 
 
 def for_pose(assembly, pose=None, absent=()):

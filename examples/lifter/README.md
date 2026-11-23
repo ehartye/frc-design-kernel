@@ -18,6 +18,7 @@ tines. A gearmotor and a spool sit on the base.
 | Declared contacts | the crate on the tines, the spool on the shaft |
 | A piece declared in 3D, a material whose inputs state assumed ranges | `pieces`, `materials` |
 | A physics trial with stated assumptions, a control and a listed bracket | `bar stays on the tines` |
+| A mechanical adjustment and an interaction for the screen facts | `fork height`, `bar on the tines` |
 | Poses | `lowered`, `raised`, `set down` |
 | A motion by operations, checked against its end pose | `lift` |
 | A curved move as one operation | `hand off` (an arc) |

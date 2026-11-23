@@ -4,7 +4,7 @@ Nothing here runs physics. It reads run summaries and states what they show. A t
 its method is complete and nothing inside an assumed range changes the outcome.
 """
 
-WORDS = ("incomplete", "failed", "control not rejected", "not converged", "flips in range", "passed")
+WORDS = ("incomplete", "failed", "control not rejected", "not converged", "not covered", "covered by adjustment", "passed")
 
 
 def judge(run, criterion, custom=None):
@@ -60,32 +60,46 @@ def sensitivity(brackets, nominal_measures):
     return sorted(ranked, key=lambda row: (not row["changesOutcome"], -row["largestChange"]["relativeChange"], row["input"]))
 
 
-def result(nominal_met, control, brackets, steps, missing, grid=None):
+def result(nominal_met, control, brackets, steps, missing, grid=None, coverage=()):
     """(result word, findings) for a trial.
 
-    missing lists what the method lacks (no control, no stated assumptions, inputs with no stated source, nothing
-    bracketed). Any of those makes the trial incomplete whatever its runs showed.
+    missing lists what the method lacks (no control, no stated assumptions, inputs with no stated source, nothing with
+    a range). Any of those makes the trial incomplete whatever its runs showed. When the outcome changes inside an
+    assumed range, the word says whether a declared adjustment covers it: some setting passes at each end of the range.
     """
     if missing:
         return "incomplete", list(missing)
-    findings = []
     if not nominal_met:
-        return "failed", findings
+        return "failed", []
     if not control["rejected"]:
         return "control not rejected", ["the control met the criterion, so the trial does not show what it claims"]
     if not steps["converged"]:
         return "not converged", ["the outcome changes when the step is halved, so the step is too large to trust"]
+    findings, open_inputs = [], 0
     for found in brackets:
         for flip in found["flips"]:
-            where = "its assumed range" if found["source"] == "assumed" else "its listed values"
-            findings.append(f'the outcome changes inside {where} of "{found["input"]}": it holds at {flip["holdsAt"]:g} and changes at {flip["changesAt"]:g}')
+            where = "the assumed range" if found["source"] == "assumed" else "the listed values"
+            text = f'the outcome changes inside {where} of "{found["input"]}": it holds at {flip["holdsAt"]:g} and changes at {flip["changesAt"]:g}'
+            if found["source"] == "assumed":
+                rows = [row for row in coverage if row["input"] == found["input"]]
+                good = [row for row in rows if row["someSettingPassesEach"]]
+                if good:
+                    row = good[0]
+                    one = f'one setting ({row["setting"]:g}) passes at both ends' if row["oneSettingPassesBoth"] else "no single setting passes at both ends"
+                    text += (f'; the adjustment "{row["adjustment"]}" covers it: settings {row["atLow"]["passes"][0]:g} to {row["atLow"]["passes"][1]:g} pass at the low end, '
+                             f'{row["atHigh"]["passes"][0]:g} to {row["atHigh"]["passes"][1]:g} at the high end, and {one}')
+                else:
+                    open_inputs += 1
+                    text += "; no adjustment declared for this trial has a setting that passes at each end" if rows else "; no adjustment is declared for this trial"
+            findings.append(text)
     if grid and not grid["allMet"]:
+        open_inputs += 1
         findings.append("the outcome changes at a combination of range ends, though no single input changes it alone")
     flips = any(found["flips"] and found["source"] == "assumed" for found in brackets) or bool(grid and not grid["allMet"])
-    return ("flips in range" if flips else "passed"), findings
+    return ("passed" if not flips else "not covered" if open_inputs else "covered by adjustment"), findings
 
 
-def hand_forward(inputs, brackets, ranking, control, assumptions):
+def hand_forward(inputs, brackets, ranking, control, assumptions, coverage=()):
     """What a later, fuller engine needs from this trial: the nominal settings, where it held, where it is marginal, what to keep."""
     passing, edges = {}, []
     for found in brackets:
@@ -94,4 +108,5 @@ def hand_forward(inputs, brackets, ranking, control, assumptions):
         edges += [{"input": found["input"], **flip} for flip in found["flips"]]
     return {"nominal": {row["path"]: row["value"] for row in inputs}, "passingRanges": passing, "marginalEdges": edges,
             "sensitivity": [row["input"] for row in ranking], "control": control and control["change"],
+            "adjustmentSettings": [{"input": row["input"], "adjustment": row["adjustment"], "setting": row["setting"]} for row in coverage if row["oneSettingPassesBoth"]],
             "assumptionIds": [row["id"] for row in assumptions if "id" in row]}

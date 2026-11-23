@@ -259,6 +259,161 @@
           }
         }
       }
+    },
+    "adjustments": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "input",
+          "kind",
+          "range"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "mechanical",
+              "spring",
+              "setpoint"
+            ]
+          },
+          "range": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "$ref": "#/$defs/number"
+            }
+          },
+          "step": {
+            "$ref": "#/$defs/number"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "interactions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "piece",
+          "plane",
+          "solids"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "piece": {
+            "type": "string",
+            "minLength": 1
+          },
+          "plane": {
+            "type": "object",
+            "required": [
+              "normal",
+              "atMm"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "normal": {
+                "enum": [
+                  "x",
+                  "y",
+                  "z"
+                ]
+              },
+              "atMm": {
+                "$ref": "#/$defs/number"
+              }
+            }
+          },
+          "solids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "guides": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "pose": {
+            "type": "string"
+          },
+          "pieceAtMm": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/vector"
+            }
+          },
+          "motions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "piecesAtOnce": {
+            "$ref": "#/$defs/number"
+          },
+          "pieceSolid": {
+            "type": "string",
+            "minLength": 1
+          },
+          "squeezeMotion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "marginMm": {
+            "$ref": "#/$defs/number"
+          },
+          "approach": {
+            "type": "object",
+            "required": [],
+            "additionalProperties": false,
+            "properties": {
+              "angleDeg": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "$ref": "#/$defs/number"
+                }
+              },
+              "offsetMm": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "$ref": "#/$defs/number"
+                }
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          },
+          "targetOffPlane": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -405,6 +560,66 @@
         },
         "note": {
           "type": "string"
+        },
+        "material": {
+          "type": "object",
+          "required": [
+            "class"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "class": {
+              "enum": [
+                "rigid",
+                "compliant",
+                "flexible"
+              ]
+            },
+            "stiffnessNPerM": {
+              "$ref": "#/$defs/sourced"
+            },
+            "curve": {
+              "type": "object",
+              "required": [
+                "points"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "points": {
+                  "type": "array",
+                  "minItems": 2,
+                  "items": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "$ref": "#/$defs/number"
+                    }
+                  }
+                },
+                "measured": {
+                  "type": "string",
+                  "minLength": 3
+                },
+                "assumed": {
+                  "type": "string",
+                  "minLength": 3
+                }
+              }
+            },
+            "kind": {
+              "enum": [
+                "belt",
+                "net",
+                "chain",
+                "tubing",
+                "fabric"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          }
         }
       }
     },
@@ -833,6 +1048,34 @@
                   "string"
                 ]
               }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "centerMm",
+            "axis",
+            "majorRadiusMm",
+            "minorRadiusMm"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "torus"
+            },
+            "centerMm": {
+              "$ref": "#/$defs/vector"
+            },
+            "axis": {
+              "$ref": "#/$defs/vector"
+            },
+            "majorRadiusMm": {
+              "$ref": "#/$defs/number"
+            },
+            "minorRadiusMm": {
+              "$ref": "#/$defs/number"
             }
           }
         }

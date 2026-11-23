@@ -108,6 +108,17 @@
                                      "throughMm": [[0, 0, 350], [130, 0, 400], [260, 0, 350]]}]}},
     "whole cycle": {"through": ["lowered", "raised", "set down"]}
   },
+  "adjustments": {
+    "fork height": {"input": "parameters.fork_z", "kind": "mechanical", "range": [85, 105], "step": 5,
+                    "note": "The tines bolt to the carriage plate through a row of holes."}
+  },
+  "interactions": {
+    "bar on the tines": {
+      "piece": "bar", "plane": {"normal": "y", "atMm": 60}, "solids": ["tine left", "carriage plate"],
+      "guides": ["post left", "post right"], "pieceAtMm": [["=post_x + 26 + 15", 0, "=fork_z + 15"]], "motions": ["lift"],
+      "approach": {"angleDeg": [-5, 5], "offsetMm": [-10, 10], "note": "Laid on by hand."}, "targetOffPlane": false
+    }
+  },
   "trials": {
     "bar stays on the tines": {
       "note": "A round bar lies across the tines against the carriage plate. The lifter is braked; the bar must stay put.",

@@ -41,6 +41,14 @@ def common(a, b, area=False):
     return max(0.0, properties.Mass())
 
 
+def shared(a, b):
+    """The shape two shapes have in common (it may be empty)."""
+    query = BRepAlgoAPI_Common(a, b)
+    if not query.IsDone():
+        raise ValueError("the CAD kernel could not find what two shapes share")
+    return query.Shape()
+
+
 def gap_and_overlap(a, b):
     """(gap in mm, shared volume in mm3). The shared volume is only worked out when the shapes touch."""
     gap = distance(a, b)

@@ -48,6 +48,11 @@ class Assembly:
         chosen = [s for s in self.solids.values() if fixtures is None or s.fixture == fixtures]
         return {s.name: s.shape if mx.is_identity(transforms.get(s.group, mx.IDENTITY)) else moved(s.shape, transforms[s.group]) for s in chosen}
 
+    def mesh(self, name, deflection_mm=0.5):
+        """The named solid as drawn, as triangles: {"vertices": [[x, y, z]], "triangles": [[i, j, k]]} in millimetres."""
+        from ..kernel.mesh import triangles
+        return triangles(self.solids[name].shape, deflection_mm)
+
     def at_pose(self, pose=None, fixtures=None):
         """{name: shape} at a named pose. None is the pose the solids were drawn in."""
         return self.placed(placement.at_pose(self.data, pose), fixtures)

@@ -98,8 +98,9 @@ python -m frc_design_kernel try swing-arm.json --out out
 `try` first prints what the campaign may cost (runs, steps, rough time), then writes `out/trials.json`. Every trial
 states what it assumes, every physical input says whether it was measured or assumed (with a range), and a trial is
 only reported as passed when a control was rejected, a repeat at half the step agrees, and the outcome holds across
-every assumed range. An outcome that changes inside a range is its own result: a measurement is needed first. See
-[DESIGN.md](DESIGN.md) section 13.
+every assumed range. A best guess with a range is a complete input. Where the outcome changes inside a range, the
+campaign asks whether an adjustment the robot is built with (a slot, a spring, a setpoint) covers it, and reports the
+settings that pass at each end. See [DESIGN.md](DESIGN.md) section 13.
 
 After a change to the source, ask which records it touched:
 

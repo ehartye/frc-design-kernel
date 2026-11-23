@@ -10,7 +10,7 @@ from .errors import DesignError
 from .source.load import Design, load
 from .version import generator
 
-__all__ = ["Design", "DesignError", "build", "export", "generator", "load", "sampled"]
+__all__ = ["Design", "DesignError", "build", "export", "generator", "load", "placements", "sampled"]
 
 
 def build(design):
@@ -29,3 +29,13 @@ def sampled(design, motion, steps):
     """A motion as steps + 1 still placements written with translation and rotation only. Needs no CAD kernel."""
     from .builder.placement import sampled as run
     return run(design.data, motion, steps)
+
+
+def placements(design, pose=None, motion=None, t=0.0):
+    """Where every group is, as numbers: {group: 12 numbers (three rows of rotation x 3, shift)}. Needs no CAD kernel.
+
+    With motion, the placement at stroke fraction t of that motion; otherwise at the named pose (None is as drawn).
+    Applying a group's transform to its solids as drawn puts them where the pose or motion has them.
+    """
+    from .builder import placement
+    return placement.at_motion(design.data, motion, t) if motion is not None else placement.at_pose(design.data, pose)
