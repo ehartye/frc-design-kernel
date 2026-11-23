@@ -86,6 +86,7 @@ def manifest(assembly, pose=None, files=None):
         "fixtures": solid_rows(assembly, placed, True),
         "groups": groups,
         "mounts": data["mounts"],
+        "contacts": data["contacts"],
         "poses": pose_rows(assembly),
         "motions": data["motions"],
         "parameters": data["parameters"],

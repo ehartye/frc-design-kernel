@@ -10,7 +10,7 @@ from .errors import DesignError
 from .source.load import Design, load
 from .version import generator
 
-__all__ = ["Design", "DesignError", "build", "export", "generator", "load"]
+__all__ = ["Design", "DesignError", "build", "export", "generator", "load", "sampled"]
 
 
 def build(design):
@@ -23,3 +23,9 @@ def export(assembly, out, pose=None):
     """Write design.step, fixtures.step and manifest.json into the folder out. Returns the manifest."""
     from .builder.export import export as run
     return run(assembly, out, pose)
+
+
+def sampled(design, motion, steps):
+    """A motion as steps + 1 still placements written with translation and rotation only. Needs no CAD kernel."""
+    from .builder.placement import sampled as run
+    return run(design.data, motion, steps)

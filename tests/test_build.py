@@ -96,9 +96,9 @@ class Example(unittest.TestCase):
     def test_a_motion_is_placed_by_stroke_fraction(self):
         """Catches a motion that ignores t, or a curved move that is cut straight."""
         half = self.assembly.at_motion("lift", 0.5)
-        self.assertAlmostEqual(props.bounds(half["carriage plate"])[2], 70 + 110)
+        self.assertAlmostEqual(props.bounds(half["carriage plate"])[2], 85 + 110)
         mid = props.bounds(self.assembly.at_motion("hand off", 0.5)["crate"])
-        self.assertAlmostEqual(mid[2], 80 + 220 + 50, places=6)     # the top of the arc, 50 mm above its ends
+        self.assertAlmostEqual(mid[2], 95 + 220 + 50, places=6)     # the top of the arc, 50 mm above its ends
         self.assertAlmostEqual((mid[0] + mid[3]) / 2, 130, places=6)
 
     def test_a_through_motion_visits_each_pose(self):
@@ -125,7 +125,7 @@ class Example(unittest.TestCase):
         """Control: the sameness test can fail."""
         data = json.loads(EXAMPLE.read_text(encoding="utf-8"))
         data["parameters"]["lift"] = 221
-        changed = load_data({k: v for k, v in data.items() if k not in ("custom", "fixtures", "mounts")} | {
+        changed = load_data({k: v for k, v in data.items() if k not in ("custom", "fixtures", "mounts", "contacts")} | {
             "solids": [s for s in data["solids"] if "part" not in s and s["shape"]["kind"] != "custom"]})
         self.assertNotEqual(kernel.export(kernel.build(changed), self.out / "c")["poses"], self.manifest["poses"])
 

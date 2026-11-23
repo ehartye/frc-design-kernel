@@ -41,7 +41,7 @@ The owner's ruling: **build, measure, try — nothing else.**
 | Layer | Job | Package | State |
 |---|---|---|---|
 | Build | Design source to named solids, poses, motions, STEP and manifest | `source/`, `motion/`, `kernel/`, `builder/` | Here now |
-| Measure | Clearance and interference along a motion, contacts, mass roll-up | `measure/` | Empty slot |
+| Measure | Clearance along a motion with a proof, what touches what, mass and centre of mass | `measure/` | Here now |
 | Try | Physics trials defined as data | `trials/` | Empty slot |
 
 Out of scope, for good: clearance guidelines, receipts, readiness criteria, review pages, publishing and CI policy.
@@ -57,7 +57,7 @@ library that a robot project and a tooling plugin can both import.
 frc_design_kernel/
   __init__.py        the public functions: load, build, export
   __main__.py        python -m frc_design_kernel
-  cli.py             the build and validate commands
+  cli.py             the build, validate and measure commands
   errors.py          DesignError: where, what is wrong, how to fix it
   version.py         library version and commit, for information
 
@@ -66,6 +66,8 @@ frc_design_kernel/
     ops.py           translation, rotation, gravity-drop, path at fraction t
     paths.py         straight, arc and smooth curves through points
     screw.py         smooth movement from one pose to the next
+    stages.py        a body's whole movement as stages, with a proven speed limit
+    sampling.py      any placement written as one turn and one slide
 
   source/            reading the design source. No CAD kernel needed.
     expressions.py   safe arithmetic for "=..." values
@@ -78,7 +80,8 @@ frc_design_kernel/
   kernel/            thin wrappers over the CAD kernel (OCP). Few lines each.
     shapes.py        box, cylinder, sphere, prism, tube
     booleans.py      union, difference, intersection
-    props.py         volume, bounds, validity, solid count
+    props.py         volume, bounds, validity, solid count, centre of volume
+    between.py       the gap between two shapes, shared volume, facing contact area
     transform.py     apply a rigid transform to a shape
     step_read.py     STEP file to named solids
     step_write.py    named solids to a STEP file
@@ -93,21 +96,28 @@ frc_design_kernel/
     manifest.py      the manifest
     export.py        write the STEP files and the manifest
 
-  measure/           EMPTY SLOT. Reads an Assembly; writes numbers.
+  measure/           the measure layer. Reads an Assembly; writes numbers. See section 12.
+    scene.py         solids set up for measuring: start, box, speed limit
+    pairs.py         broad phase: which pairs are near enough to measure
+    search.py        the adaptive search that proves nothing was missed
+    proofs.py        exact shortcuts for straight slides
+    clearance.py     gaps along a motion and at a pose
+    approach.py      does a pair meet, is a seat bearing, is a set withdrawn
+    attachment.py    what touches what, what is loose, measured mounts
+    sets.py          connected sets
+    mass.py          mass and centre of mass
+    compression.py   how deep a solid presses into a ball or ring
+    run.py           sharing work between worker processes
+    summary.py       everything about one design as one record
   trials/            EMPTY SLOT. Reads an Assembly and trial data; writes results.
 ```
-
-**What will go in `measure/`:** the smallest gap between two solids at a pose; the smallest gap and any overlap along
-a motion (sampled at fractions `t`, with a stated bound on what the samples can miss); which solids touch; mass
-roll-up by group with a centre of mass; the swept outer size of the robot. It takes an `Assembly` and returns plain
-data. It never applies a guideline.
 
 **What will go in `trials/`:** a trial described as data (bodies, contacts, drives, a stop condition), a solver, and
 a result record. It takes solids and masses from the `Assembly` so a trial and the layout cannot disagree.
 
 **Import direction.** `motion` imports nothing from the rest. `source` imports `motion` (to check operations).
-`kernel` imports only OCP. `builder` imports `source`, `motion` and `kernel`. `measure` and `trials` will import
-`builder`, `motion` and `kernel`. Nothing imports upward, and nothing imports in a circle. A test enforces the
+`kernel` imports only OCP. `builder` imports `source`, `motion` and `kernel`. `measure` imports `builder`, `motion`
+and `kernel`; `trials` will too. Nothing imports upward, and nothing imports in a circle. A test enforces the
 no-circle rule.
 
 ## 4. The design source
@@ -233,6 +243,16 @@ left out of the robot's mass. Their group defaults to `fixtures`.
 A mount says what a group is attached to, and where. `on` is the name of the solid it attaches to. `member` is
 optional and names the solid of the group that makes the joint. Mounts are checked (the names must exist) and passed
 to the manifest. The measure layer will use them to ask "does anything actually touch there?"
+
+### 4.5a Contacts
+
+```json
+"contacts": [{"pair": ["crate", "tine left"], "during": ["hand off"], "note": "The crate rests on the tine."}]
+```
+
+A contact says that two solids are meant to touch. It is a fact about the design, written where the design is
+written. The measure layer leaves a declared pair out of its clearance search and counts it. `during` is optional and
+limits the contact to the named motions; without it the contact holds always. `each` works here too.
 
 ### 4.6 Poses
 
@@ -453,3 +473,113 @@ These were the simpler choice at the time. Any of them may change while the libr
     group lists long, add a way to gather groups under one heading for the reader.
 13. **Fixtures move like any group.** A tool that draws the field moving past a still robot poses the fixture
     groups. There is no separate idea of "the robot drives".
+14. **Touching solids are closer than any gap above zero.** Two solids bolted together in one group touch, so a
+    clearance run with `min_gap` above 0 lists them unless the source declares them as a contact or draws a small
+    split between them. This is carried over from the engine the measure layer was ported from. If declaring every
+    joint becomes a chore, leave pairs inside one rigid group out of the motion search and report them at the pose.
+15. **The speed limit is taken from a box.** It is sound but can be loose for a long solid turning about a far
+    pivot, which costs samples, never correctness.
+16. **Measure results are not rounded.** The same source gives the same numbers on one machine; tiny differences
+    between machines or kernel versions are possible in the last digits.
+
+## 12. The measure layer
+
+The measure layer answers questions about a built design with numbers. It never says pass or fail. Every limit it
+compares against (a minimum gap, a touching distance, a depth) is a number the caller gives it, and the result says
+so.
+
+### 12.1 Clearance along a motion, with a proof
+
+The question: over the whole of a motion, how close does each pair of solids come?
+
+Sampling the motion at fixed steps cannot answer that. A thin part can pass through another between two samples,
+and "how finely did you split it" has no good answer. The library proves its answer instead:
+
+1. **A speed limit for every solid.** From the motion's stages the library works out a limit on how fast any point
+   of a solid can move, in millimetres per unit of the stroke fraction `t` (`motion/stages.py`). A slide moves at its
+   length. A turn moves the farthest corner of the solid's box at the angle times its distance from the pivot. A
+   `path` moves at exactly the curve's length. A `through` motion moves at its fastest screw. A carried solid adds
+   its carrier's limit. The limit is never lower than the real speed; a test checks that on every kind of movement.
+2. **Sample and bound.** The gap is measured at `t` = 0 and 1, then at the middle of an interval. Between `lo` and
+   `hi` the gap cannot fall more than `speed * (hi - lo) / 2` below the middle sample. If that floor is still above
+   the asked gap, the whole interval is settled. If not, the interval is halved and both halves are sampled.
+3. **A depth limit.** Halving stops after `depth` levels (default 9). A pair still not settled is reported with
+   `"proven": false` and the interval that was left. It is never passed off as clear.
+
+Before sampling, cheaper exact tests remove most pairs: two boxes that the speed limit cannot bring together; two
+boxes that stay apart along one axis for the whole stroke (worked out exactly for slides and drops); and, for a pair
+whose relative movement is one straight slide, the solid swept by the moving one.
+
+Each row of the result:
+
+```json
+{"pair": ["arm", "post"], "method": "adaptive search", "gapMm": 4.91, "t": 0.484, "overlapMm3": 0.0,
+ "lowerBoundMm": 4.02, "proven": true, "closerThanMinGap": false, "samples": 37}
+```
+
+- `gapMm` at `t` is the smallest gap that was sampled. `lowerBoundMm` is the proven floor for the whole stroke.
+- `closerThanMinGap` is a fact about the caller's `min_gap`: a sample was closer, or the solids shared volume.
+- `method` is `adaptive search`, `enclosed straight stroke` (settled exactly, no samples) or `fixed relative pose`
+  (the two solids do not move against each other, so one measurement is the whole answer).
+- Pairs that boxes prove far apart get no row. They are counted under `counts`.
+
+Inputs that are data, not looked up from anywhere: `min_gap`; `contacts` (pairs meant to touch, left out and
+counted); `absent` (solids taken out of the scene, such as a cover removed before a part is lifted out); `depth`.
+
+`clearance.at_pose` asks the same of a still pose and lists only the pairs closer than `min_gap`.
+
+### 12.2 The other measures
+
+| Module | Question | Answer |
+|---|---|---|
+| `approach.reach` | Do two solids come within a distance, in a window of a motion? | A witness (`gapMm`, `t`), or a proof that they do not |
+| `approach.seat` | How do two solids sit on each other at a fraction `t`? | Flat area in contact, shared volume |
+| `approach.withdrawn` | At the end of a motion, how far are the moved solids from everything that stayed? | Box gap per moved solid |
+| `attachment.at_pose` | What touches what within a gap? What hangs together? What is not connected to the base? Which fixtures float above the floor? | Touching pairs with gaps, connected sets, loose solids with their nearest neighbour, fixtures off the floor |
+| `attachment` (mounts) | Is each mount real? | Per mount: the true gap between its two solids, and the stated point's distance to each |
+| `mass.roll_up` | What does it weigh and where is the centre of mass, at a pose? | Per group and whole. A solid's mass sits at the centre of its volume; a lump group mass at the centre of the group's volume |
+| `compression.indentation` | How deep does a solid press into a ball or a round ring along a motion? | Deepest sample, and a proven ceiling |
+
+`attachment` takes its own inputs as data: the touching `gap`, the `floor_z`, solids to `ignore` (a game piece, a
+gauge), a `base` solid, and declared `contacts`. Without a `base`, the largest connected set is the base.
+
+### 12.3 Workers
+
+`measure/run.py` shares clearance work between worker processes and does no measuring itself. A motion's pairs are
+dealt out in shares; rows come back in pair order, so the result is the same for any worker count (tested). The
+caller chooses the count. The default is half the machine's cores.
+
+### 12.4 The record and the command
+
+```
+python -m frc_design_kernel measure SOURCE --out DIR [--min-gap MM] [--touch-gap MM] [--floor-z MM]
+                                                     [--ignore SOLID] [--workers N] [--depth N]
+```
+
+writes `DIR/measurements.json`:
+
+```json
+{"schema": "frc-design-kernel/measurements@1",
+ "generator": {"library": "frc-design-kernel", "version": "...", "commit": "..."},
+ "design": {"name": "...", "source": "design.json", "sourceSha256": "..."},
+ "settings": {"minGapMm": 1.0, "touchGapMm": 3.0, "floorZMm": 0.0, "ignored": [], "depthLimit": 9},
+ "motions": {"lift": {"motion": "lift", "counts": {}, "proven": true, "closer": [], "unresolved": [], "closest": {}, "pairs": []}},
+ "poses": [{"pose": null, "clearance": {}, "attachment": {}, "mass": {}}]}
+```
+
+The command prints one line per motion and per pose. It prints numbers and counts, not verdicts.
+
+### 12.5 For tools that only know the three old operations
+
+`frc_design_kernel.sampled(design, motion, steps)` turns any motion, curved or through poses, into `steps + 1` still
+placements. Each placement is written as at most one `rotation` and one `translation`, applied in full. An older
+tool can read those as start poses.
+
+### 12.6 What the measure layer leaves out
+
+- **Guidelines and verdicts.** No built-in gap, no "floating is an error", no pass or fail.
+- **Reading evidence files.** A declared contact is a pair of names. Whether a trial justifies it is not asked here.
+- **Mass ranges, weight limits and electrical budgets.** Mass is one figure; budgeting is a judging tool's work.
+- **Progress lines, receipts and advice text.**
+- **Line-of-sight checks** and the advisory test for a solid that turns about its own axis. They can be added as
+  measures when a second project needs them.

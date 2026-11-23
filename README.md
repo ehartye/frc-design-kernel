@@ -11,7 +11,7 @@ The library does three things and nothing else:
 | Layer | What it does | State |
 |---|---|---|
 | **Build** | Turns one design source file (JSON) into named solids, poses, motions, a STEP file and a manifest. | Here now |
-| **Measure** | Clearance and interference along a motion, what touches what, mass roll-up. | Empty slot, planned |
+| **Measure** | Clearance along a motion with a proof that nothing was missed, what touches what, mass and centre of mass. | Here now |
 | **Try** | Physics trials described as data. | Empty slot, planned |
 
 It builds and measures. It does not judge. Clearance guidelines, pass or fail criteria, review pages and publishing
@@ -78,6 +78,17 @@ python -m frc_design_kernel build swing-arm.json --out out
 `build` writes `out/design.step` (every solid, by name) and `out/manifest.json` (each solid's volume, bounding box,
 mass and group, plus the poses, the motions and the library version). The same source always gives the same manifest.
 
+Then measure it:
+
+```
+python -m frc_design_kernel measure swing-arm.json --out out
+```
+
+`measure` writes `out/measurements.json`: for every motion, how close each pair of solids comes over the whole
+stroke; for every pose, what touches what, what is not connected to the base, and the mass with its centre. The
+closeness is proven, not sampled at fixed steps: the library knows how fast each solid can move, so it knows what
+cannot happen between two samples.
+
 The same thing from Python:
 
 ```python
@@ -86,6 +97,9 @@ import frc_design_kernel as kernel
 assembly = kernel.build(kernel.load("swing-arm.json"))
 halfway = assembly.at_motion("raise", 0.5)      # {solid name: placed shape}
 kernel.export(assembly, "out")
+
+from frc_design_kernel.measure import clearance
+result = clearance.along(assembly, "raise", min_gap=1.0)    # plain data: rows per pair, counts, closest
 ```
 
 A fuller example, with an imported part and a custom shape, is in [examples/lifter](examples/lifter).
