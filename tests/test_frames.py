@@ -49,6 +49,19 @@ class Frames(unittest.TestCase):
             still = carried(engine, {"group": "tray"})        # control: a frame with no mover stays where the pose put it
             self.assertAlmostEqual(still["measures"]["along"] - found["measures"]["along"], -200.0, delta=0.1, msg=engine)
 
+    def test_a_frame_placed_within_the_drawing_reads_from_its_own_origin_and_axes(self):
+        """Catches a frame's own place being ignored or applied the wrong way round, for solids drawn in another pose."""
+        for engine in ENGINES:
+            plain = carried(engine, {"group": "tray", "mover": "carry"})
+            turned = carried(engine, {"group": "tray", "mover": "carry", "place": [
+                {"kind": "rotation", "originMm": [0, 0, 0], "axis": [0, 1, 0], "travelDeg": 90}, {"kind": "translation", "travelMm": [50, 0, 10]}]})
+            columns = plain["trace"]["columns"]
+            fx, fz = columns.index("tray.xMm"), columns.index("tray.zMm")
+            for a, b in zip(plain["trace"]["rows"], turned["trace"]["rows"]):
+                # the frame's x axis lies along the drawing's -z and its z axis along +x, from (50, 0, 10)
+                self.assertAlmostEqual(b[fx], -(a[fz] - 10.0), delta=1e-6, msg=engine)
+                self.assertAlmostEqual(b[fz], a[fx] - 50.0, delta=1e-6, msg=engine)
+
     def test_a_frame_must_name_a_group_and_a_mover_along_a_motion(self):
         """Catches a frame that quietly reads as the world when its group or mover is misspelt."""
         with self.assertRaisesRegex(DesignError, 'names the group "tary"'):
