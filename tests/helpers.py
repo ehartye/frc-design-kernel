@@ -33,13 +33,17 @@ def edited(change=None):
     return data
 
 
+_FOLDERS = []    # temporary folders stay until the test run ends, because a build reads files beside the source
+
+
 def load_data(data, files=None):
     """Load a design given as a dict, written to a temporary folder with any extra files {relative path: text}."""
-    with tempfile.TemporaryDirectory() as folder:
-        for name, text in (files or {}).items():
-            target = Path(folder) / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text, encoding="utf-8")
-        path = Path(folder) / "design.json"
-        path.write_text(json.dumps(data), encoding="utf-8")
-        return load(path)
+    keep = tempfile.TemporaryDirectory()
+    _FOLDERS.append(keep)
+    for name, text in (files or {}).items():
+        target = Path(keep.name) / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    path = Path(keep.name) / "design.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return load(path)
