@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "frc-design-kernel"
+version = "0.1.0"
+description = "Build, measure and try a preliminary robot design from one data file."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = ["cadquery-ocp>=8.0.1"]
+
+[project.urls]
+Source = "https://github.com/ehartye/frc-design-kernel"
+
+[tool.setuptools.packages.find]
+include = ["frc_design_kernel*"]
+
+[tool.setuptools.package-data]
+frc_design_kernel = ["source/*.json"]
