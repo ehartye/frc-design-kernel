@@ -75,6 +75,17 @@
     {"group": "load", "member": "crate", "on": "tine left", "atMm": [0, 60, "=fork_z"],
      "note": "The crate rests on both tines."}
   ],
+  "pieces": {
+    "bar": {"note": "A round steel bar laid across the tines.",
+            "shape": {"kind": "cylinder", "fromMm": [0, -150, 0], "toMm": [0, 150, 0], "radiusMm": 15},
+            "massKg": {"value": 0.4, "measured": "Weighed on the shop scale (invented for this example)."}}
+  },
+  "materials": {
+    "steel": {"note": "The bar against the lifter's steel parts.",
+              "stiffnessNPerM": {"value": 200000, "assumed": [100000, 400000]},
+              "restitution": {"value": 0.2, "assumed": [0.1, 0.4]},
+              "friction": {"value": 0.4, "assumed": [0.2, 0.6]}}
+  },
   "contacts": [
     {"pair": ["crate", "tine {side}"], "each": [{"side": "left"}, {"side": "right"}],
      "note": "The crate rests on the tines until it is handed off."},
@@ -100,13 +111,13 @@
   "trials": {
     "bar stays on the tines": {
       "note": "A round bar lies across the tines against the carriage plate. The lifter is braked; the bar must stay put.",
+      "assumes": [{"id": "bar-square", "text": "The bar lies square across both tines and does not slew."}],
       "plane": {"normal": "y", "atMm": 60},
       "stepS": 0.0001, "durationS": 1.5, "traceS": 0.01, "fitToleranceMm": 2,
-      "piece": {"radiusMm": 15, "massKg": 0.4, "inertiaFactor": 0.5, "start": {"atMm": ["=post_x + 26 + 15", "=fork_z + 15"]}},
-      "materials": {"steel": {"stiffnessNPerM": 200000, "restitution": 0.2, "friction": 0.4, "law": "stick"}},
+      "piece": {"use": "bar", "start": {"atMm": ["=post_x + 26 + 15", "=fork_z + 15"]}},
       "surfaces": [
-        {"name": "tine", "solid": "tine left", "material": "steel"},
-        {"name": "carriage plate", "solid": "carriage plate", "material": "steel"}
+        {"solid": "tine left", "material": "steel"},
+        {"solid": "carriage plate", "material": "steel"}
       ],
       "loads": [{"name": "braking", "along": [1, 0], "accelerationMps2": 3, "startS": 0.2, "durationS": 0.3,
                  "note": "The frame speeds up toward +X, so the bar is pressed back against the plate."}],
@@ -118,7 +129,7 @@
       "pass": {"outcomes": ["stayed"]},
       "control": {"change": {"loads.braking.accelerationMps2": -6},
                   "note": "Braked the other way, nothing stops the bar and it must roll off the tips."},
-      "brackets": [{"input": "loads.braking.accelerationMps2", "unit": "m/s2", "values": [-6, -1, 3, 9]}]
+      "brackets": [{"input": "loads.braking.accelerationMps2", "unit": "m/s2", "values": [-1, 1, 3, 6]}]
     }
   }
 }

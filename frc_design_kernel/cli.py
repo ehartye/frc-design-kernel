@@ -1,6 +1,9 @@
 """The command line. Each command prints plain one-line messages saying what it did."""
 import argparse
+import json
 import sys
+import time
+from pathlib import Path
 
 from .errors import DesignError
 from .source.load import load
@@ -16,6 +19,18 @@ def summary(design):
     parts = [count(len(data["solids"]), "solid"), count(len(data["fixtures"]), "fixture"), count(len(data["groups"]), "group"),
              count(len(data["poses"]), "pose"), count(len(data["motions"]), "motion"), count(len(design.custom_used), "custom shape")]
     return ", ".join(parts)
+
+
+def write(folder, name, record):
+    out = Path(folder)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / name).write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8", newline="\n")
+
+
+def earlier(folder, name):
+    """A record already in the folder, for a run of only part of the design to be put into; or None."""
+    path = Path(folder) / name
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
 
 
 def validate(args):
@@ -39,13 +54,10 @@ def build(args):
 
 
 def measure(args):
-    import json
-    from pathlib import Path
-    from .measure.summary import measure_design    # the CAD kernel is needed only from here on
-    record = measure_design(args.source, args.min_gap, args.touch_gap, args.floor_z, args.ignore, args.workers, args.depth)
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "measurements.json").write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8", newline="\n")
+    from .measure import summary as measures    # the CAD kernel is needed only from here on
+    part = bool(args.motion or args.pose)
+    record = measures.measure_design(args.source, args.min_gap, args.touch_gap, args.floor_z, args.ignore, args.workers, args.depth,
+                                     (args.motion or []) if part else None, (args.pose or []) if part else None)
     print(f'Measured "{record["design"]["name"]}" against a gap of {args.min_gap:g} mm, touching within {args.touch_gap:g} mm.')
     for name, found in record["motions"].items():
         nearest = found["closest"]
@@ -56,36 +68,58 @@ def measure(args):
         hold, weight = row["attachment"], row["mass"]
         print(f'{label}: {count(len(row["clearance"]["closer"]), "pair")} closer than the gap; {count(len(hold["notConnectedToBase"]), "solid")} not connected to the base; '
               f'{count(len(hold["fixturesOffFloor"]), "fixture")} off the floor; mass {weight["totalKg"]:.3f} kg.')
-    print(f"Wrote measurements.json to {args.out}.")
+    old = earlier(args.out, "measurements.json") if part else None
+    write(args.out, "measurements.json", measures.merged(old, record) if old else record)
+    print(f"Wrote measurements.json to {args.out}" + (", keeping the parts that were not measured again." if old else "."))
 
 
 def announce(cost):
-    print(f'Campaign: {count(len(cost["trials"]), "trial")}, {count(cost["runs"], "run")}, up to {cost["steps"]} steps.')
+    print(f'Campaign: {count(len(cost["trials"]), "trial")}, at most {count(cost["runs"], "run")} and {cost["steps"]} steps, about {cost["aboutSeconds"]:g} s.')
 
 
 def trials(args):
-    import json
-    from pathlib import Path
     from .trials import campaign    # the CAD kernel is needed only from here on
     if args.estimate:
         announce(campaign.estimate(load(args.source), args.trial or None))
         return
+    began = time.perf_counter()
     record = campaign.run_campaign(args.source, args.trial or None, args.max_steps, args.workers or 1, announce)
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "trials.json").write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8", newline="\n")
+    spent = time.perf_counter() - began
     for name, found in record["trials"].items():
         control = "no control" if found["control"] is None else ("control rejected" if found["control"]["rejected"] else "control NOT rejected")
-        inside = sum(1 for b in found["brackets"] if b["bracketed"])
+        held = sum(1 for r in found["ranges"] if r["held"])
         steps = "half step agrees" if found["stepComparison"]["converged"] else "half step differs"
+        first = found["sensitivity"][0]["input"] if found["sensitivity"] else "none"
         print(f'Trial "{name}": {found["result"]}. Nominal outcome "{found["nominal"]["outcome"]}"; {control}; '
-              f'{inside} of {count(len(found["brackets"]), "input")} bracketed; {steps}.')
-    print(f'Ran {record["cost"]["stepsRun"]} steps. Wrote trials.json to {args.out}.')
+              f'{held} of {count(len(found["ranges"]), "input")} held across its range; {steps}; most sensitive to {first}.')
+    old = earlier(args.out, "trials.json") if args.trial else None
+    if old:
+        record["trials"] = {**old.get("trials", {}), **record["trials"]}
+    write(args.out, "trials.json", record)
+    print(f'Ran {count(record["cost"]["runs"], "run")} and {record["cost"]["stepsRun"]} steps in {spent:.1f} s. Wrote trials.json to {args.out}'
+          + (", keeping the trials that were not run again." if old else "."))
+
+
+def status(args):
+    from .status import status as compare    # the CAD kernel is needed only from here on
+    found = compare(args.source, args.folder)
+    print(f'Records in {args.folder} against "{found["design"]}" as it is now:')
+    if not found["records"]:
+        print("No records found.")
+    for row in found["records"]:
+        print(f'{row["record"]}: {row["state"]}' + ("" if not row["changes"] else " - " + "; ".join(row["changes"][:6])
+                                                   + (f'; and {len(row["changes"]) - 6} more' if len(row["changes"]) > 6 else "")))
+    ready = found["readyFor3d"]
+    print(f'For a 3D engine: {count(len(ready["concaveWithNoBreakdown"]), "trial solid")} concave with no convex breakdown; '
+          f'{count(len(ready["solidsWithNoMass"]), "solid")} with no mass; {count(len(ready["groupsNotOneHingeOrSlider"]), "moving group")} not one hinge or slider; '
+          f'{count(len(ready["drivesNotOnASolid"]), "drive")} not on a solid; {count(len(ready["surfacesNotFromSolids"]), "trial surface")} not from a solid.')
+    if args.json:
+        print(json.dumps(found, indent=1))
 
 
 def main(argv=None):
     made = generator()
-    parser = argparse.ArgumentParser(prog="python -m frc_design_kernel", description="Build a preliminary robot design from a design source.")
+    parser = argparse.ArgumentParser(prog="python -m frc_design_kernel", description="Build, measure and try a preliminary robot design from a design source.")
     parser.add_argument("--version", action="version", version=f"{made['library']} {made['version']} (commit {made['commit'] or 'unknown'})")
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("validate", help="check a design source without building it")
@@ -99,6 +133,8 @@ def main(argv=None):
     gauge = commands.add_parser("measure", help="measure clearance, attachment and mass, and write measurements.json")
     gauge.add_argument("source", help="the design source JSON file")
     gauge.add_argument("--out", required=True, help="the folder to write into")
+    gauge.add_argument("--motion", action="append", metavar="NAME", help="measure only this motion; may be repeated")
+    gauge.add_argument("--pose", action="append", metavar="NAME", help="measure only this pose; may be repeated")
     gauge.add_argument("--min-gap", type=float, default=0.0, help="the gap in mm to test every pair against (default 0)")
     gauge.add_argument("--touch-gap", type=float, default=0.0, help="how near in mm two surfaces count as touching (default 0)")
     gauge.add_argument("--floor-z", type=float, default=0.0, help="the height of the floor in mm (default 0)")
@@ -114,6 +150,11 @@ def main(argv=None):
     attempt.add_argument("--workers", type=int, help="worker processes for the runs (default 1)")
     attempt.add_argument("--estimate", action="store_true", help="print the cost and stop")
     attempt.set_defaults(run=trials)
+    state = commands.add_parser("status", help="say which records in a folder are current and which are stale, and why")
+    state.add_argument("source", help="the design source JSON file")
+    state.add_argument("folder", help="the folder holding measurements.json and trials.json")
+    state.add_argument("--json", action="store_true", help="also print everything as JSON")
+    state.set_defaults(run=status)
     args = parser.parse_args(argv)
     if args.command == "try" and not (args.out or args.estimate):
         parser.error("try needs --out DIR, or --estimate")

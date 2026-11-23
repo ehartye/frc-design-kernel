@@ -148,15 +148,59 @@ def check_poses_and_motions(design):
         check_group_ops(motion.get("moves", {}), f"{where} moves", groups)
 
 
+SOURCED_TABLES = ("pieces", "materials", "motors", "drives")
+
+
+def check_sourced(value, where):
+    """A physical input that states its source must state exactly one, and an assumed range must hold its value."""
+    if isinstance(value, dict) and "value" in value:
+        if ("measured" in value) == ("assumed" in value):
+            raise DesignError(where, 'needs exactly one of "measured" or "assumed"', 'Say where it was measured, or give the range it is believed to lie in')
+        if "assumed" in value and not value["assumed"][0] <= value["value"] <= value["assumed"][1]:
+            raise DesignError(where, f'its value {value["value"]:g} is outside its assumed range {value["assumed"]}', "Give the range as [low, high] around the value")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            check_sourced(item, f"{where}.{key}")
+    elif isinstance(value, list):
+        for i, item in enumerate(value):
+            check_sourced(item, f"{where}[{i}]")
+
+
+def check_tables(design, solids):
+    for table in SOURCED_TABLES:
+        check_sourced(design[table], table)
+    for name, drive in design["drives"].items():
+        where = f'drives "{name}"'
+        if "motor" in drive and drive["motor"] not in design["motors"]:
+            raise unknown(where, "motor", drive["motor"], design["motors"])
+        if "motor" in drive and ("movingKg" in drive) == ("inertiaKgM2" in drive):
+            raise DesignError(where, 'a motor drive needs exactly one of "movingKg" or "inertiaKgM2"', "Say what the motor has to speed up")
+        for turn in drive.get("turns", []):
+            if turn["solid"] not in solids:
+                raise unknown(where, "solid", turn["solid"], solids)
+
+
 def check_trials(design, solids):
     trials = design["trials"]
     for name, trial in trials.items():
         where = f'trials "{name}"'
-        for surface in trial["surfaces"]:
-            if "solid" in surface and surface["solid"] not in solids:
-                raise unknown(f'{where} surface "{surface["name"]}"', "solid", surface["solid"], solids)
-            if sum(key in surface for key in ("solid", "segmentsMm", "circleMm")) != 1:
-                raise DesignError(f'{where} surface "{surface["name"]}"', 'needs exactly one of "solid", "segmentsMm" or "circleMm"', "Say where the surface is, once")
+        check_sourced(trial.get("flaps", []), f"{where} flaps")
+        if trial["piece"]["use"] not in design["pieces"]:
+            raise unknown(f"{where} piece", "piece", trial["piece"]["use"], design["pieces"])
+        for i, surface in enumerate([*trial["surfaces"], *trial.get("flaps", [])]):
+            label = f'{where} surface "{surface.get("name", surface.get("solid", i))}"'
+            if "hingeMm" not in surface:
+                if "solid" in surface and surface["solid"] not in solids:
+                    raise unknown(label, "solid", surface["solid"], solids)
+                if sum(key in surface for key in ("solid", "segmentsMm", "circleMm")) != 1:
+                    raise DesignError(label, 'needs exactly one of "solid", "segmentsMm" or "circleMm"', "Say where the surface is, once")
+            if surface["material"] not in design["materials"]:
+                raise unknown(label, "material", surface["material"], design["materials"])
+            if "drive" in surface and surface["drive"] not in design["drives"]:
+                raise unknown(label, "drive", surface["drive"], design["drives"])
+        for drive in trial.get("commands", {}):
+            if drive not in design["drives"]:
+                raise unknown(f"{where} commands", "drive", drive, design["drives"])
         if "pose" in trial and trial["pose"] not in design["poses"]:
             raise unknown(where, "pose", trial["pose"], design["poses"])
         start = trial["piece"]["start"]
@@ -179,6 +223,7 @@ def check_all(design):
     used = check_custom(design)
     check_mounts(design, solids)
     check_contacts(design, solids)
+    check_tables(design, solids)
     check_trials(design, solids)
     check_poses_and_motions(design)
     return used

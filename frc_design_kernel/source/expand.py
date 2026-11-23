@@ -6,7 +6,7 @@ from .expressions import evaluate, is_expression
 from .schema import step
 
 REPEATABLE = ("solids", "fixtures", "mounts", "contacts")
-PLAIN = ("groups", "poses", "motions", "trials")
+PLAIN = ("groups", "poses", "motions", "pieces", "materials", "motors", "drives", "trials")
 
 
 def text_of(value):
