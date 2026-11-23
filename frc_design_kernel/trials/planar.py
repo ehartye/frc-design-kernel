@@ -103,72 +103,113 @@ def signal_names(scene):
     return names
 
 
+def touch(scene, piece_state, radius, drive_state, hinge_state, offset, velocity, memory, dt, arm_on_piece):
+    """Every contact force on the piece this step.
+
+    Returns (fx, fz, torque, load on each drive, depth per surface, normal force per surface, torque on each flap).
+    """
+    x, z, vx, vz, w = piece_state
+    fx = fz = torque = 0.0
+    loads, touching, pressed, twist = dict.fromkeys(scene["drives"], 0.0), {}, {}, dict.fromkeys(scene["hinges"], 0.0)
+    for index, surface in enumerate(scene["surfaces"]):
+        mover = surface.get("mover")
+        ox, oz = offset[mover] if mover else (0.0, 0.0)
+        mvx, mvz = velocity[mover] if mover else (0.0, 0.0)
+        state = (x - ox, z - oz, vx - mvx, vz - mvz, w)
+        hinge, drive = surface.get("hinge"), surface.get("drive")
+        if hinge:
+            prim, swing = flap_prim(scene["hinges"][hinge], hinge_state[hinge]["angle"])
+            prims = (prim,)
+        else:
+            prims = surface["prims"]
+        speed = surface["sign"] * (drive_state[drive]["u"] * surface["ratio"] if drive else surface["speedMps"])
+        for n, prim in enumerate(prims):
+            qx, qz, tx, tz = nearest(prim, state[0], state[1])
+            if hinge:
+                reach = math.dist((qx, qz), scene["hinges"][hinge]["at"])
+                moving = (hinge_state[hinge]["rate"] * reach * swing[0], hinge_state[hinge]["rate"] * reach * swing[1])
+            else:
+                moving = (speed * tx, speed * tz)
+            found = push((index, n), memory, state, radius, (qx, qz), surface["mat"], moving, dt, arm_on_piece)
+            if found is None:
+                continue
+            fx += found[0]
+            fz += found[1]
+            torque += found[2]
+            name = surface["name"]
+            touching[name] = max(touching.get(name, 0.0), found[5])
+            pressed[name] = pressed.get(name, 0.0) + found[3]
+            if drive:
+                loads[drive] += surface["ratio"] * surface["sign"] * (found[0] * tx + found[1] * tz)
+            if hinge:
+                twist[hinge] += reach * (-found[0] * swing[0] - found[1] * swing[1])
+    return fx, fz, torque, loads, touching, pressed, twist
+
+
+def read_signals(blank, axes, t, piece_state, drive_state, hinge_state, offset, touching, pressed):
+    """The signals at the end of a step, by name."""
+    x, z, vx, vz, w = piece_state
+    signals = dict(blank)
+    signals.update({"tS": t, f"{axes[0]}Mm": x * 1e3, f"{axes[1]}Mm": z * 1e3, "spinRadps": w, "speedMps": math.hypot(vx, vz)})
+    for name, state in drive_state.items():
+        signals[f"drive.{name}.speedMps"], signals[f"drive.{name}.currentA"], signals[f"drive.{name}.supplyA"] = state["u"], state["amps"], state["supply"]
+    for name, state in hinge_state.items():
+        signals[f"hinge.{name}.angleDeg"] = math.degrees(state["angle"])
+    for name, moved in offset.items():
+        signals[f"mover.{name}.offsetMm"] = math.hypot(*moved) * 1e3
+    for name, depth in touching.items():
+        signals[f"contact.{name}.forceN"], signals[f"contact.{name}.depthMm"] = pressed[name], depth * 1e3
+    return signals
+
+
+def fire(scene, signals, happened, events, rest_since, t):
+    """Record the events whose conditions now hold. Returns the outcome of the first one that stops the run, or None."""
+    for event in scene["events"]:
+        if event["name"] not in happened and holds(event["when"], signals, happened, rest_since, t):
+            happened[event["name"]] = t
+            events.append({"t": round(t, 6), "event": event["name"]})
+            if "outcome" in event:
+                return event["outcome"]
+    return None
+
+
+def applied(scene, mass, happened, t, signals, forces):
+    """Gravity, loads and custom force laws on the piece: (fx, fz, torque)."""
+    fx, fz, torque = mass * scene["gravityMps2"][0], mass * scene["gravityMps2"][1], 0.0
+    for load in scene["loads"]:
+        lx, lz = load_force(load, mass, happened, t)
+        fx += lx
+        fz += lz
+    for law, parameters in forces:
+        extra = law(signals, parameters)
+        fx += extra[0]
+        fz += extra[1]
+        torque += extra[2]
+    return fx, fz, torque
+
+
 def run(scene, step=None, forces=()):
-    """Run one trial scene. forces are extra force laws: callables (signals, parameters) -> (fx, fz, torque), with parameters."""
+    """Run one trial scene. forces are extra force laws: [(function(signals, parameters) -> (fx, fz, torque), parameters)]."""
     dt = step or scene["stepS"]
     piece = scene["piece"]
     radius, mass, inertia = piece["radiusM"], piece["massKg"], piece["inertiaKgM2"]
     x, z, vx, vz, w = piece["start"]
-    gx, gz = scene["gravityMps2"]
     drive_state = {name: drive_math.start(d) for name, d in scene["drives"].items()}
     hinge_state = {name: {"angle": 0.0, "rate": 0.0} for name in scene["hinges"]}
     offset = {name: [0.0, 0.0] for name in scene["movers"]}
-    a, b = scene["axes"]
     names = signal_names(scene)
     recorder = Recorder(scene, names[:4] + [n for n in names[5:] if not n.startswith("contact.")])
     blank = dict.fromkeys(names, 0.0)
     memory, happened, events, rest_since = {}, {}, [], None
     arm_on_piece = scene.get("contactPoint") == "onPiece"
     t, steps, outcome = 0.0, 0, "timeout"
-    signals = dict(blank)
-    signals.update({f"{a}Mm": x * 1e3, f"{b}Mm": z * 1e3, "spinRadps": w, "speedMps": math.hypot(vx, vz)})
+    signals = read_signals(blank, scene["axes"], 0.0, (x, z, vx, vz, w), drive_state, hinge_state, offset, {}, {})
     recorder.sample(0.0, signals, force=True)
     while t < scene["durationS"]:
-        fx, fz, torque = mass * gx, mass * gz, 0.0
-        for load in scene["loads"]:
-            lx, lz = load_force(load, mass, happened, t)
-            fx += lx
-            fz += lz
         velocity = {name: mover_velocity(m, happened, t) for name, m in scene["movers"].items()}
-        loads, touching, pressed, twist = dict.fromkeys(scene["drives"], 0.0), {}, {}, dict.fromkeys(scene["hinges"], 0.0)
-        for index, surface in enumerate(scene["surfaces"]):
-            mover = surface.get("mover")
-            ox, oz = offset[mover] if mover else (0.0, 0.0)
-            mvx, mvz = velocity[mover] if mover else (0.0, 0.0)
-            state = (x - ox, z - oz, vx - mvx, vz - mvz, w)
-            hinge = surface.get("hinge")
-            if hinge:
-                prim, swing = flap_prim(scene["hinges"][hinge], hinge_state[hinge]["angle"])
-                prims = (prim,)
-            else:
-                prims = surface["prims"]
-            drive = surface.get("drive")
-            speed = surface["sign"] * (drive_state[drive]["u"] * surface["ratio"] if drive else surface["speedMps"])
-            for n, prim in enumerate(prims):
-                qx, qz, tx, tz = nearest(prim, state[0], state[1])
-                if hinge:
-                    reach = math.dist((qx, qz), scene["hinges"][hinge]["at"])
-                    moving = (hinge_state[hinge]["rate"] * reach * swing[0], hinge_state[hinge]["rate"] * reach * swing[1])
-                else:
-                    moving = (speed * tx, speed * tz)
-                found = push((index, n), memory, state, radius, (qx, qz), surface["mat"], moving, dt, arm_on_piece)
-                if found is None:
-                    continue
-                fx += found[0]
-                fz += found[1]
-                torque += found[2]
-                name = surface["name"]
-                touching[name] = max(touching.get(name, 0.0), found[5])
-                pressed[name] = pressed.get(name, 0.0) + found[3]
-                if drive:
-                    loads[drive] += surface["ratio"] * surface["sign"] * (found[0] * tx + found[1] * tz)
-                if hinge:
-                    twist[hinge] += reach * (-found[0] * swing[0] - found[1] * swing[1])
-        for law, parameters in forces:
-            extra = law(signals, parameters)
-            fx += extra[0]
-            fz += extra[1]
-            torque += extra[2]
+        cx, cz, turn, loads, touching, pressed, twist = touch(scene, (x, z, vx, vz, w), radius, drive_state, hinge_state, offset, velocity,
+                                                              memory, dt, arm_on_piece)
+        fx, fz, torque = applied(scene, mass, happened, t, signals, forces)
         for name, drive in scene["drives"].items():
             for rule in drive.get("rules", ()):
                 if holds(rule["when"], signals, happened, rest_since, t):
@@ -176,9 +217,9 @@ def run(scene, step=None, forces=()):
             drive_math.step(drive, drive_state[name], loads[name], t, dt)
         for name, hinge in scene["hinges"].items():
             flap_step(hinge, hinge_state[name], twist[name], dt)
-        vx += fx / mass * dt
-        vz += fz / mass * dt
-        w += torque / inertia * dt
+        vx += (fx + cx) / mass * dt
+        vz += (fz + cz) / mass * dt
+        w += (torque + turn) / inertia * dt
         x += vx * dt
         z += vz * dt
         for name, (mvx, mvz) in velocity.items():
@@ -186,29 +227,13 @@ def run(scene, step=None, forces=()):
             offset[name][1] += mvz * dt
         t += dt
         steps += 1
-        signals = dict(blank)
-        signals.update({"tS": t, f"{a}Mm": x * 1e3, f"{b}Mm": z * 1e3, "spinRadps": w, "speedMps": math.hypot(vx, vz)})
-        for name, state in drive_state.items():
-            signals[f"drive.{name}.speedMps"], signals[f"drive.{name}.currentA"], signals[f"drive.{name}.supplyA"] = state["u"], state["amps"], state["supply"]
-        for name, state in hinge_state.items():
-            signals[f"hinge.{name}.angleDeg"] = math.degrees(state["angle"])
-        for name, moved in offset.items():
-            signals[f"mover.{name}.offsetMm"] = math.hypot(*moved) * 1e3
-        for name, depth in touching.items():
-            signals[f"contact.{name}.forceN"], signals[f"contact.{name}.depthMm"] = pressed[name], depth * 1e3
+        signals = read_signals(blank, scene["axes"], t, (x, z, vx, vz, w), drive_state, hinge_state, offset, touching, pressed)
         resting = signals["speedMps"] < scene["rest"]["speedMps"] and abs(w) * radius < scene["rest"]["rimSpeedMps"]
         rest_since = (t if rest_since is None else rest_since) if resting else None
         recorder.contacts(t, touching)
         recorder.measure(signals)
         recorder.sample(t, signals)
-        stop = None
-        for event in scene["events"]:
-            if event["name"] not in happened and holds(event["when"], signals, happened, rest_since, t):
-                happened[event["name"]] = t
-                events.append({"t": round(t, 6), "event": event["name"]})
-                if "outcome" in event:
-                    stop = event["outcome"]
-                    break
+        stop = fire(scene, signals, happened, events, rest_since, t)
         if stop is not None:
             outcome = stop
             break
