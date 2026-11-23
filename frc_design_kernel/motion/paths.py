@@ -64,9 +64,23 @@ def smooth_points(points):
     return tuple(fine)
 
 
+def exact(points):
+    return tuple(tuple(float(v) for v in p) for p in points)
+
+
+def length(curve, points):
+    """The length of the curve in millimetres. A body following it by length fraction moves at exactly this speed per unit of t."""
+    points = exact(points)
+    if curve == "arc":
+        centre, _, turn = circle_through(*points)
+        return math.radians(turn) * mx.length(mx.sub(points[0], centre))
+    chain = smooth_points(points) if curve == "smooth" else points
+    return sum(mx.length(mx.sub(b, a)) for a, b in zip(chain, chain[1:]))
+
+
 def position(curve, points, t):
     """Where the followed point is at fraction t of the curve's length."""
-    points = tuple(tuple(float(v) for v in p) for p in points)
+    points = exact(points)
     if curve == "arc":
         return arc(points, t)
     return by_length(smooth_points(points) if curve == "smooth" else points, t)

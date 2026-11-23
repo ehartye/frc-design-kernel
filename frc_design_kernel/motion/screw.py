@@ -24,18 +24,29 @@ def axis_angle(m):
     return mx.unit(column), 180.0
 
 
-def between(start, end, s):
-    """The placement a fraction s of the way from start to end along the screw motion that joins them."""
+def decompose(start, end):
+    """The screw that carries start to end: (point on the axis, unit axis, turn in degrees, slide vector along the axis).
+
+    With no turn the point is None and the slide is the whole straight movement.
+    """
     step = mx.compose(end, mx.inverse(start))
     shift = (step[3], step[7], step[11])
     axis, angle = axis_angle(step)
     if angle < 1e-9:
-        return mx.compose(mx.translation(mx.scale(shift, s)), start)
+        return None, axis, 0.0, shift
     along = mx.scale(axis, mx.dot(shift, axis))
     across = mx.sub(shift, along)
     half = math.radians(angle) / 2
     point = mx.scale(mx.add(across, mx.scale(mx.cross(axis, across), math.cos(half) / math.sin(half))), 0.5)
-    return mx.chain([start, mx.rotation(point, axis, angle * s), mx.translation(mx.scale(along, s))])
+    return point, axis, angle, along
+
+
+def between(start, end, s):
+    """The placement a fraction s of the way from start to end along the screw motion that joins them."""
+    point, axis, angle, slide = decompose(start, end)
+    if point is None:
+        return mx.compose(mx.translation(mx.scale(slide, s)), start)
+    return mx.chain([start, mx.rotation(point, axis, angle * s), mx.translation(mx.scale(slide, s))])
 
 
 def through(placements, t):
