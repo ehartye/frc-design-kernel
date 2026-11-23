@@ -14,7 +14,9 @@ import math
 
 from ..builder import placement
 from ..builder.shape import make
+from ..kernel import split
 from ..kernel.mesh import triangles
+from ..kernel.props import bounds, volume
 from ..kernel.section import AXES
 from ..motion import matrix as mx
 from ..motion import ops
@@ -28,6 +30,17 @@ LAW = ("the library's own spring, damper and friction law at the points MuJoCo f
        "the surface's spring is shared among them by depth; a round piece's point against a mesh or a cylinder is worked out again from the piece's core")
 NOT_YET = ("forces",)
 PROBE = '<geom name="probe" type="sphere" size="1e-9" contype="0" conaffinity="0"/>'      # a point the contact law measures from
+
+
+_PIECES = {}
+
+
+def pieces_of(solid):
+    """split.convex_pieces, remembered by the solid's size and place, so a campaign splits each solid once per process."""
+    key = (round(volume(solid), 6), tuple(round(v, 6) for v in bounds(solid)))
+    if key not in _PIECES:
+        _PIECES[key] = split.convex_pieces(solid)
+    return _PIECES[key]
 
 
 def primitive(shape, placed_at):
@@ -50,6 +63,7 @@ class Model:
 
     def __init__(self):
         self.meshes, self.geoms, self.hulled, self.kinds, self.faceted, self.body, self.driven, self.driven_geoms, self.material_of = [], [], [], {}, {}, "world", None, {}, {}
+        self.rough = {}
 
     def add(self, solid, surface, shape, placed_at, material):
         """Add the geoms of one shape entry, part by part where it is a union."""
@@ -67,11 +81,22 @@ class Model:
             return
         if found is None:
             built = make(shape, f'solid "{solid}"', None)
-            points = [mx.scale(mx.apply(placed_at, v), MM) for v in triangles(built, 0.2)["vertices"]]
-            found = self.mesh(points)
-            if breakdown(shape) != "convex" and solid not in self.hulled:
-                self.hulled.append(solid)
+            if breakdown(shape) == "convex":
+                found = self.mesh([mx.scale(mx.apply(placed_at, v), MM) for v in triangles(built, 0.2)["vertices"]])
+            else:
+                return self.split(solid, surface, built, placed_at, material)
         self.geom(solid, surface, found, material)
+
+    def split(self, solid, surface, built, placed_at, material):
+        """A solid with no construction to read, as the convex pieces its own faces cut it into. A piece that a bore
+        or a free-form face keeps from being convex is hulled, and the solid is listed with the share of it so taken."""
+        done, rough = pieces_of(built)
+        for piece in done + rough:
+            self.geom(solid, surface, self.mesh([mx.scale(mx.apply(placed_at, v), MM) for v in triangles(piece, 0.2)["vertices"]]), material)
+        if rough:
+            share = sum(volume(p) for p in rough) / volume(built)
+            self.hulled.append(solid)
+            self.rough[solid] = round(share, 4)
 
     def mesh(self, points):
         name = f"mesh{len(self.meshes)}"
@@ -129,11 +154,8 @@ def build(assembly, name, a_case, handed=None):
         if "shape" in source and source["shape"]["kind"] != "custom":
             at = mx.chain([ops.at(source.get("place", [])), ops.at(groups[group].get("place", [])), where_at])
             model.add(solid, surface, source["shape"], at, entry["material"])
-        else:       # an imported part or a custom shape: no construction to read, so its placed surface is hulled
-            shift = mx.compose(where_at, mx.inverse(posed[group]))
-            points = [mx.scale(mx.apply(shift, v), MM) for v in triangles(placed[solid], 0.2)["vertices"]]
-            model.geom(solid, surface, model.mesh(points), entry["material"])
-            model.hulled.append(solid)
+        else:       # an imported part or a custom shape: no construction to read, so it is split at its own faces
+            model.split(solid, surface, placed[solid], mx.compose(where_at, mx.inverse(posed[group])), entry["material"])
     start = {**start_of(case, handed), "level": plane["atMm"] * MM}
     segments = int(case.get("mujoco", {}).get("ringSegments", 32))
     others, other_xml = {}, ""
@@ -149,7 +171,7 @@ def build(assembly, name, a_case, handed=None):
     xml = (f'<mujoco><option timestep="{case["stepS"]:.9g}" gravity="{text(gravity)}"><flag multiccd="enable"/></option>'
            f'<asset>{"".join(model.meshes)}</asset><worldbody>{PROBE}{bodies_xml(model, moving)}{other_xml}{body}</worldbody></mujoco>')
     drives = drives_for(case, where) if model.driven_geoms else {}
-    facts = {"plane": plane, "pose": case.get("pose"), "geoms": model.kinds, "hulled": sorted(set(model.hulled)),
+    facts = {"plane": plane, "pose": case.get("pose"), "geoms": model.kinds, "hulled": sorted(set(model.hulled)), "hulledShare": model.rough,
              "faceted": model.faceted, "sections": sections, "typedSurfaces": [], "bodies": {key: entry["kind"] for key, entry in moving.items()},
              "driven": {row["solid"]: turned["drive"] for row in sections for turned in [driven_by(case, row["solid"])] if turned},
              "others": {other["name"]: other["use"] for other in case.get("others", [])},

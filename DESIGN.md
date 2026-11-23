@@ -86,6 +86,7 @@ frc_design_kernel/
     props.py         volume, bounds, validity, solid count, centre of volume
     between.py       the gap between two shapes, shared volume, facing contact area
     section.py       a solid cut by a plane: its outline as segments and arcs
+    split.py         a solid with no construction to read, split into convex pieces at its own faces
     transform.py     apply a rigid transform to a shape
     step_read.py     STEP file to named solids
     step_write.py    named solids to a STEP file
@@ -965,10 +966,15 @@ MuJoCo.
   rectangular tube as four walls, a box with boxes cut out as the boxes that are left, a prism of any outline as
   triangles pushed through (all exact); a round tube as a ring of 24 wedges and a pie slice as slices of at most a
   half turn (their round faces become flat facets, and `saw.faceted` states by how much).
-- Anything else (a shape cut by a round, a custom shape, an imported part) is used as its convex hull, which fills in
-  its hollows. The record lists every such solid under `saw.hulled`. **When the piece touched one during any run,
-  the result word says so** (`passed, on a hulled surface`), `touchedHulled` names it and a finding explains: the
-  outcome may rest on a surface that is not there.
+- Anything else (a shape cut by a round, a custom shape, an imported part) is **split at its own faces**
+  (`kernel/split.py`). A solid is convex when all of it lies on the inner side of each face's plane: the plane of a
+  flat face, or a plane touching a round face that bulges outward. Where some of it does not, that plane cuts it in
+  two, and each half is split again. A bracket, an angle, a bevelled blade or a plate with windows from a supplier's
+  STEP file comes apart into exact convex pieces. A piece that a bore, a groove or a free-form face keeps from being
+  convex is used as its convex hull, which fills the bore. The record lists every solid with such a piece under
+  `saw.hulled`, and the share of its volume in them under `saw.hulledShare`. **When the piece touched one during any
+  run, the result word says so** (`passed, on a hulled surface`), `touchedHulled` names it and a finding explains:
+  the outcome may rest on a surface that is not there.
 - The piece is a free body built from its one 3D definition: its shape, its mass, and the inertia that shape gives.
   The planar start (point, velocity, spin) is placed on the trial's plane.
 - **The contact law is the library's own, the same one the planar engine uses** (`trials/mujoco_contact.py`).
