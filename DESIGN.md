@@ -1060,8 +1060,18 @@ case. Every engine listed in `ENGINES` (`tests/trial_cases.py`) runs the same tr
 5. hold with no creep below the friction angle, and slide above it;
 6. the closed-form wall force and motor current when a driven roller drags a block;
 7. belt speed reached at friction times g; a load's closed-form travel; the same flap opening.
+8. **for an engine that runs pieces in 3D (`ENGINES_3D`): the standing seating case** (`tests/seating_case.py`). An
+   invented carriage drives onto a ring; a curved blade with a faceted nose gets under it, a belt carries it up a
+   tilted deck past a sprung flap, two driven side belts pinch it 5 mm each side, and it comes to rest against a
+   stop. The engine must seat it within 0.03 s of the recorded time, on the recorded path within 1 mm over the lip
+   and 5 mm after, with each side belt pressing its spring's 22.5 N. With the belt stopped it must not seat, and
+   with a face's direction at the edge the path must leave the 1 mm band. The planar engine cannot take a ring's
+   section and must refuse it by name.
 
-Case 4 is there because of a mistake worth stating plainly. **Before the contact law was made the library's own, each
+Cases 4 and 8 are there because of mistakes worth stating plainly. Both passed every single-contact case and were
+caught only by a real seated pickup. The second was a ring meeting a lip's faceted nose: MuJoCo's general convex method
+gave it a face's direction, 22 to 37 degrees off, and the lip pushed the ring along the floor (see "A round piece meets
+an edge or a corner" above). The first: **Before the contact law was made the library's own, each
 material's spring and damper were mapped onto MuJoCo's native soft contact, and the mapping was checked on single
 contacts only: a roll, a rest, a bounce. Those agreed within a few percent, and the engine was reported as
 calibrated. It was not. In a squeeze the native solver gave 4 to 21 times the spring force, at every setting tried,
