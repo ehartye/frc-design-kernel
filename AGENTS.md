@@ -34,7 +34,10 @@ Short rules for people and coding agents who change this library. The reasons ar
 
 - Custom shapes follow the contract in DESIGN.md section 6, and custom trial code the one in section 13.6. Do not
   widen either without the owner's say.
-- Custom trial code never replaces the control, the brackets or the half-step repeat.
+- Custom trial code never replaces the control, the ranges or the half-step repeat.
+- Physical inputs belong in the design source with their source (`measured` or `assumed` with a range), in physical
+  units. Numbers that only one engine understands go under that engine's own heading.
+- Records say what they used. A new measure or trial output must carry a `used` block the status command can check.
 - A new built-in shape is better than a custom shape that two projects both wrote.
 
 ## Git

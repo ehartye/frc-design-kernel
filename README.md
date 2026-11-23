@@ -95,9 +95,20 @@ Trials are data in the same file. Run them with:
 python -m frc_design_kernel try swing-arm.json --out out
 ```
 
-`try` first prints what the campaign will cost (runs and steps), then writes `out/trials.json`. A trial is only
-reported as passed when its method is complete: a control that was rejected, brackets, and a repeat at half the step
-that agrees. See [DESIGN.md](DESIGN.md) section 13.
+`try` first prints what the campaign may cost (runs, steps, rough time), then writes `out/trials.json`. Every trial
+states what it assumes, every physical input says whether it was measured or assumed (with a range), and a trial is
+only reported as passed when a control was rejected, a repeat at half the step agrees, and the outcome holds across
+every assumed range. An outcome that changes inside a range is its own result: a measurement is needed first. See
+[DESIGN.md](DESIGN.md) section 13.
+
+After a change to the source, ask which records it touched:
+
+```
+python -m frc_design_kernel status swing-arm.json out
+```
+
+`status` prints, per record, `current` or `stale` and what changed. `measure --motion NAME` and `try --trial NAME`
+run again only the part you name.
 
 The same thing from Python:
 

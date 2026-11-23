@@ -28,3 +28,4 @@ jobs:
           python -c "import json; made = json.load(open('out/manifest.json'))['generator']; print(made); assert made['version']"
           python -m frc_design_kernel measure "$GITHUB_WORKSPACE/examples/lifter/design.json" --out out --touch-gap 1 --workers 2
           python -m frc_design_kernel try "$GITHUB_WORKSPACE/examples/lifter/design.json" --out out
+          python -m frc_design_kernel status "$GITHUB_WORKSPACE/examples/lifter/design.json" out
