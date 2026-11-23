@@ -182,6 +182,33 @@ class Sharing(unittest.TestCase):
         self.assertGreaterEqual(run.default_workers(), 1)
 
 
+class Quicker(unittest.TestCase):
+    def test_sets_without_the_pair_list_are_the_same_sets(self):
+        """Catches the quick attachment mode disagreeing with the full one about what hangs together or floats."""
+        assembly = built()
+        full = attachment.at_pose(assembly, "home", gap=3.0, ignore=["ball"])
+        quick = attachment.at_pose(assembly, "home", gap=3.0, ignore=["ball"], pairs=False)
+        for key in ("connectedSets", "notConnectedToBase", "fixturesOffFloor", "baseSolids", "robotSolids"):
+            self.assertEqual(quick[key], full[key], key)
+        self.assertEqual((quick["touching"], quick["heldByMountOnly"]), (None, None))
+        self.assertEqual([(m["member"], m["on"]) for m in quick["mounts"]], [("bracket", "post")])
+
+    def test_a_fixed_pair_is_measured_once_across_motions_and_gives_the_same_rows(self):
+        """Catches the memory of fixed pairs changing a result, or not being used at all."""
+        assembly = built()
+        source = assembly.design.path
+        jobs = [{"motion": "press", "minGapMm": 1.0, "includeStill": True}, {"motion": "lift off", "minGapMm": 1.0, "includeStill": True}]
+        run._built.clear()
+        run._fixed.clear()
+        found = run.clearances(source, jobs, workers=1)
+        self.assertEqual(found[0], clearance.along(assembly, "press", 1.0, include_still=True))
+        self.assertEqual(found[1], clearance.along(assembly, "lift off", 1.0, include_still=True))
+        remembered = len(run._fixed)
+        self.assertGreater(remembered, 0)
+        run.clearances(source, jobs, workers=1)
+        self.assertEqual(len(run._fixed), remembered)       # the second time nothing new had to be measured
+
+
 class Command(unittest.TestCase):
     def test_measure_writes_one_stamped_record(self):
         """Catches the command writing nothing, losing the version stamp, or changing between two runs."""

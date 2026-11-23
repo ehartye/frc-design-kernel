@@ -584,7 +584,7 @@ These were the simpler choice at the time. Any of them may change while the libr
 18. **A trial's solver runs in plain Python.** It manages about 200,000 steps a second. If campaigns grow past a few
     million steps, the inner loop is the place to spend effort.
 19. **The default plan moves one input at a time.** Combinations are only run when a trial asks for a grid.
-20. **A hand-off passes the piece's end state only.** Drive speeds and flap angles start fresh in the next trial.
+20. **A hand-off passes the piece's end state, and drive speeds when asked (`carryDrives`).** Flap angles start fresh.
 
 ## 12. The measure layer
 
@@ -697,6 +697,11 @@ good or bad, and nothing says which engine to use.
 | Echoed | `approach` and `targetOffPlane`, as declared. |
 
 ### 12.6b For other tools
+
+- `attachment.at_pose(..., pairs=False)` gives the connected sets, loose solids and fixtures off the floor without
+  the full list of touching pairs, measuring only what the sets need. It is much quicker on a detailed scene.
+- A pair that keeps its relative pose is measured once per process and remembered by the two solids and where each
+  stands, so the same pair in another motion costs nothing.
 
 - `clearance.along(..., displace={solid: [dx, dy, dz]})` and the job field `"displace"` shift named solids for one
   question, with no second source file: a control that shows a check can report an interference.
@@ -864,8 +869,8 @@ Not expressible yet, each a known gap and not a place for project code to hide:
 
 - A second free piece, or piece-to-piece contact.
 - A body that is not round (a robot hung on hooks, a box).
-- More than one piece loading the same drive at once.
-- A drive's speed or a flap's angle carried from one trial into the next.
+- A flap's angle carried from one trial into the next. (A drive's speed can be: `"start": {"after": trial,
+  "carryDrives": true}`. Several pieces loading one drive at once is `"piecesOnDrive": n` on its command.)
 - Surfaces carried by a turning motion of the design (only straight slides).
 - A flap that is not a one-way sprung flap (a powered or two-way hinge).
 - A rope, winch or spring between bodies.

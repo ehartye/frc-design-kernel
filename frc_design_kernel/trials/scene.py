@@ -98,7 +98,7 @@ def runtime_drive(name, drive, motors, command, where):
     out = {"kind": "motor", "motor": motors[drive["motor"]], "radiusM": drive["radiusMm"] * MM, "gear": drive.get("gear", 1.0),
            "count": drive.get("count", 1), "efficiency": drive.get("efficiency", 1.0), "statorLimitA": drive["statorLimitA"],
            "dragNm": drive.get("dragNm", 0.0), "busV": command.get("busV", 12.0), "startMps": command.get("startMps", 0.0),
-           "oneWay": command.get("oneWay", False),
+           "oneWay": command.get("oneWay", False), "piecesOnDrive": command.get("piecesOnDrive", 1),
            "control": {key: command[key] for key in ("mode", "setpointMps", "band", "fullTorqueAtRad") if key in command}}
     for key in ("movingKg", "inertiaKgM2", "supplyLimitA"):
         if key in drive:
@@ -200,7 +200,7 @@ def surfaces_for(case, assembly, materials, drives, movers, where, facts):
 
 def start_state(start, handed):
     if "after" in start:
-        x, z, vx, vz, w = handed
+        x, z, vx, vz, w = handed["piece"]
         return [x, z, 0.0, 0.0, 0.0] if start.get("atRest", True) else [x, z, vx, vz, w]
     velocity = start.get("velocityMps", [0.0, 0.0])
     return [start["atMm"][0] * MM, start["atMm"][1] * MM, velocity[0], velocity[1], start.get("spinRadps", 0.0)]
@@ -220,6 +220,10 @@ def build(assembly, name, a_case, handed=None):
     materials = {key: material(entry, mass, options) for key, entry in case["materials"].items()}
     movers = {key: mover(entry, assembly, plane, f'{where} mover "{key}"') for key, entry in case.get("movers", {}).items()}
     drives = drives_for(case, where)
+    if case["piece"]["start"].get("carryDrives"):      # each drive starts at the speed the earlier trial left it at
+        for key, speed in (handed or {}).get("drives", {}).items():
+            if key in drives:
+                drives[key]["startMps"] = speed
     surfaces, hinges = surfaces_for(case, assembly, materials, drives, movers, where, facts)
     gravity = case.get("gravityMps2", STANDARD_GRAVITY)
     scene = {

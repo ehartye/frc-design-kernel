@@ -189,6 +189,17 @@ class Drives(unittest.TestCase):
         self.assertGreater(rows[0.69], 7.0)
         self.assertLess(abs(found["measures"]["speed"]), 0.05)
 
+    def test_several_pieces_on_one_drive_load_it_that_many_times(self):
+        """Catches a belt fed three pieces abreast being loaded as if by one: the motor must work three times as hard."""
+        def peak(pieces):
+            command = {"mode": "speed", "setpointMps": 2.0, "band": 0.02, "busV": 12.0, "startMps": 2.0, "piecesOnDrive": pieces}
+            drive = {**WHEEL, "movingKg": MEASURED(2.0), "turns": [{"solid": "belt bed", "axis": [0, 1, 0]}]}
+            drive.pop("inertiaKgM2")
+            found = run(base("block", {"atMm": [0, -480]}, durationS=0.3, commands={"wheel": command}, surfaces=[{"solid": "belt bed", "material": "panel"}],
+                             measures={"low": {"lowest": "drive.wheel.speedMps"}}), motors={"small": MOTOR}, drives={"wheel": drive})
+            return 2.0 - found["measures"]["low"]
+        self.assertAlmostEqual(peak(3) / peak(1), 3.0, delta=0.3)
+
     def roller(self, axis):
         drive = {"radiusMm": 25, "turns": [{"solid": "roller", "axis": axis}]}
         solids = bench({})["solids"] + [{"name": "roller", "group": "bench", "shape": {"kind": "cylinder", "fromMm": [0, -50, -525], "toMm": [0, 50, -525], "radiusMm": 25}}]
