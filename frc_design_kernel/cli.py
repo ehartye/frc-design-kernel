@@ -70,11 +70,13 @@ def measure(args):
               f'{count(len(hold["fixturesOffFloor"]), "fixture")} off the floor; mass {weight["totalKg"]:.3f} kg.')
     if args.extremes:
         from .measure.extremes import at_extremes
-        record["adjustments"] = at_extremes(args.source, args.min_gap, args.depth)
+        record["adjustments"] = at_extremes(args.source, args.min_gap, args.depth, args.workers,
+                                            (args.motion or []) if part else None, (args.pose or []) if part else None)
         for name, found in record["adjustments"].items():
             for row in found["settings"]:
                 closer = sum(len(m["closer"]) for m in row["motions"].values()) + sum(len(p["closer"]) for p in row["poses"])
-                print(f'Adjustment "{name}" at {row["setting"]:g}: {count(closer, "pair")} closer than the gap over every motion and pose.')
+                print(f'Adjustment "{name}" at {row["setting"]:g}: moves {count(len(row["moves"]), "solid")}; '
+                      f'{count(closer, "pair")} with one of them closer than the gap over the motions and poses measured.')
     old = earlier(args.out, "measurements.json") if part else None
     write(args.out, "measurements.json", measures.merged(old, record) if old else record)
     print(f"Wrote measurements.json to {args.out}" + (", keeping the parts that were not measured again." if old else "."))
@@ -173,7 +175,7 @@ def main(argv=None):
     gauge.add_argument("--ignore", action="append", default=[], metavar="SOLID", help="a solid to leave out of the attachment record; may be repeated")
     gauge.add_argument("--workers", type=int, help="worker processes (default: half the cores)")
     gauge.add_argument("--depth", type=int, default=9, help="how many times the search may halve the stroke (default 9)")
-    gauge.add_argument("--extremes", action="store_true", help="also measure at both ends of every adjustment of a design parameter")
+    gauge.add_argument("--extremes", action="store_true", help="also measure at both ends of every mechanical adjustment, the pairs with a solid it moves")
     gauge.set_defaults(run=measure)
     sieve = commands.add_parser("screen", help="report plain facts about each interaction: is it the same in every section?")
     sieve.add_argument("source", help="the design source JSON file")

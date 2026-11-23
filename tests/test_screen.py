@@ -136,6 +136,33 @@ class Adjustments(unittest.TestCase):
         self.assertIn(["drawn ball", "wall left"], tight["poses"][0]["closer"])
         self.assertNotIn(["drawn ball", "wall left"], wide["poses"][0]["closer"])
 
+    def test_only_a_mechanical_adjustment_is_measured_and_only_its_moved_solids(self):
+        """Catches a setpoint measured as if it moved solids, or every pair measured again at each end (the slow way).
+
+        Control: the walls the gap moves are named, and a pair of two unmoved solids is counted, not measured.
+        """
+        data = design()
+        data["parameters"]["belt_mps"] = 2.0
+        data["adjustments"]["belt speed"] = {"input": "parameters.belt_mps", "kind": "setpoint", "range": [1.0, 3.0]}
+        path = load_data(data, {"custom/taper.py": TAPER}).path
+        found = extremes.at_extremes(path, min_gap=2.0, workers=1)
+        self.assertEqual(list(found), ["channel gap"])
+        tight = found["channel gap"]["settings"][0]
+        self.assertEqual(tight["moves"], ["wall left", "wall right"])
+        swing = run.assembly_for(path, {"gap": 1})
+        focused = clearance.along(swing, "swing in plane", 2.0, focus={"wall left", "wall right"})
+        self.assertGreater(focused["counts"]["notInFocus"], 0)
+        self.assertTrue(all("wall left" in r["pair"] or "wall right" in r["pair"] for r in focused["pairs"]))
+
+    def test_workers_and_a_chosen_motion_give_the_same_answer(self):
+        """Catches sharing the extremes between workers changing a result, or --motion and --pose being ignored."""
+        path = load_data(design(), {"custom/taper.py": TAPER}).path
+        alone = extremes.at_extremes(path, min_gap=2.0, workers=1)
+        shared = extremes.at_extremes(path, min_gap=2.0, workers=2)
+        self.assertEqual(alone, shared)
+        some = extremes.at_extremes(path, min_gap=2.0, workers=1, motions=["press"], poses=["home"])["channel gap"]["settings"][0]
+        self.assertEqual((list(some["motions"]), [p["pose"] for p in some["poses"]]), (["press"], ["home"]))
+
     def tilting(self, low, high):
         trials = {"hold": tilting_trial(adjustments=["tilt"])}
         return campaign.run_campaign(load_data(bench(trials, adjustments={"tilt": {"input": "parameters.slope_deg", "kind": "mechanical", "range": [low, high], "step": 1}})).path)
