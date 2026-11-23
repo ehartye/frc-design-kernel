@@ -19,7 +19,9 @@ from .plan import DEFAULT_REFINE, Bracket, Window
 
 SCHEMA = "frc-design-kernel/trial-campaign@2"
 PARAMETERS = "parameters."
-STEPS_PER_SECOND = 200000      # roughly what the planar solver manages; only used to state a time before running
+# Roughly what each engine manages; only used to state a time before running. The 3D figure is for a pickup scene
+# with a ring of 48 segments against about 20 solids; a simpler scene runs faster.
+STEPS_PER_SECOND = {"planar": 200000, "mujoco": 2000}
 
 
 def walk(case, path, where):
@@ -142,9 +144,10 @@ def estimate(design, names=None):
         case, plans, _, _ = method(design, name)
         runs = 2 + ("control" in trials[name]) + sum(plan.most_runs() for plan in plans) + len(grid_changes(design, name, case))
         runs += sum(window.most_runs() for window, _ in windows_for(design, name, case, plans).values())
-        per[name] = {"runs": runs, "steps": math.ceil(trials[name]["durationS"] / trials[name]["stepS"]) * (runs + 1)}
+        steps = math.ceil(trials[name]["durationS"] / trials[name]["stepS"]) * (runs + 1)
+        per[name] = {"runs": runs, "steps": steps, "aboutSeconds": round(steps / STEPS_PER_SECOND[trials[name].get("engine", "planar")], 1)}
     steps = sum(p["steps"] for p in per.values())
-    return {"runs": sum(p["runs"] for p in per.values()), "steps": steps, "aboutSeconds": round(steps / STEPS_PER_SECOND, 1), "trials": per}
+    return {"runs": sum(p["runs"] for p in per.values()), "steps": steps, "aboutSeconds": round(sum(p["aboutSeconds"] for p in per.values()), 1), "trials": per}
 
 
 def execute(task):

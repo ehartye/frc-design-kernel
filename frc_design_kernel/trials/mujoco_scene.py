@@ -18,7 +18,7 @@ from ..kernel.mesh import triangles
 from ..kernel.section import AXES
 from ..motion import matrix as mx
 from ..motion import ops
-from . import convex
+from . import convex, frames
 from .inputs import plain
 from .mujoco_parts import MM, bodies_xml, driven_by, fail, flap_of, mover_of, piece_body, quaternion, start_of, text
 from .scene import drives_for
@@ -161,4 +161,4 @@ def build(assembly, name, a_case, handed=None):
             "rest": {"speedMps": 0.005, "rimSpeedMps": 0.005, **case.get("rest", {})}, "moving": moving, "driven": model.driven_geoms, "materialOf": model.material_of,
             "materials": case["materials"], "between": case.get("betweenPieces"), "options": case.get("planar", {}),
             "events": case.get("events", []), "measures": case.get("measures", {}), "drives": drives,
-            "hinges": {flap["flap"]: f"flap:{flap['flap']}" for _, flap in flaps}, "movers": {}, "loads": case.get("loads", []), "surfaces": [], "facts": facts}
+            "hinges": {flap["flap"]: f"flap:{flap['flap']}" for _, flap in flaps}, "movers": {}, "frames": frames.build(case, assembly.data, where), "loads": case.get("loads", []), "surfaces": [], "facts": facts}

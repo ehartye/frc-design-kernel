@@ -127,6 +127,7 @@ frc_design_kernel/
     contact.py       round piece against segment or arc; two friction laws
     drives.py        belts, rollers and wheels: imposed or motor-driven
     rules.py         conditions and events as data
+    frames.py        the piece's place in a group's own drawing coordinates
     planar.py        the fixed-step solver for one piece in a plane
     record.py        criterion, ranges, step comparison, sensitivity, result word, hand-forward
     fit.py           a trace reduced to one path operation
@@ -746,6 +747,7 @@ be an `=` expression over the design's parameters.
 | `planar` | Choices that belong to the planar engine only: the friction law (`stick` or `smooth`) and its two constants, and where on the piece a contact acts. |
 | `loads` | The frame the piece rides in speeding up or slowing down: an acceleration along a direction, as a step or a half-sine pulse, at a time or after an event. |
 | `movers` | A steady slide of chosen surfaces, started at a time or after an event: a stated velocity, or a straight motion of a group from the design source. |
+| `frames` | Where the piece is in a group's own drawing coordinates: `{"cassette": {"group": "Cassette", "mover": "approach"}}` adds `cassette.xMm` and `cassette.zMm` (the plane's two axes). They are measured before the group's own `place`, the pose and the mover's motion, so a seat test is written where the mechanism was drawn and holds while the robot drives. |
 | `events`, `measures`, `pass` | What counts as what; numbers to keep; the criterion. |
 | `control`, `brackets`, `grid` | The method inputs. See 13.3. |
 | `stepS`, `durationS` | The fixed step and the longest a run may last. |
@@ -812,7 +814,8 @@ extra runs.
 
 ### 13.4 Cost before it runs, time after
 
-`campaign.estimate` counts the most runs and steps a campaign can take and a rough time. `try` prints that before
+`campaign.estimate` counts the most runs and steps a campaign can take and a rough time, at each engine's own pace
+(about 200,000 steps a second planar, about 2,000 in 3D on a pickup scene). `try` prints that before
 anything runs; `--estimate` prints it and stops; `--max-steps` refuses a larger campaign. Afterwards `try` prints the
 runs made, the steps run and the seconds spent. How long a campaign ought to take is a judgement that lives
 elsewhere; the library reports the numbers.
@@ -1017,6 +1020,8 @@ MuJoCo.
 - Two signals are added to the planar ones: `offPlaneMm` (how far the piece has left the trial's plane) and
   `tiltDeg` (how far it has tipped). On a case that truly is planar both stay at zero; when they do not, the planar
   assumption `in-plane` has been tested and found wanting.
+- **Frames** (section 13.1) are read the same way in both engines, from the piece's centre. A frame that names a
+  mover follows that mover's design motion, whatever the engine makes of the group.
 
 **Calibration.** The same trial definition is run in both engines on cases that truly are planar, as part of the
 engine's own tests. With one contact law the two agree far more closely than a decision needs:

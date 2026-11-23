@@ -7,7 +7,9 @@ at half the step to show whether the step was small enough.
 """
 import math
 
+from ..kernel.section import AXES
 from . import drives as drive_math
+from . import frames
 from .contact import push, nearest, segment
 from .rules import holds, started
 
@@ -103,6 +105,7 @@ def signal_names(scene):
         names += [f"drive.{name}.speedMps", f"drive.{name}.currentA", f"drive.{name}.supplyA"]
     names += [f"hinge.{name}.angleDeg" for name in scene["hinges"]]
     names += [f"mover.{name}.offsetMm" for name in scene["movers"]]
+    names += frames.names(scene.get("frames", {}), scene.get("normal", "y"))
     for name in dict.fromkeys(s["name"] for s in scene["surfaces"]):
         names += [f"contact.{name}.forceN", f"contact.{name}.depthMm"]
     return names
@@ -168,6 +171,16 @@ def read_signals(blank, axes, t, piece_state, drive_state, hinge_state, offset, 
     return signals
 
 
+def in_frames(scene, x, z, happened, t):
+    """The piece's place in each frame the trial names (frames.py), from its place in the plane."""
+    if not scene.get("frames"):
+        return {}
+    point = [0.0, 0.0, 0.0]
+    (iu, iv), across = AXES[scene["normal"]], "xyz".index(scene["normal"])
+    point[iu], point[iv], point[across] = x * 1e3, z * 1e3, scene["levelMm"]
+    return frames.read(scene["frames"], scene["normal"], point, happened, t)
+
+
 def fire(scene, signals, happened, events, rest_since, t):
     """Record the events whose conditions now hold. Returns the outcome of the first one that stops the run, or None."""
     for event in scene["events"]:
@@ -210,6 +223,7 @@ def run(scene, step=None, forces=()):
     arm_on_piece = scene.get("contactPoint") == "onPiece"
     t, steps, outcome = 0.0, 0, "timeout"
     signals = read_signals(blank, scene["axes"], 0.0, (x, z, vx, vz, w), drive_state, hinge_state, offset, {}, {})
+    signals.update(in_frames(scene, x, z, happened, 0.0))
     recorder.sample(0.0, signals, 0, dt, force=True)
     while t < scene["durationS"]:
         velocity = {name: mover_velocity(m, happened, t) for name, m in scene["movers"].items()}
@@ -234,6 +248,7 @@ def run(scene, step=None, forces=()):
         t += dt
         steps += 1
         signals = read_signals(blank, scene["axes"], t, (x, z, vx, vz, w), drive_state, hinge_state, offset, touching, pressed)
+        signals.update(in_frames(scene, x, z, happened, t))
         resting = signals["speedMps"] < scene["rest"]["speedMps"] and abs(w) * radius < scene["rest"]["rimSpeedMps"]
         rest_since = (t if rest_since is None else rest_since) if resting else None
         recorder.contacts(t, touching)
