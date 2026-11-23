@@ -135,19 +135,31 @@ def build(assembly, name, a_case, handed=None):
             model.hulled.append(solid)
     start = {**start_of(case, handed), "level": plane["atMm"] * MM}
     segments = int(case.get("mujoco", {}).get("ringSegments", 32))
-    body, velocity, radius = piece_body(use, piece, mass, start, plane["normal"], segments)
+    touch, others, other_xml = 'friction="0 0 0"', {}, ""
+    if case.get("others"):      # piece against piece takes one named material; surfaces still set their own friction
+        between = case["materials"][case["betweenPieces"]]
+        touch = f'friction="{between["friction"]:.9g} 0.005 0.0001" solref="{text(solref_for(between, mass))}" solimp="{IMPEDANCE} {IMPEDANCE} 0.001"'
+    for other in case.get("others", []):
+        another = case["pieces"][other["use"]]
+        begin = {"at": [v * MM for v in other["atMm"]], "velocity": list(other.get("velocityMps", [0.0, 0.0])), "spin": 0.0,
+                 "level": (plane["atMm"] + other.get("acrossMm", 0.0)) * MM}
+        found = piece_body(other["use"], another, another["massKg"], begin, plane["normal"], segments, f'other:{other["name"]}', touch)
+        other_xml += found[0]
+        others[other["name"]] = {"velocity": found[1], "massKg": another["massKg"]}
+    body, velocity, radius = piece_body(use, piece, mass, start, plane["normal"], segments, touch=touch)
     gravity = [0.0, 0.0, 0.0 if plane["normal"] == "z" else -case.get("gravityMps2", 9.80665)]
     xml = (f'<mujoco><option timestep="{case["stepS"]:.9g}" gravity="{text(gravity)}" cone="elliptic" impratio="10"/>'
-           f'<asset>{"".join(model.meshes)}</asset><worldbody>{bodies_xml(model, moving)}{body}</worldbody></mujoco>')
+           f'<asset>{"".join(model.meshes)}</asset><worldbody>{bodies_xml(model, moving)}{other_xml}{body}</worldbody></mujoco>')
     drives = drives_for(case, where) if model.driven_geoms else {}
     facts = {"plane": plane, "pose": case.get("pose"), "geoms": model.kinds, "hulled": sorted(set(model.hulled)),
              "faceted": model.faceted, "sections": sections, "typedSurfaces": [], "bodies": {key: entry["kind"] for key, entry in moving.items()},
              "driven": {row["solid"]: turned["drive"] for row in sections for turned in [driven_by(case, row["solid"])] if turned},
+             "others": {other["name"]: other["use"] for other in case.get("others", [])},
              "piece": {"piece": use, "shape": piece["shape"]["kind"], "radiusMm": round(radius / MM, 6), **({"ringSegments": segments} if piece["shape"]["kind"] == "torus" else {})},
              "contactMapping": f"spring k and damper c of each material are given to MuJoCo as solref = (-k / (m d), -c / (m d)) with piece mass m and impedance d = {IMPEDANCE}"}
     return {"engine": "mujoco", "xml": xml, "surfaceOf": {g: surface for g, surface, _, _ in model.geoms},
             "axes": ["xyz"[i] for i in AXES[plane["normal"]]], "normal": plane["normal"], "levelM": plane["atMm"] * MM, "startVelocity": velocity, "radiusM": radius,
-            "massKg": mass, "stepS": case["stepS"], "durationS": case["durationS"], "traceS": case.get("traceS", 0.002),
+            "massKg": mass, "others": others, "stepS": case["stepS"], "durationS": case["durationS"], "traceS": case.get("traceS", 0.002),
             "rest": {"speedMps": 0.005, "rimSpeedMps": 0.005, **case.get("rest", {})}, "moving": moving, "driven": model.driven_geoms,
             "events": case.get("events", []), "measures": case.get("measures", {}), "drives": drives,
             "hinges": {flap["flap"]: f"flap:{flap['flap']}" for _, flap in flaps}, "movers": {}, "loads": case.get("loads", []), "surfaces": [], "facts": facts}

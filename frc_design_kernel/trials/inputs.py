@@ -45,8 +45,8 @@ def case(data, trial):
     """The trial with the entries of the design tables it uses, as one table that changes can be made to by path."""
     out = copy.deepcopy(trial)
     drives = drives_used(data, trial)
-    materials = sorted({s["material"] for s in [*trial["surfaces"], *trial.get("flaps", [])]})
-    out["pieces"] = {trial["piece"]["use"]: copy.deepcopy(data["pieces"][trial["piece"]["use"]])}
+    materials = sorted({s["material"] for s in [*trial["surfaces"], *trial.get("flaps", [])]} | ({trial["betweenPieces"]} if "betweenPieces" in trial else set()))
+    out["pieces"] = {use: copy.deepcopy(data["pieces"][use]) for use in sorted({trial["piece"]["use"]} | {other["use"] for other in trial.get("others", [])})}
     out["materials"] = {name: copy.deepcopy(data["materials"][name]) for name in materials}
     out["drives"] = {name: copy.deepcopy(data["drives"][name]) for name in drives}
     out["motors"] = {name: copy.deepcopy(data["motors"][name]) for name in sorted({d["motor"] for d in out["drives"].values() if "motor" in d})}

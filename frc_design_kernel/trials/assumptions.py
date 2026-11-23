@@ -25,6 +25,7 @@ MUJOCO = [
     {"id": "teleported-paths", "text": "A group whose motion is not one hinge or one slider is carried along its path without its speed being felt in contact."},
     {"id": "flap-as-drawn", "text": "A flap is its drawn solid on a sprung hinge about the plane's normal; its stops do not bounce."},
     {"id": "ring-of-capsules", "text": "A ring piece is a closed chain of straight round segments; the record says how many."},
+    {"id": "pieces-alike", "text": "With more than one piece, piece against piece takes the one material the trial names; only the trial's own piece is reported contact by contact."},
     {"id": "not-yet-run", "text": "Custom forces are not run by this engine yet; a trial that has them is refused."},
     {"id": "no-air", "text": "No air drag or lift."},
     {"id": "fixed-step", "text": "Time moves in fixed steps; the half-step repeat is the check on the step."},

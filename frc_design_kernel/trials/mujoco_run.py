@@ -33,6 +33,8 @@ def signal_names(scene):
     for name in scene["drives"]:
         names += [f"drive.{name}.speedMps", f"drive.{name}.currentA", f"drive.{name}.supplyA"]
     names += [f"hinge.{name}.angleDeg" for name in scene["hinges"]]
+    for name in scene["others"]:
+        names += [f"other.{name}.{a}Mm", f"other.{name}.{b}Mm", f"other.{name}.offPlaneMm", f"other.{name}.speedMps", f"contact.piece {name}.forceN"]
     for name in dict.fromkeys(scene["surfaceOf"].values()):
         names += [f"contact.{name}.forceN", f"contact.{name}.depthMm"]
     return names
@@ -44,10 +46,10 @@ def drag(mujoco, model, data, driven, speed, normal, at, pressing, piece):
     The surface runs at the drive's speed across its axis. The law is the planar engine's smooth one: friction times
     the pressing force, against the slip, eased near zero slip.
     """
-    along = mx.cross(driven["axis"], normal)
-    turn = [float(v) for v in data.xmat[piece].reshape(3, 3) @ data.qvel[-3:]]
+    along, free = mx.cross(driven["axis"], normal), model.body_dofadr[piece]
+    turn = [float(v) for v in data.xmat[piece].reshape(3, 3) @ data.qvel[free + 3:free + 6]]
     arm = mx.sub(at, [float(v) for v in data.xpos[piece]])
-    point = mx.add([float(v) for v in data.qvel[-6:-3]], mx.cross(turn, arm))
+    point = mx.add([float(v) for v in data.qvel[free:free + 3]], mx.cross(turn, arm))
     slip = mx.sub(point, mx.scale(along, speed * driven["ratio"]))
     if driven["body"]:      # a driven surface on a moved group also moves with the group
         import numpy
@@ -81,23 +83,40 @@ def read(mujoco, model, data, scene, blank, wrench, drive_state):
         signals[f"hinge.{name}.angleDeg"] = math.degrees(float(data.qpos[model.joint(body).qposadr[0]]))
     for name, state in drive_state.items():
         signals[f"drive.{name}.speedMps"], signals[f"drive.{name}.currentA"], signals[f"drive.{name}.supplyA"] = state["u"], state["amps"], state["supply"]
-    touching, loads, applied = {}, dict.fromkeys(scene["drives"], 0.0), [0.0] * 6
+    pieces = {piece: None, **{model.body(f"other:{name}").id: name for name in scene["others"]}}
+    for body, name in pieces.items():
+        if name is not None:
+            at, free = data.xpos[body], model.body_dofadr[body]
+            signals.update({f"other.{name}.{scene['axes'][0]}Mm": float(at[iu]) * 1e3, f"other.{name}.{scene['axes'][1]}Mm": float(at[iv]) * 1e3,
+                            f"other.{name}.offPlaneMm": float(at[across] - scene["levelM"]) * 1e3,
+                            f"other.{name}.speedMps": float(math.sqrt(sum(v * v for v in data.qvel[free:free + 3])))})
+    touching, loads, applied = {}, dict.fromkeys(scene["drives"], 0.0), {body: [0.0] * 6 for body in pieces}
     for index in range(data.ncon):
         contact = data.contact[index]
         names = (model.geom(contact.geom1).name, model.geom(contact.geom2).name)
-        other = next((n for n in names if n in scene["surfaceOf"]), None)
-        if other is None or piece not in (model.geom_bodyid[contact.geom1], model.geom_bodyid[contact.geom2]) or contact.dist >= 0:
+        bodies = (int(model.geom_bodyid[contact.geom1]), int(model.geom_bodyid[contact.geom2]))
+        if contact.dist >= 0:
             continue
-        surface = scene["surfaceOf"][other]
+        if bodies[0] in pieces and bodies[1] in pieces:      # piece against piece: the force between the trial's piece and each other one
+            if piece in bodies:
+                mujoco.mj_contactForce(model, data, index, wrench)
+                signals[f"contact.piece {pieces[bodies[0] if bodies[1] == piece else bodies[1]]}.forceN"] += float(wrench[0])
+            continue
+        other = next((n for n in names if n in scene["surfaceOf"]), None)
+        on = next((b for b in bodies if b in pieces), None)
+        if other is None or on is None:
+            continue
         mujoco.mj_contactForce(model, data, index, wrench)
-        touching[surface] = max(touching.get(surface, 0.0), -float(contact.dist))
-        signals[f"contact.{surface}.forceN"] += float(wrench[0])
-        signals[f"contact.{surface}.depthMm"] = touching[surface] * 1e3
+        if on == piece:
+            surface = scene["surfaceOf"][other]
+            touching[surface] = max(touching.get(surface, 0.0), -float(contact.dist))
+            signals[f"contact.{surface}.forceN"] += float(wrench[0])
+            signals[f"contact.{surface}.depthMm"] = touching[surface] * 1e3
         driven = scene["driven"].get(other)
         if driven:
             normal = [float(v) * (1.0 if names[0] == other else -1.0) for v in contact.frame[:3]]       # out of the surface, toward the piece
-            force, torque, load = drag(mujoco, model, data, driven, drive_state[driven["drive"]]["u"], normal, [float(v) for v in contact.pos], float(wrench[0]), piece)
-            applied = [a + b for a, b in zip(applied, force + torque)]
+            force, torque, load = drag(mujoco, model, data, driven, drive_state[driven["drive"]]["u"], normal, [float(v) for v in contact.pos], float(wrench[0]), on)
+            applied[on] = [a + b for a, b in zip(applied[on], force + torque)]
             loads[driven["drive"]] += load
     return signals, touching, loads, applied
 
@@ -130,6 +149,11 @@ def run(scene, step=None, forces=()):
     model.opt.timestep = dt
     data = mujoco.MjData(model)
     data.qvel[-6:] = scene["startVelocity"]
+    masses = {model.body("piece").id: scene["massKg"]}
+    for name, other in scene["others"].items():
+        free = model.body_dofadr[model.body(f"other:{name}").id]
+        data.qvel[free:free + 6] = other["velocity"]
+        masses[model.body(f"other:{name}").id] = other["massKg"]
     drive_state = {name: drive_math.start(d) for name, d in scene["drives"].items()}
     happened, events, rest_since, steps, outcome = {}, [], None, 0, "timeout"
     for entry in scene["moving"].values():
@@ -152,11 +176,12 @@ def run(scene, step=None, forces=()):
                     drive = {**drive, **rule["set"]}
             drive_math.step(drive, drive_state[name], loads[name], t, dt)
         drive_bodies(model, data, scene, drive_state, happened, t)
-        for load in scene["loads"]:
-            along = load_force(load, scene["massKg"], happened, t)
-            applied[iu] += along[0]
-            applied[iv] += along[1]
-        data.xfrc_applied[piece] = applied
+        for body, wrench_on in applied.items():       # every piece rides in the same frame, so every piece feels each load
+            for load in scene["loads"]:
+                along = load_force(load, masses[body], happened, t)
+                wrench_on[iu] += along[0]
+                wrench_on[iv] += along[1]
+            data.xfrc_applied[body] = wrench_on
         mujoco.mj_step(model, data)
         steps += 1
         t = float(data.time)

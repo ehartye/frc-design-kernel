@@ -989,6 +989,11 @@ MuJoCo.
 - **A flap** is its drawn solid (`"solid"` on the flap) on a hinge about the plane's normal at `hingeMm`, with the
   same spring, preload, damping, inertia and limit the planar engine reads. Its stops do not bounce.
 - **A load** is the same data and the same force as in planar.
+- **More than one piece.** A trial may list `others`: more free pieces, each with a piece to use, a start point on
+  the plane, an optional `acrossMm` to set it beside the plane, and an optional velocity. `betweenPieces` names the
+  one material for piece against piece. Each adds the signals `other.<name>.<axis>Mm`, `other.<name>.offPlaneMm`,
+  `other.<name>.speedMps` and `contact.piece <name>.forceN`. Driven surfaces and loads act on every piece. Events,
+  rest and the contact record still follow the trial's own piece. The planar engine refuses `others` by name.
 - Two signals are added to the planar ones: `offPlaneMm` (how far the piece has left the trial's plane) and
   `tiltDeg` (how far it has tipped). On a case that truly is planar both stay at zero; when they do not, the planar
   assumption `in-plane` has been tested and found wanting.
@@ -1011,6 +1016,7 @@ engine's own tests:
 | Load of 3 m/s2 for 0.1 s, then 0.2 s coasting: travel | 75 mm | within 1 mm | within 1 mm |
 | Block thrown back by a sprung flap: most the flap opens | | 32.6 deg | 34.4 deg |
 | Block on a 1 m/s belt on a cart moving at 0.5 m/s: speed | 1.5 m/s | | within 0.03 |
+| One block strikes another like it, bounce value 0.5: speeds after | 0.25 and 0.75 m/s | | within 0.04, momentum within 1% |
 | Ring dropped over a post that fits its hole: rests | on the floor | | on the floor (and on the post when the post is too wide) |
 
 Outcome and timing agree within 0.5%, spin within 1%, rebound and peak force within 3%, depth within 4%. One thing
@@ -1026,7 +1032,7 @@ already sunk by the planar depth shows a short force spike in MuJoCo for that re
 | 2 | Driven surfaces (rollers, wheels) with the declared motor and gear; moved groups as hinges, sliders or paths, carriers included | Built |
 | 3 | Belts: the same driven surface, since only the surface speed differs | Built |
 | 4 | Flaps, loads, a driven surface on a moved group, a ring piece | Built |
-| 5 | More than one piece | Not built |
+| 5 | More than one piece | Built |
 
 A trial that uses a part the engine does not run yet is refused by name; nothing is silently left out.
 
