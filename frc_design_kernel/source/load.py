@@ -18,6 +18,7 @@ class Design:
     data: dict
     sha256: str
     custom_used: dict    # {custom code name: [names of the solids or trials that use it]}
+    raw: dict            # the source as written (trial files read in), for asking which parameters something used
 
     @property
     def folder(self):
@@ -84,6 +85,6 @@ def load(path, parameters=None):
     schema.check(raw, schema.load_schema())
     read_trials(raw, path.parent)
     data = expand(raw, parameters)
-    design = Design(path=path, data=data, sha256=hashlib.sha256(path.read_bytes()).hexdigest(), custom_used=checks.check_all(data))
+    design = Design(path=path, data=data, sha256=hashlib.sha256(path.read_bytes()).hexdigest(), custom_used=checks.check_all(data), raw=raw)
     check_files(design)
     return design

@@ -1,10 +1,12 @@
-"""Invented trial fixtures shared by the trial tests: a wedge, a belt bed and a few trials with known answers."""
+"""Invented trial fixtures shared by the trial tests: a wedge, a belt bed, a few pieces and trials with known answers."""
 import copy
 import math
 
 G = 9.80665
-PANEL = {"stiffnessNPerM": 2.0e5, "restitution": 0.2, "friction": 0.5, "law": "stick"}
+MEASURED = lambda value: {"value": value, "measured": "invented bench sheet 1"}
 BOX = lambda low, high: {"kind": "box", "fromMm": low, "toMm": high}
+PANEL = {"stiffnessNPerM": MEASURED(2.0e5), "restitution": MEASURED(0.2), "friction": {"value": 0.5, "assumed": [0.2, 0.8]}}
+BALL = {"kind": "sphere", "centerMm": [0, 0, 0], "radiusMm": 20}
 
 # A wedge whose top face slopes down toward +X at slope_deg, and a long flat belt bed whose top is at z = -500.
 DESIGN = {
@@ -16,8 +18,16 @@ DESIGN = {
                                                        "outlineMm": [[0, 0], [2000, 0], [0, "=rise"]]}},
         {"name": "belt bed", "group": "bench", "shape": BOX([-3000, -50, -520], [3000, 50, -500])},
     ],
+    "pieces": {
+        "block": {"shape": BALL, "massKg": MEASURED(1.0), "inertiaKgM2": MEASURED(1e6), "note": "A piece that cannot spin."},
+        "ball": {"shape": BALL, "massKg": MEASURED(0.5)},
+        "bar": {"shape": {"kind": "cylinder", "fromMm": [0, -100, 0], "toMm": [0, 100, 0], "radiusMm": 20}, "massKg": MEASURED(0.5)},
+        "shot": {"shape": {"kind": "sphere", "centerMm": [0, 0, 0], "radiusMm": 5}, "massKg": MEASURED(0.1)},
+    },
+    "materials": {"panel": PANEL},
     "trials": {},
 }
+ASSUMES = [{"id": "dry-surfaces", "text": "The surfaces are dry and clean."}]
 
 
 def on_slope(along_mm, radius_mm, slope_deg, rise_mm):
@@ -26,22 +36,20 @@ def on_slope(along_mm, radius_mm, slope_deg, rise_mm):
     return [along_mm * math.cos(a) + radius_mm * math.sin(a), rise_mm - along_mm * math.sin(a) + radius_mm * math.cos(a)]
 
 
-def hold_trial(law="stick", friction=0.5, slope_deg=20, duration=1.0, **extra):
+def hold_trial(law="stick", slope_deg=20, duration=1.0, **extra):
     """A block (a piece that cannot spin) set on the wedge. It holds, or it slides 100 mm and the run stops."""
     rise = 2000 * math.tan(math.radians(slope_deg))
-    sunk = 20 - 1.0 * G * math.cos(math.radians(slope_deg)) / PANEL["stiffnessNPerM"] * 1000     # start pressed in as deep as it will rest
+    sunk = 20 - 1.0 * G * math.cos(math.radians(slope_deg)) / 2.0e5 * 1000      # start pressed in as deep as it will rest
     trial = {
-        "plane": {"normal": "y", "atMm": 0}, "stepS": 1e-4, "durationS": duration, "traceS": 0.01,
-        "piece": {"radiusMm": 20, "massKg": 1.0, "inertiaKgM2": 1e6, "start": {"atMm": on_slope(300, sunk, slope_deg, rise)}},
-        "materials": {"panel": {**PANEL, "law": law, "friction": friction}},
+        "assumes": copy.deepcopy(ASSUMES),
+        "plane": {"normal": "y", "atMm": 0}, "stepS": 1e-4, "durationS": duration, "traceS": 0.01, "planar": {"frictionLaw": law},
+        "piece": {"use": "block", "start": {"atMm": on_slope(300, sunk, slope_deg, rise)}},
         "surfaces": [{"name": "slope", "solid": "wedge", "material": "panel"}],
         "events": [{"name": "slid", "when": {"signal": "xMm", "above": on_slope(400, 20, slope_deg, rise)[0]}, "outcome": "slid"},
                    {"name": "held", "when": {"all": [{"signal": "tS", "above": 0.5}, {"restFor": 0.3}]}, "outcome": "held"}],
         "measures": {"slideS": {"timeOf": "slid"}, "endX": {"final": "xMm"}, "push": {"peak": "contact.slope.forceN"}},
         "pass": {"outcomes": ["held"]},
         "control": {"change": {"materials.panel.friction": 0.1}, "note": "With a slippery panel the block must slide."},
-        "brackets": [{"input": "materials.panel.friction", "unit": "", "values": [0.2, 0.5, 0.8]},
-                     {"input": "parameters.slope_deg", "unit": "deg", "values": [20, 35]}],
     }
     trial.update(extra)
     return trial
@@ -50,5 +58,9 @@ def hold_trial(law="stick", friction=0.5, slope_deg=20, duration=1.0, **extra):
 def bench(trials, **extra):
     data = copy.deepcopy(DESIGN)
     data["trials"] = trials
-    data.update(extra)
+    for key, value in extra.items():
+        if isinstance(value, dict) and isinstance(data.get(key), dict):
+            data[key] = {**data[key], **value}
+        else:
+            data[key] = value
     return data

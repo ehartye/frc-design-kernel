@@ -1,29 +1,35 @@
 """A campaign: every run a design's trials need, counted before it starts, run, and gathered into one record.
 
-For each trial the campaign itself runs the nominal case, the same case at half the step, the control, and one run
-per bracket value. No trial definition and no custom code can leave any of those out.
+For each trial the campaign itself runs the nominal case, the same case at half the step, the control, and the
+cheapest sufficient bracket plan (trials.plan). No trial definition and no custom code can leave any of those out.
 """
 import copy
+import itertools
 import math
 from concurrent.futures import ProcessPoolExecutor
 
+from ..builder import identity
 from ..errors import DesignError
 from ..source.load import load
+from ..source.uses import parameters_used
 from ..version import generator
-from . import custom, fit, planar, record, scene as scenes
+from . import assumptions, custom, fit, inputs, planar, record, scene as scenes
+from .plan import DEFAULT_REFINE, Bracket
 
-SCHEMA = "frc-design-kernel/trial-campaign@1"
+SCHEMA = "frc-design-kernel/trial-campaign@2"
 PARAMETERS = "parameters."
+STEPS_PER_SECOND = 200000      # roughly what the planar solver manages; only used to state a time before running
 
 
-def walk(trial, path, where):
-    """(container, key) for a dotted path into a trial. List items are found by their name."""
-    node, parts = trial, path.split(".")
+def walk(case, path, where):
+    """(container, key) for a dotted path into a case. List items are found by their name (a surface by its solid, if unnamed)."""
+    node, parts = case, path.split(".")
     for depth, part in enumerate(parts):
         if isinstance(node, list):
-            match = [i for i, item in enumerate(node) if isinstance(item, dict) and item.get("name") == part]
+            called = [item.get("name", item.get("solid")) if isinstance(item, dict) else None for item in node]
+            match = [i for i, name in enumerate(called) if name == part]
             if not match:
-                raise DesignError(where, f'the path "{path}" names "{part}", which is not there', f"Known names: {', '.join(str(i.get('name')) for i in node)}")
+                raise DesignError(where, f'the path "{path}" names "{part}", which is not there', f"Known names: {', '.join(str(name) for name in called)}")
             part = match[0]
         elif not isinstance(node, dict) or (part not in node and depth < len(parts) - 1):
             raise DesignError(where, f'the path "{path}" does not lead anywhere at "{part}"', "Write the path as section.name.field, such as materials.tread.friction")
@@ -32,14 +38,9 @@ def walk(trial, path, where):
         node = node[part]
 
 
-def parameter_changes(changes):
-    """The design parameters a set of changes replaces: {name: value}."""
-    return {path[len(PARAMETERS):]: value for path, value in changes.items() if path.startswith(PARAMETERS)}
-
-
-def changed(trial, changes, where):
-    """A copy of the trial with the changes made to it. A change to null removes the thing. Parameter changes are not made here."""
-    out = copy.deepcopy(trial)
+def changed(case, changes, where):
+    """A copy of the case with the changes made to it. A change to null removes the thing. Parameter changes are not made here."""
+    out = copy.deepcopy(case)
     for path, value in changes.items():
         if path.startswith(PARAMETERS):
             continue
@@ -51,23 +52,45 @@ def changed(trial, changes, where):
     return out
 
 
-def nominal_value(design, trial, path, where):
+def current_value(design, case, path, where):
     if path.startswith(PARAMETERS):
         return design.data["parameters"][path[len(PARAMETERS):]]
-    node, key = walk(trial, path, where)
-    return node[key]
+    node, key = walk(case, path, where)
+    return inputs.val(node[key])
 
 
-def planned_runs(design, name):
-    """The runs one trial needs: [(run id, changes, halve the step)]."""
+def method(design, name):
+    """A trial's case, its bracket plans and what its method lacks: (case, [Bracket], [missing], physical inputs)."""
     trial, where = design.data["trials"][name], f'trials "{name}"'
-    runs = [("nominal", {}, False), ("half step", {}, True)]
-    if "control" in trial:
-        runs.append(("control", trial["control"]["change"], False))
-    for entry in trial.get("brackets", []):
-        nominal = nominal_value(design, trial, entry["input"], where)
-        runs += [(f'{entry["input"]} = {value:g}', {entry["input"]: value}, False) for value in entry["values"] if value != nominal]
-    return runs
+    case = inputs.case(design.data, trial)
+    found = inputs.physical_inputs(case)
+    listed = {entry["input"]: entry for entry in trial.get("brackets", [])}
+    refine = int(trial.get("rangeRefine", DEFAULT_REFINE))
+    plans = [Bracket(row["path"], row["value"], low_high=row["range"], refine=refine) for row in found if row["source"] == "assumed" and row["path"] not in listed]
+    plans += [Bracket(path, current_value(design, case, path, where), entry.get("unit", ""), values=entry["values"]) for path, entry in listed.items()]
+    missing = []
+    if "control" not in trial:
+        missing.append("no control is defined, so nothing shows the trial can fail")
+    if not trial.get("assumes"):
+        missing.append("the trial does not state its own assumptions (assumes), so a reader cannot tell what it leaves out")
+    unstated = [row["path"] for row in found if row["source"] == "unstated"]
+    if unstated:
+        missing.append("these physical inputs do not say whether they were measured or assumed: " + ", ".join(unstated))
+    if not plans:
+        missing.append("no input has an assumed range or listed values, so nothing shows how far the inputs can move")
+    return case, plans, missing, found
+
+
+def grid_changes(design, name, case):
+    """The opt-in grid: every combination of the range ends of the inputs a trial lists under grid."""
+    wanted = design.data["trials"][name].get("grid")
+    if not wanted:
+        return []
+    ranges = {row["path"]: row.get("range") for row in inputs.physical_inputs(case)}
+    for path in wanted["inputs"]:
+        if not ranges.get(path):
+            raise DesignError(f'trials "{name}" grid', f'"{path}" is not an input with an assumed range', f"Inputs with a range: {', '.join(p for p, r in ranges.items() if r)}")
+    return [dict(zip(wanted["inputs"], ends)) for ends in itertools.product(*[ranges[path] for path in wanted["inputs"]])]
 
 
 def in_order(trials, names):
@@ -89,33 +112,35 @@ def in_order(trials, names):
 
 
 def estimate(design, names=None):
-    """What a campaign will cost before it runs: {"runs": n, "steps": n, "trials": {name: {"runs", "steps"}}}.
+    """What a campaign may cost before it runs: runs and steps at most, and a rough time.
 
-    steps is an upper limit: a run that reaches a stop event ends early.
+    The numbers are upper limits: a run that reaches a stop event ends early, and a bracket stops at its first failure.
     """
     trials = design.data["trials"]
     per = {}
     for name in in_order(trials, names or list(trials)):
-        runs = planned_runs(design, name)
-        steps = sum(math.ceil(trials[name]["durationS"] / trials[name]["stepS"]) * (2 if half else 1) for _, _, half in runs)
-        per[name] = {"runs": len(runs), "steps": steps}
-    return {"runs": sum(p["runs"] for p in per.values()), "steps": sum(p["steps"] for p in per.values()), "trials": per}
+        case, plans, _, _ = method(design, name)
+        runs = 2 + ("control" in trials[name]) + sum(plan.most_runs() for plan in plans) + len(grid_changes(design, name, case))
+        per[name] = {"runs": runs, "steps": math.ceil(trials[name]["durationS"] / trials[name]["stepS"]) * (runs + 1)}
+    steps = sum(p["steps"] for p in per.values())
+    return {"runs": sum(p["runs"] for p in per.values()), "steps": steps, "aboutSeconds": round(steps / STEPS_PER_SECOND, 1), "trials": per}
 
 
 def execute(task):
-    """One run, in this process or a worker: (source path, trial name, run id, scene, step)."""
-    source, name, run_id, scene, step = task
+    """One run, in this process or a worker: (source path, trial name, scene, step)."""
+    source, name, scene, step = task
     design = load(source)
     return planar.run(scene, step, custom.force_laws(design, design.data["trials"][name]))
 
 
 class Builder:
-    """Builds the design once per set of parameter changes, so a bracket on a design parameter moves the real geometry."""
+    """Builds the design once per set of parameter changes, so a change to a design parameter moves the real geometry."""
 
     def __init__(self, source):
         self.source, self.built = source, {}
 
-    def assembly(self, overrides):
+    def assembly(self, changes=None):
+        overrides = {path[len(PARAMETERS):]: value for path, value in (changes or {}).items() if path.startswith(PARAMETERS)}
         key = tuple(sorted(overrides.items()))
         if key not in self.built:
             from ..builder.assembly import build
@@ -123,35 +148,96 @@ class Builder:
         return self.built[key]
 
 
+class Runner:
+    """Runs the changed cases of one trial and keeps every result by run id."""
+
+    def __init__(self, source, name, builder, handed, workers):
+        self.source, self.name, self.builder, self.handed, self.workers = str(source), name, builder, handed, workers
+        self.where, self.results, self.changes, self.facts = f'trials "{name}"', {}, {}, None
+
+    def run(self, wanted):
+        """Run [(run id, changes, halve the step)] that have not been run yet."""
+        tasks, ids = [], []
+        for run_id, changes, half in wanted:
+            if run_id in self.results:
+                continue
+            assembly = self.builder.assembly(changes)
+            case = changed(inputs.case(assembly.data, assembly.data["trials"][self.name]), changes, self.where)
+            scene = scenes.build(assembly, self.name, case, self.handed)
+            self.facts = self.facts or scene["facts"]
+            scene.pop("facts")
+            tasks.append((self.source, self.name, scene, scene["stepS"] / 2 if half else scene["stepS"]))
+            ids.append(run_id)
+            self.changes[run_id] = changes
+        if self.workers > 1 and len(tasks) > 1:
+            with ProcessPoolExecutor(max_workers=self.workers) as pool:
+                done = list(pool.map(execute, tasks))
+        else:
+            done = [execute(task) for task in tasks]
+        self.results.update(zip(ids, done))
+
+
 def run_summary(run_id, changes, run, met, unmet):
     return {"id": run_id, "changes": changes, "stepS": run["stepS"], "outcome": run["outcome"], "met": met, "firstUnmet": unmet,
             "endS": run["endS"], "steps": run["steps"], "measures": run["measures"], "events": run["events"]}
 
 
-def trial_record(design, name, runs, results):
-    """One trial's part of the record, from its runs and their results."""
+def what_it_used(design, assembly, name, case, facts):
+    """Exactly what a trial drew on, with enough of each thing's identity to tell later whether it changed."""
+    raw = design.raw
+    written = [raw["trials"][name]] + [raw.get(table, {}).get(key) for table in inputs.TABLES for key in case[table]]
+    pose = case.get("pose")
+    return {"solids": identity.solids(assembly, [row["solid"] for row in facts["sections"]]),
+            "pose": pose, "poseOperations": assembly.data["poses"].get(pose) if pose else None,
+            "parameters": {key: design.data["parameters"][key] for key in parameters_used(raw, written)},
+            "tables": {table: sorted(case[table]) for table in inputs.TABLES}}
+
+
+def run_trial(design, name, builder, handed, workers):
+    """Run one trial's whole method and return its part of the record."""
     trial, where = design.data["trials"][name], f'trials "{name}"'
+    case, plans, missing, found = method(design, name)
+    runner = Runner(design.path, name, builder, handed, workers)
     judge = custom.criterion(design, trial)
-    met = {run_id: record.judge(results[run_id], trial["pass"], judge) for run_id, _, _ in runs}
-    steps = record.step_comparison(results["nominal"], results["half step"], met["nominal"][0], met["half step"][0])
+    met = {}
+    label = lambda path, value: f"{path} = {value:g}"
+    grid = [(" & ".join(label(p, v) for p, v in combo.items()), combo, False) for combo in grid_changes(design, name, case)]
+    first = [("nominal", {}, False), ("half step", {}, True)] + ([("control", trial["control"]["change"], False)] if "control" in trial else []) + grid
+    wanted = first + [(label(plan.path, value), {plan.path: value}, False) for plan in plans for value in plan.ask()]
+    while wanted:
+        runner.run(wanted)
+        for run_id, _, _ in wanted:
+            met[run_id] = record.judge(runner.results[run_id], trial["pass"], judge)
+        for plan in plans:
+            plan.nominal_met = met["nominal"][0]
+            for value in plan.ask():
+                run_id = label(plan.path, value)
+                if run_id in met:
+                    plan.tell(value, met[run_id][0], runner.results[run_id]["outcome"], runner.results[run_id]["measures"], run_id)
+        wanted = [(label(plan.path, value), {plan.path: value}, False) for plan in plans for value in plan.ask()]
+    results, nominal = runner.results, runner.results["nominal"]
+    steps = record.step_comparison(nominal, results["half step"], met["nominal"][0], met["half step"][0])
     control = None
     if "control" in trial:
         control = {"note": trial["control"]["note"], "change": trial["control"]["change"], "outcome": results["control"]["outcome"],
                    "met": met["control"][0], "rejected": not met["control"][0], "firstUnmet": met["control"][1]}
-    brackets = []
-    for entry in trial.get("brackets", []):
-        nominal = nominal_value(design, trial, entry["input"], where)
-        rows = []
-        for value in entry["values"]:
-            run_id = "nominal" if value == nominal else f'{entry["input"]} = {value:g}'
-            rows.append({"value": value, "passed": met[run_id][0], "outcome": results[run_id]["outcome"], "run": run_id})
-        brackets.append(record.bracket(entry, nominal, rows))
-    word, findings = record.result(met["nominal"][0], control, brackets, steps)
-    nominal = results["nominal"]
-    return {"definition": trial, "result": word, "findings": findings, "firstUnmet": met["nominal"][1],
+    ranges = [plan.summary() for plan in plans]
+    grid_found = None
+    if grid:
+        rows = [{"values": combo, "met": met[run_id][0], "outcome": results[run_id]["outcome"]} for run_id, combo, _ in grid]
+        grid_found = {"inputs": trial["grid"]["inputs"], "runs": rows, "allMet": all(row["met"] == met["nominal"][0] for row in rows)}
+    word, findings = record.result(met["nominal"][0], control, ranges, steps, missing, grid_found)
+    stated, standing = assumptions.stated(trial)
+    ranking = record.sensitivity(ranges, nominal["measures"])
+    made = generator()
+    return {"engine": {"name": trial.get("engine", "planar"), "version": made["version"], "commit": made["commit"]},
+            "definition": case, "assumptions": {"stated": stated, "engine": standing}, "inputs": found, "saw": runner.facts,
+            "used": what_it_used(design, builder.assembly(), name, case, runner.facts),
+            "result": word, "findings": findings, "firstUnmet": met["nominal"][1],
             "nominal": {**run_summary("nominal", {}, nominal, *met["nominal"]), "end": nominal["end"], "trace": nominal["trace"], "contacts": nominal["contacts"]},
-            "stepComparison": steps, "control": control, "brackets": brackets,
-            "runs": [run_summary(run_id, changes, results[run_id], *met[run_id]) for run_id, changes, _ in runs],
+            "stepComparison": steps, "control": control, "ranges": ranges, "grid": grid_found, "sensitivity": ranking,
+            "handForward": record.hand_forward(found, ranges, ranking, control, stated + standing),
+            "runs": [run_summary(run_id, runner.changes[run_id], results[run_id], *met[run_id]) for run_id in results],
             "fit": fit.path_operation(nominal["trace"], trial["plane"], trial.get("fitToleranceMm", 10.0))}
 
 
@@ -166,27 +252,14 @@ def run_campaign(source, names=None, max_steps=None, workers=1, announce=None):
     if announce:
         announce(cost)
     if max_steps is not None and cost["steps"] > max_steps:
-        raise DesignError("", f'the campaign needs up to {cost["steps"]} steps in {cost["runs"]} runs, over the cap of {max_steps}',
-                          "Raise the cap, shorten a trial, use a larger step or trim the brackets")
+        raise DesignError("", f'the campaign needs up to {cost["steps"]} steps in up to {cost["runs"]} runs, over the cap of {max_steps}',
+                          "Raise the cap, shorten a trial, use a larger step or narrow what is bracketed")
     builder, handed, records = Builder(source), {}, {}
     for name in cost["trials"]:
-        trial, where = design.data["trials"][name], f'trials "{name}"'
-        runs = planned_runs(design, name)
-        tasks = []
-        for run_id, changes, half in runs:
-            # A changed design parameter moves the solids and every trial number worked out from it.
-            assembly = builder.assembly(parameter_changes(changes))
-            variant = changed(assembly.data["trials"][name], changes, where)
-            scene = scenes.build(assembly, name, variant, handed.get(trial["piece"]["start"].get("after")))
-            tasks.append((str(source), name, run_id, scene, scene["stepS"] / 2 if half else scene["stepS"]))
-        if workers > 1 and len(tasks) > 1:
-            with ProcessPoolExecutor(max_workers=workers) as pool:
-                done = list(pool.map(execute, tasks))
-        else:
-            done = [execute(task) for task in tasks]
-        results = {run_id: result for (run_id, _, _), result in zip(runs, done)}
-        handed[name] = results["nominal"]["end"]["piece"]
-        records[name] = trial_record(design, name, runs, results)
+        before = design.data["trials"][name]["piece"]["start"].get("after")
+        records[name] = run_trial(design, name, builder, handed.get(before), workers)
+        handed[name] = records[name]["nominal"]["end"]["piece"]
     return {"schema": SCHEMA, "generator": generator(), "design": {"name": design.data["name"], "source": design.path.name, "sourceSha256": design.sha256},
-            "cost": {"runs": cost["runs"], "steps": cost["steps"], "stepsRun": sum(r["steps"] for t in records.values() for r in t["runs"])},
+            "cost": {"runsAtMost": cost["runs"], "stepsAtMost": cost["steps"], "runs": sum(len(t["runs"]) for t in records.values()),
+                     "stepsRun": sum(r["steps"] for t in records.values() for r in t["runs"])},
             "custom": custom.report(design, list(records)), "trials": records}
