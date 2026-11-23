@@ -307,6 +307,16 @@
         "type": "string",
         "minLength": 1
       }
+    },
+    "mujoco": {
+      "type": "object",
+      "required": [],
+      "additionalProperties": false,
+      "properties": {
+        "ringSegments": {
+          "$ref": "#/$defs/number"
+        }
+      }
     }
   },
   "$defs": {
@@ -478,6 +488,9 @@
           "$ref": "#/$defs/sourced"
         },
         "mover": {
+          "type": "string"
+        },
+        "solid": {
           "type": "string"
         }
       }

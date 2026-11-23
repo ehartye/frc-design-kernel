@@ -6,8 +6,6 @@ import importlib.util
 import math
 import unittest
 
-from frc_design_kernel import DesignError
-
 from .test_mujoco import one_run
 from .trial_cases import ASSUMES, G, MEASURED, PANEL, bench
 
@@ -118,15 +116,6 @@ class MovedGroups(unittest.TestCase):
                           "carried": {"finger:push": "slide"}})        # a group carried by the moving one moves with it
         for motion, (found, _) in kinds.items():
             self.assertGreater(found["measures"]["x"], 60.0, motion)       # each of them shoves the ball along
-
-    def test_what_is_still_not_run_is_refused_by_name(self):
-        """Catches a part the engine does not understand being silently left out of a 3D run."""
-        design, command = rig()
-        trial = {"engine": "mujoco", "assumes": ASSUMES, "plane": {"normal": "y", "atMm": 0}, "stepS": 1e-4, "durationS": 0.1, "events": [], "pass": {"outcomes": ["timeout"]},
-                 "piece": {"use": "block", "start": {"atMm": [0, -470]}}, "commands": {"spin": command}, "surfaces": [{"solid": "belt bed", "material": "panel"}],
-                 "loads": [{"along": [1, 0], "accelerationMps2": 3, "durationS": 0.1}]}
-        with self.assertRaisesRegex(DesignError, "the MuJoCo engine does not run loads yet"):
-            one_run(trial, **design)
 
 
 if __name__ == "__main__":

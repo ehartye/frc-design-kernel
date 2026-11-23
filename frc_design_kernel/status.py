@@ -70,6 +70,8 @@ def trial_rows(record, design, assembly):
             changes += compare_used({k: found["used"][k] for k in ("solids", "parameters")}, {k: now[k] for k in ("solids", "parameters")})
             if identity.tidy(found["used"].get("poseOperations")) != identity.tidy(now.get("poseOperations")):
                 changes.append("the trial's pose changed")
+            before = found["used"].get("motions") or {}
+            changes += [f'the motion "{key}" changed' for key in sorted(now["motions"]) if identity.tidy(before.get(key)) != identity.tidy(now["motions"][key])]
         except KeyError as missing:
             changes.append(f"a solid the trial cut is no longer there: {missing}")
         rows.append(row(f'trial "{name}"', changes))

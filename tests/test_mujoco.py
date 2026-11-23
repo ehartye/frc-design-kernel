@@ -171,10 +171,11 @@ class Calibration(unittest.TestCase):
         self.assertIn("solref", trial["saw"]["contactMapping"])
 
     def test_what_the_engine_does_not_run_yet_is_refused_by_name(self):
-        """Catches a trial with drives, loads or typed surfaces being run in 3D as if they were not there."""
+        """Catches a typed flap or a typed surface being run in 3D as if it were not there."""
         loaded = rolling("mujoco")
-        loaded["loads"] = [{"along": [1, 0], "accelerationMps2": 3, "durationS": 0.1}]
-        with self.assertRaisesRegex(DesignError, "the MuJoCo engine does not run loads yet"):
+        loaded["flaps"] = [{"name": "flap", "material": "panel", "hingeMm": [0, 0], "lengthMm": 50, "restDirection": [1, 0],
+                            "inertiaKgM2": MEASURED(1e-4), "springNmPerRad": MEASURED(1.0), "limitDeg": 60}]
+        with self.assertRaisesRegex(DesignError, "the MuJoCo engine needs a flap to name the solid that is the flap"):
             one_run(loaded)
         typed = rolling("mujoco")
         typed["surfaces"].append({"name": "floor", "material": "panel", "segmentsMm": [[0, -10], [10, -10]]})

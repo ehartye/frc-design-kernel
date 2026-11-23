@@ -208,8 +208,10 @@ def what_it_used(design, assembly, name, case, facts):
     raw = design.raw
     written = [raw["trials"][name]] + [raw.get(table, {}).get(key) for table in inputs.TABLES for key in case[table]]
     pose = case.get("pose")
+    motions = sorted({entry["motion"] for entry in case.get("movers", {}).values() if "motion" in entry})
     return {"solids": identity.solids(assembly, [row["solid"] for row in facts["sections"]]),
             "pose": pose, "poseOperations": assembly.data["poses"].get(pose) if pose else None,
+            "motions": {key: assembly.data["motions"][key] for key in motions},
             "parameters": {key: design.data["parameters"][key] for key in parameters_used(raw, written)},
             "tables": {table: sorted(case[table]) for table in inputs.TABLES}}
 
