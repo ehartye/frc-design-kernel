@@ -14,7 +14,7 @@ from frc_design_kernel import DesignError
 from frc_design_kernel.trials import campaign, engines, inputs, mujoco_run
 
 from .helpers import load_data
-from .trial_cases import ASSUMES, G, MEASURED, PANEL, bench, hold_trial, on_slope
+from .trial_cases import ENGINES, ASSUMES, G, MEASURED, PANEL, bench, hold_trial, on_slope
 
 HAVE = importlib.util.find_spec("mujoco") is not None
 RISE = 2000 * math.tan(math.radians(20))
@@ -92,7 +92,7 @@ class Calibration(unittest.TestCase):
         """Catches peak force, a signal for squeeze and structure, drifting between engines: at rest both give the weight, and a bounce peaks alike."""
         lively = {"lively": {**PANEL, "restitution": MEASURED(0.5)}}
         peaks = {}
-        for engine in ("planar", "mujoco"):
+        for engine in ENGINES:
             trial = bouncing(engine)
             trial.update(durationS=3.0, measures={"peak": {"peak": "contact.belt bed.forceN"}, "end": {"final": "contact.belt bed.forceN"}})
             found = one_run(trial, materials=lively)[0]["measures"]

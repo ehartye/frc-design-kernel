@@ -188,7 +188,7 @@ def surfaces_for(case, assembly, materials, drives, movers, where, facts):
         hinges[entry["name"]] = {"at": [v * MM for v in entry["hingeMm"]], "lengthM": entry["lengthMm"] * MM,
                                  "rest": [v / size for v in entry["restDirection"]], "inertiaKgM2": entry["inertiaKgM2"],
                                  "preloadNm": entry.get("preloadNm", 0.0), "springNmPerRad": entry["springNmPerRad"],
-                                 "dampingNmSPerRad": entry.get("dampingNmSPerRad", 0.0), "limitRad": math.radians(entry["limitDeg"]),
+                                 "dampingNmSPerRad": entry.get("dampingNmSPerRad", 0.0), "limitRad": math.radians(abs(entry["limitDeg"])), "sense": -1.0 if entry["limitDeg"] < 0 else 1.0,
                                  "stopRestitution": entry.get("stopRestitution", 0.0)}
         row = {"name": entry["name"], "prims": [], "hinge": entry["name"], "mat": pick(materials, entry["material"], at, "material"),
                "speedMps": 0.0, "ratio": 1.0, "sign": 1.0}

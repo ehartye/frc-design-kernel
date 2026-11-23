@@ -112,7 +112,13 @@ def build(assembly, name, a_case, handed=None):
         source = built[solid]
         group, where_at = source["group"], posed[source["group"]]
         turned = None if flap else driven_by(case, solid)
-        moved = flap or mover_of(case, assembly, group, entry.get("mover"), where)
+        moved = mover_of(case, assembly, group, entry.get("mover"), where)
+        if flap and moved:      # a flap on a moved group rides inside that group's body
+            if moved["kind"] == "path":
+                fail(f'{where} flap "{surface}"', "the MuJoCo engine cannot hinge a flap on a group that is carried along a path", "Give the group a single slide or turn")
+            moving[f"{group}:{moved['mover']}"] = moved
+            flap["parent"] = f"{group}:{moved['mover']}"
+        moved = flap or moved
         model.body = "world" if not moved else f"flap:{surface}" if flap else f"{group}:{moved['mover']}"
         model.driven = turned
         if moved:

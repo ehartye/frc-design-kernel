@@ -4,7 +4,7 @@ import math
 import unittest
 
 from .test_mujoco import one_run
-from .trial_cases import ASSUMES, G, bench, hold_trial
+from .trial_cases import ENGINES, ASSUMES, G, bench, hold_trial
 
 HAVE = importlib.util.find_spec("mujoco") is not None
 BOX = lambda low, high: {"kind": "box", "fromMm": low, "toMm": high}
@@ -40,7 +40,7 @@ class OneLaw(unittest.TestCase):
 
         MuJoCo's own contact gave 4200 N here. The lid carries the spring force less half the weight, the bed the rest.
         """
-        for engine in ("planar", "mujoco"):
+        for engine in ENGINES:
             found = squeezed(engine)
             self.assertAlmostEqual(found["lid"], 200.0 - 0.5 * G, delta=2.0, msg=engine)
             self.assertAlmostEqual(found["bed"], 200.0 + 0.5 * G, delta=2.0, msg=engine)
@@ -50,14 +50,14 @@ class OneLaw(unittest.TestCase):
 
     def test_a_resting_piece_sinks_by_its_weight_over_the_stiffness(self):
         """Catches a resting depth that is not the spring's: 1 kg on 200 N/mm sinks 0.049 mm, in both engines."""
-        for engine in ("planar", "mujoco"):
+        for engine in ENGINES:
             found = resting(engine)
             self.assertAlmostEqual(found["depth"], 1.0 * G / 2.0e5 * 1000, delta=0.001, msg=engine)
             self.assertAlmostEqual(found["force"], 1.0 * G, delta=0.01, msg=engine)
 
     def test_a_block_holds_on_a_slope_or_slides_as_friction_says(self):
         """Catches a 3D friction law that creeps or grips wrongly: at friction 0.5 a block holds on 20 degrees, and slides on 30."""
-        for engine in ("planar", "mujoco"):
+        for engine in ENGINES:
             found = held(engine)
             self.assertEqual(found["outcome"], "held", engine)
             start = 300 * math.cos(math.radians(20)) + 20 * math.sin(math.radians(20))

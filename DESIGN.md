@@ -998,7 +998,9 @@ MuJoCo.
   trial says otherwise (`"mujoco": {"ringSegments": 48}`); its hole is real. The record states the count, so a trial
   can be repeated with more to show the count does not decide the outcome.
 - **A flap** is its drawn solid (`"solid"` on the flap) on a hinge about the plane's normal at `hingeMm`, with the
-  same spring, preload, damping, inertia and limit the planar engine reads. Its stops do not bounce.
+  same spring, preload, damping, inertia and limit the planar engine reads. Its stops do not bounce. In both
+  engines a flap opens counter-clockwise in the trial's plane, or clockwise when `limitDeg` is written negative;
+  the angle reported is how far it has opened. A flap that names a mover rides that moved group.
 - **A load** is the same data and the same force as in planar.
 - **More than one piece.** A trial may list `others`: more free pieces, each with a piece to use, a start point on
   the plane, an optional `acrossMm` to set it beside the plane, and an optional velocity. `betweenPieces` names the
@@ -1035,6 +1037,26 @@ engine's own tests. With one contact law the two agree far more closely than a d
 
 What still differs between the engines is geometry, which is the reason to run the 3D one: the piece can leave the
 plane, tip, and touch a surface at more than one place across its width.
+
+**The calibration set, for this and any future engine.** An engine is not trusted on agreement in one kind of
+case. Every engine listed in `ENGINES` (`tests/trial_cases.py`) runs the same trial definitions, and must give:
+
+1. the closed-form rolling time of a ball and of a bar down a slope;
+2. the weight, and the spring's depth, on a piece at rest;
+3. the same peak force, deepest press and rebound in a bounce;
+4. **the springs' force in a squeeze between two surfaces, and twice the force at twice the squash;**
+5. hold with no creep below the friction angle, and slide above it;
+6. the closed-form wall force and motor current when a driven roller drags a block;
+7. belt speed reached at friction times g; a load's closed-form travel; the same flap opening.
+
+Case 4 is there because of a mistake worth stating plainly. **Before the contact law was made the library's own, each
+material's spring and damper were mapped onto MuJoCo's native soft contact, and the mapping was checked on single
+contacts only: a roll, a rest, a bounce. Those agreed within a few percent, and the engine was reported as
+calibrated. It was not. In a squeeze the native solver gave 4 to 21 times the spring force, at every setting tried,
+because its "spring" is a target acceleration shared between fighting contacts, not a force law.** The error
+surfaced only when a real pickup trial, in which a piece starts pressed against a roller, was compared with an
+earlier run of the same trial. Do not map a material's spring onto any engine's native soft contact. Use the
+engine for geometry and motion, apply the library's contact law, and run the whole set above.
 
 **Stages.**
 

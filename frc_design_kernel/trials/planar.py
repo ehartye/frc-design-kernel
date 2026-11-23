@@ -31,12 +31,16 @@ def mover_velocity(mover, happened, t):
 
 
 def flap_prim(hinge, angle):
-    """The flap as a segment from its hinge to its tip, and the direction its points move when the angle grows."""
-    c, s = math.cos(angle), math.sin(angle)
+    """The flap as a segment from its hinge to its tip, and the direction its points move as it opens.
+
+    angle is how far it has opened. It opens counter-clockwise, or clockwise when its limit is written negative.
+    """
+    sense = hinge["sense"]
+    c, s = math.cos(sense * angle), math.sin(sense * angle)
     dx, dz = hinge["rest"]
     ax, az = dx * c - dz * s, dx * s + dz * c
     tip = (hinge["at"][0] + hinge["lengthM"] * ax, hinge["at"][1] + hinge["lengthM"] * az)
-    return segment(hinge["at"], tip), (-az, ax)
+    return segment(hinge["at"], tip), (-az * sense, ax * sense)
 
 
 def flap_step(hinge, state, torque, dt):

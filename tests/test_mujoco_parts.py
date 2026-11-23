@@ -8,7 +8,7 @@ import unittest
 from frc_design_kernel import DesignError
 
 from .test_mujoco import one_run
-from .trial_cases import ASSUMES, G, MEASURED, PANEL, bench
+from .trial_cases import ENGINES, ASSUMES, G, MEASURED, PANEL, bench
 
 HAVE = importlib.util.find_spec("mujoco") is not None
 BOX = lambda low, high: {"kind": "box", "fromMm": low, "toMm": high}
@@ -31,15 +31,27 @@ def ring_over_post(post_radius, segments=None):
     return one_run(trial, solids=solids, pieces=pieces)
 
 
-def gate(engine, spring):
-    """A block that cannot spin slides on a slick bed into a sprung flap standing on the bed, and is thrown back."""
-    solids = bench({})["solids"] + [{"name": "leaf", "group": "bench", "shape": BOX([99, -50, -500], [101, 50, -440])}]
-    trial = {**BASE, "engine": engine, "durationS": 0.6, "piece": {"use": "block", "start": {"atMm": [200, -480], "velocityMps": [-1, 0]}},
+def gate(engine, spring, side=1, cart=False):
+    """A block that cannot spin slides on a slick bed into a sprung flap standing on the bed, and is thrown back.
+
+    side -1 is the mirror image: the block comes from the other side and the flap opens clockwise. With cart, the
+    block stands still and the flap rides a cart into it at the same speed.
+    """
+    design = bench({})
+    design["groups"]["cart"] = {"role": "mechanism"}
+    design["solids"].append({"name": "leaf", "group": "cart" if cart else "bench", "shape": BOX([99, -50, -500], [101, 50, -440])})
+    design["poses"] = {"back": {}}
+    design["motions"] = {"roll": {"from": "back", "moves": {"cart": [{"kind": "translation", "travelMm": [600, 0, 0]}]}}}
+    at = 100 + side * 100
+    trial = {**BASE, "engine": engine, "durationS": 0.6, "piece": {"use": "block", "start": {"atMm": [at, -480], "velocityMps": [0 if cart else -side, 0]}},
              "surfaces": [{"solid": "belt bed", "material": "slick"}],
              "flaps": [{"name": "flap", "solid": "leaf", "material": "slick", "hingeMm": [100, -500], "lengthMm": 60, "restDirection": [0, 1],
-                        "inertiaKgM2": MEASURED(1e-4), "springNmPerRad": MEASURED(spring), "dampingNmSPerRad": MEASURED(0.002), "limitDeg": 80}],
+                        "inertiaKgM2": MEASURED(1e-4), "springNmPerRad": MEASURED(spring), "dampingNmSPerRad": MEASURED(0.002), "limitDeg": 80 * side}],
              "measures": {"most": {"peak": "hinge.flap.angleDeg"}, "x": {"final": "xMm"}}}
-    return one_run(trial, solids=solids, materials={"slick": SLICK})
+    if cart:
+        trial["movers"] = {"go": {"motion": "roll", "group": "cart", "startS": 0.0, "durationS": 0.6}}
+        trial["flaps"][0]["mover"] = "go"
+    return one_run(trial, materials={"slick": SLICK}, **{k: design[k] for k in ("groups", "solids", "poses", "motions")})
 
 
 @unittest.skipUnless(HAVE, "MuJoCo is not installed (the optional extra)")
@@ -56,7 +68,7 @@ class Parts(unittest.TestCase):
 
     def test_a_load_moves_the_piece_as_the_closed_form_says_in_both_engines(self):
         """Catches a load that is dropped, doubled or pointed the wrong way: 3 m/s2 for 0.1 s, then 0.2 s of coasting, is 75 mm."""
-        for engine in ("planar", "mujoco"):
+        for engine in ENGINES:
             trial = {**BASE, "engine": engine, "durationS": 0.3, "piece": {"use": "block", "start": {"atMm": [0, -480]}},
                      "surfaces": [{"solid": "belt bed", "material": "slick"}], "loads": [{"along": [1, 0], "accelerationMps2": 3, "durationS": 0.1}],
                      "measures": {"x": {"final": "xMm"}}}
@@ -66,7 +78,7 @@ class Parts(unittest.TestCase):
     def test_a_sprung_flap_gives_way_alike_in_both_engines(self):
         """Catches a flap that is rigid, limp or turns the wrong way: the block's energy must wind the spring to about the same angle."""
         most = {}
-        for engine in ("planar", "mujoco"):
+        for engine in ENGINES:
             found, facts = gate(engine, 2.0)
             most[engine] = found["measures"]["most"]
             self.assertGreater(found["measures"]["x"], 150.0, engine)       # thrown back the way it came
@@ -75,6 +87,17 @@ class Parts(unittest.TestCase):
         self.assertEqual(facts["bodies"], {"flap:flap": "flap"})
         stiff, _ = gate("mujoco", 200.0)
         self.assertLess(stiff["measures"]["most"], 0.2 * most["mujoco"])     # control: a much stiffer spring barely moves
+
+    def test_a_flap_opens_the_other_way_or_rides_a_cart_and_opens_just_as_far(self):
+        """Catches a clockwise flap or a flap on a moved group behaving unlike the plain one: by symmetry each opens the same angle."""
+        plain = gate("planar", 2.0)[0]["measures"]["most"]
+        for engine in ENGINES:
+            mirrored = gate(engine, 2.0, side=-1)[0]
+            self.assertAlmostEqual(mirrored["measures"]["most"], plain, delta=0.01 * plain, msg=engine)
+            self.assertLess(mirrored["measures"]["x"], 50.0, engine)       # thrown back the way it came, toward -x
+            riding, facts = gate(engine, 2.0, cart=True)
+            self.assertAlmostEqual(riding["measures"]["most"], plain, delta=0.02 * plain, msg=engine)
+        self.assertEqual(facts["bodies"], {"cart:go": "slide", "flap:flap": "flap"})
 
     def test_a_belt_on_a_moving_cart_adds_the_carts_speed(self):
         """Catches a driven surface that forgets its carrier is moving: the block ends at cart speed plus belt speed."""

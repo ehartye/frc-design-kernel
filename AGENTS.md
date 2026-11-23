@@ -8,6 +8,9 @@ Short rules for people and coding agents who change this library. The reasons ar
 - Aim far below the ceilings. One small module does one job.
 - The only dependency is `cadquery-ocp`. Everything else is the standard library. MuJoCo is an optional extra:
   only `trials/mujoco_run.py` may import it, and nothing may need it unless a trial names that engine.
+- Contact forces are the library's own law in every engine. Never map a material's spring onto an engine's native
+  soft contact. An added engine goes into `ENGINES` in `tests/trial_cases.py` and must pass the whole calibration
+  set, the squeeze case included (DESIGN.md section 16).
 - Scope is **build, measure, try**. Do not add guidelines, pass or fail verdicts, receipts, review pages, publishing
   or CI policy. Tools that judge a design own those.
 
