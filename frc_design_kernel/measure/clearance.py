@@ -12,7 +12,7 @@ from . import proofs, scene as scenes
 from .pairs import BOX_MARGIN_MM, box_gap, near_pairs
 from .search import DEFAULT_DEPTH, search
 
-COUNTS = ("pairs", "declaredContacts", "bothStill", "farApart", "fixedFarApart", "measured")
+COUNTS = ("pairs", "declaredContacts", "bothStill", "farApart", "fixedFarApart", "measured", "notInFocus")
 
 
 def declared(contacts, names):
@@ -75,15 +75,20 @@ def measure_pair(scene, a, b, min_gap, depth, counts, memo=None):
     return row(a, b, "adaptive search", gap, t, 0.0, min(found["floor"], gap), True, False, found["samples"])
 
 
-def share_of(scene, min_gap, contacts, depth=DEFAULT_DEPTH, share=(0, 1), include_still=False, memo=None):
-    """Measure one share of a scene's pairs: every share[1]-th pair starting at pair share[0]. Shares combine in combine()."""
+def share_of(scene, min_gap, contacts, depth=DEFAULT_DEPTH, share=(0, 1), include_still=False, memo=None, focus=None):
+    """Measure one share of a scene's pairs: every share[1]-th pair starting at pair share[0]. Shares combine in combine().
+
+    focus, when given, is a set of solid names: only pairs with one of them in it are measured; the rest are counted.
+    """
     first, count = share
     rows, counts = [], dict.fromkeys(COUNTS, 0)
     for index, (a, b) in enumerate(itertools.combinations(scene.names, 2)):
         if index % count != first:
             continue
         counts["pairs"] += 1
-        if (a, b) in contacts:
+        if focus is not None and a not in focus and b not in focus:
+            counts["notInFocus"] += 1
+        elif (a, b) in contacts:
             counts["declaredContacts"] += 1
         elif scene.still(a) and scene.still(b) and not include_still:
             counts["bothStill"] += 1
@@ -115,7 +120,7 @@ def header(kind, name, min_gap, depth, contacts, absent, include_still=False, di
             "absent": sorted(absent), "includeStill": include_still, "displaced": {name: list(shift) for name, shift in sorted((displace or {}).items())}}
 
 
-def along(assembly, motion, min_gap=0.0, contacts=(), absent=(), depth=DEFAULT_DEPTH, include_still=False, displace=None):
+def along(assembly, motion, min_gap=0.0, contacts=(), absent=(), depth=DEFAULT_DEPTH, include_still=False, displace=None, focus=None):
     """Clearance of every pair that moves relative to another, over the whole of a named motion.
 
     Returns plain data. Each row of "pairs" gives the smallest gap sampled and its stroke fraction t, any shared
@@ -126,11 +131,14 @@ def along(assembly, motion, min_gap=0.0, contacts=(), absent=(), depth=DEFAULT_D
     """
     scene = scenes.for_motion(assembly, motion, absent, displace)
     pairs = declared(contacts, scene.names)
-    return combine([share_of(scene, min_gap, pairs, depth, (0, 1), include_still)], header("motion", motion, min_gap, depth, pairs, absent, include_still, displace))
+    return combine([share_of(scene, min_gap, pairs, depth, (0, 1), include_still, focus=focus)], header("motion", motion, min_gap, depth, pairs, absent, include_still, displace))
 
 
-def at_pose(assembly, pose=None, min_gap=0.0, contacts=(), absent=()):
-    """Every pair closer than min_gap, or sharing volume, with all solids held at a named pose (None is as drawn)."""
+def at_pose(assembly, pose=None, min_gap=0.0, contacts=(), absent=(), focus=None):
+    """Every pair closer than min_gap, or sharing volume, with all solids held at a named pose (None is as drawn).
+
+    focus, when given, is a set of solid names: only pairs with one of them in it are measured.
+    """
     scene = scenes.for_pose(assembly, pose, absent)
     pairs = declared(contacts, scene.names)
     rows, counts = [], dict.fromkeys(COUNTS, 0)
@@ -138,6 +146,9 @@ def at_pose(assembly, pose=None, min_gap=0.0, contacts=(), absent=()):
     near = near_pairs(scene.boxes, min_gap)
     counts["fixedFarApart"] = counts["pairs"] - len(near)
     for index, (a, b) in enumerate(near):
+        if focus is not None and a not in focus and b not in focus:
+            counts["notInFocus"] += 1
+            continue
         if (a, b) in pairs:
             counts["declaredContacts"] += 1
             continue

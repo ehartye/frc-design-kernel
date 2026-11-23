@@ -323,7 +323,9 @@ in configurability." So what the built robot can change is design data too:
 `kind` is `mechanical` (a slot, shim or spacer), `spring` (a preload or rate) or `setpoint` (a speed, voltage or
 position set in software). `input` is a design parameter (`parameters.NAME`) or a path into a trial. A mechanical
 adjustment is always a design parameter, so the solids move with it: `measure --extremes` builds and measures the
-design at both ends of each such adjustment, so clearance is known across the range. A trial lists the adjustments
+design at both ends of each such adjustment, so clearance is known across the range. Only mechanical adjustments are
+measured (a setpoint or a spring moves no solid), only the pairs with a solid that end moves (`moves`), shared between
+the same workers as the rest of `measure`, and only the motions and poses `--motion` and `--pose` name. A trial lists the adjustments
 that apply to it under `adjustments`; the campaign then asks whether they cover its uncertain inputs (section 13.3).
 
 ### 4.5d Interactions and what solids are made of

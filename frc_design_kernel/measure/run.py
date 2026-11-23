@@ -23,14 +23,14 @@ def default_workers():
     return max(1, (os.cpu_count() or 2) // 2)
 
 
-def assembly_for(source):
-    """The built assembly for a design source, built once per process."""
-    key = (str(source), os.path.getmtime(source))
+def assembly_for(source, parameters=None):
+    """The built assembly for a design source, with any parameters set to other values, built once per process."""
+    key = (str(source), os.path.getmtime(source), tuple(sorted((parameters or {}).items())))
     if key not in _built:
         from ..builder.assembly import build
         _built.clear()
         _fixed.clear()
-        _built[key] = build(load(source))
+        _built[key] = build(load(source, parameters or None))
     return _built[key]
 
 
@@ -43,8 +43,9 @@ def work(task):
     """Measure one share of one job. Runs in a worker process (or in the caller's, with one worker)."""
     source, job, share = task
     motion, min_gap, contacts, absent, depth, include_still, displace = job_fields(job)
-    scene = scenes.for_motion(assembly_for(source), motion, absent, displace)
-    return clearance.share_of(scene, min_gap, clearance.declared(contacts, scene.names), depth, share, include_still, _fixed)
+    scene = scenes.for_motion(assembly_for(source, job.get("parameters")), motion, absent, displace)
+    focus = set(job["focus"]) if job.get("focus") is not None else None
+    return clearance.share_of(scene, min_gap, clearance.declared(contacts, scene.names), depth, share, include_still, _fixed, focus)
 
 
 def shares_for(solids, workers):
@@ -56,7 +57,9 @@ def clearances(source, jobs, workers=None):
     """Clearance along several motions of one design source, shared between workers.
 
     jobs is a list of {"motion": name, "minGapMm": 0.0, "contacts": [[a, b], ...], "absent": [names], "depth": 9,
-    "includeStill": False, "displace": {solid: [dx, dy, dz]}}; only "motion" is required. Returns one clearance result per job, in job order, the same as clearance.along gives.
+    "includeStill": False, "displace": {solid: [dx, dy, dz]}, "parameters": {name: value}, "focus": [solids]}; only "motion" is
+    required. "parameters" measures the design with those parameters changed; "focus" measures only pairs with one of
+    those solids in them. Returns one clearance result per job, in job order, the same as clearance.along gives.
     """
     workers = default_workers() if workers is None else max(1, int(workers))
     design = load(source)
