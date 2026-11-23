@@ -16,12 +16,12 @@ PLANAR = [
 ]
 MUJOCO = [
     {"id": "rigid-bodies", "text": "Every body is rigid. All give is in the contact between the piece and a surface."},
-    {"id": "single-piece", "text": "One free piece. No other piece is present or touches it."},
+    {"id": "listed-pieces", "text": "The trial's piece and any others the trial lists are the only free bodies."},
     {"id": "convex-shapes", "text": "A tube, a box with boxes cut out, a prism and a pie slice are run as their true convex pieces. Any other hollow, cut or imported solid is used as its convex hull; the record lists which, and says when the piece touched one."},
-    {"id": "mapped-contact", "text": "Each material's spring and damper are handed to the engine's own soft contact for the piece's mass; the engine's friction is a hard limit, not a spring."},
-    {"id": "no-resting-depth", "text": "Under a steady load the engine holds the piece at almost no depth: contact forces compare with the planar engine, resting depths do not."},
+    {"id": "own-contact-law", "text": "MuJoCo finds where shapes overlap and moves the bodies. The forces there are this library's spring, damper and friction law, the same as the planar engine's."},
+    {"id": "shared-spring", "text": "Where a piece touches one surface at several points, the surface's spring is shared among the points by depth."},
     {"id": "driven-not-driving", "text": "A moved group follows its motion and a driven surface runs at its drive's speed; contact loads the drive's motor model but cannot push a mechanism off its motion."},
-    {"id": "driven-surface-friction", "text": "A roller, wheel or belt that a drive turns is a still shape. Its friction is the planar engine's smooth law for its surface speed, applied to the piece as a force one step late."},
+    {"id": "driven-surface-still", "text": "A roller, wheel or belt that a drive turns is a still shape whose surface runs at the drive's speed across the turn's axis."},
     {"id": "teleported-paths", "text": "A group whose motion is not one hinge or one slider is carried along its path without its speed being felt in contact."},
     {"id": "flap-as-drawn", "text": "A flap is its drawn solid on a sprung hinge about the plane's normal; its stops do not bounce."},
     {"id": "ring-of-capsules", "text": "A ring piece is a closed chain of straight round segments; the record says how many."},

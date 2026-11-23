@@ -66,7 +66,7 @@ def ring(shape, mass, segments, where):
     return geoms, inertia, major + minor
 
 
-def piece_body(name, piece, mass, start, normal, segments=32, body="piece", touch='friction="0 0 0"'):
+def piece_body(name, piece, mass, start, normal, segments=32, body="piece"):
     """A piece as a free body: its geoms, mass and inertia from its 3D shape, its start state from the planar start."""
     shape = piece["shape"]
     axis = "xyz".index(normal)
@@ -97,7 +97,7 @@ def piece_body(name, piece, mass, start, normal, segments=32, body="piece", touc
     spin[axis] = start["spin"] * (-1.0 if normal == "y" else 1.0)       # counter-clockwise in (u, v) is a turn about -y
     velocity = [0.0, 0.0, 0.0]
     velocity[iu], velocity[iv] = start["velocity"]
-    drawn = "".join(f'<geom name="{body}#{i}" {fields} {touch} condim="3"/>' for i, fields in enumerate(geoms))
+    drawn = "".join(f'<geom name="{body}#{i}" {fields}/>' for i, fields in enumerate(geoms))
     xml = (f'<body name="{body}" pos="{text(position)}"><freejoint/>'
            f'<inertial pos="0 0 0" mass="{mass:.9g}" diaginertia="{text(inertia)}"/>{drawn}</body>')
     return xml, velocity + spin, radius

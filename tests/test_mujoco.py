@@ -165,10 +165,10 @@ class Calibration(unittest.TestCase):
         self.assertEqual((trial["result"], trial["engine"]["name"], trial["control"]["rejected"], trial["stepComparison"]["converged"]),
                          ("passed", "mujoco", True, True))
         self.assertRegex(trial["engine"]["version"], r"^\d+\.\d+")
-        self.assertEqual([row["id"] for row in trial["assumptions"]["engine"]][:3], ["rigid-bodies", "single-piece", "convex-shapes"])
+        self.assertEqual([row["id"] for row in trial["assumptions"]["engine"]][:3], ["rigid-bodies", "listed-pieces", "convex-shapes"])
         self.assertIn("offPlaneMm", trial["nominal"]["trace"]["columns"])
         self.assertEqual([r["id"] for r in trial["runs"]][:3], ["nominal", "half step", "control"])
-        self.assertIn("solref", trial["saw"]["contactMapping"])
+        self.assertIn("the library's own spring, damper and friction law", trial["saw"]["contactLaw"])
 
     def test_what_the_engine_does_not_run_yet_is_refused_by_name(self):
         """Catches a typed flap or a typed surface being run in 3D as if it were not there."""
