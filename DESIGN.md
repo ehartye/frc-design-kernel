@@ -981,6 +981,14 @@ MuJoCo.
   steps, a path, a motion through poses) is carried along its path, and its speed is not felt in contact; the record
   says which under `saw.bodies`. A group carried by a moving group takes its carrier's movement too. Mechanisms are
   driven, not driving: contact cannot push one off its motion.
+- **A driven surface on a moved group** adds the group's own speed at the point of contact (not for a path-carried
+  group, whose speed is not known to the engine).
+- **A ring piece** (a torus) is a closed chain of straight round segments along its centre circle, 32 unless the
+  trial says otherwise (`"mujoco": {"ringSegments": 48}`); its hole is real. The record states the count, so a trial
+  can be repeated with more to show the count does not decide the outcome.
+- **A flap** is its drawn solid (`"solid"` on the flap) on a hinge about the plane's normal at `hingeMm`, with the
+  same spring, preload, damping, inertia and limit the planar engine reads. Its stops do not bounce.
+- **A load** is the same data and the same force as in planar.
 - Two signals are added to the planar ones: `offPlaneMm` (how far the piece has left the trial's plane) and
   `tiltDeg` (how far it has tipped). On a case that truly is planar both stay at zero; when they do not, the planar
   assumption `in-plane` has been tested and found wanting.
@@ -1000,6 +1008,10 @@ engine's own tests:
 | Same, holding speed: motor current | 3.10 A | within 5% | within 5% |
 | Block set on a belt at 1 m/s: speed at 0.1 s, then at 0.4 s | 0.49, 1.00 m/s | within 0.02 | within 0.02 |
 | Ball pushed by a sliding gate: distance | | (reference) | within 5% |
+| Load of 3 m/s2 for 0.1 s, then 0.2 s coasting: travel | 75 mm | within 1 mm | within 1 mm |
+| Block thrown back by a sprung flap: most the flap opens | | 32.6 deg | 34.4 deg |
+| Block on a 1 m/s belt on a cart moving at 0.5 m/s: speed | 1.5 m/s | | within 0.03 |
+| Ring dropped over a post that fits its hole: rests | on the floor | | on the floor (and on the post when the post is too wide) |
 
 Outcome and timing agree within 0.5%, spin within 1%, rebound and peak force within 3%, depth within 4%. One thing
 does not compare: under a steady load MuJoCo holds the piece at almost no depth, where the planar spring sinks by
@@ -1013,7 +1025,8 @@ already sunk by the planar depth shows a short force spike in MuJoCo for that re
 | 1 | Fixed surfaces from the named solids, one free piece, the shared method and record, calibration against planar | Built |
 | 2 | Driven surfaces (rollers, wheels) with the declared motor and gear; moved groups as hinges, sliders or paths, carriers included | Built |
 | 3 | Belts: the same driven surface, since only the surface speed differs | Built |
-| 4 | Flaps, loads and movers; a ring piece; more than one piece | Not built |
+| 4 | Flaps, loads, a driven surface on a moved group, a ring piece | Built |
+| 5 | More than one piece | Not built |
 
 A trial that uses a part the engine does not run yet is refused by name; nothing is silently left out.
 

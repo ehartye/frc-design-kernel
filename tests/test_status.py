@@ -25,6 +25,7 @@ def ride_trial():
             "piece": {"use": "ball", "start": {"atMm": [0, -480]}}, "surfaces": [{"solid": "belt bed", "material": "panel"}],
             "events": [{"name": "fell", "when": {"signal": "zMm", "below": "=-600 - rise * 0"}, "outcome": "fell"},
                        {"name": "stayed", "when": {"restFor": 0.2}, "outcome": "stayed"}],
+            "movers": {"wave": {"motion": "shove", "group": "gate", "startS": 0.0, "durationS": 0.2}},
             "pass": {"outcomes": ["stayed"]}, "control": {"change": {"surfaces.belt bed": None}, "note": "With no bed under it the ball must fall."}}
 
 
@@ -33,7 +34,8 @@ def source():
     data["groups"]["gate"] = {"role": "mechanism"}
     data["solids"].append({"name": "gate", "group": "gate", "massKg": 0.2, "shape": {"kind": "box", "fromMm": [2500, -50, 0], "toMm": [2520, 50, 200]}})
     data["poses"] = {"shut": {}, "open": {"gate": [dict(TURN)]}}
-    data["motions"] = {"swing": {"from": "shut", "moves": {"gate": [dict(TURN)]}}, "sweep": {"through": ["shut", "open"]}}
+    data["motions"] = {"swing": {"from": "shut", "moves": {"gate": [dict(TURN)]}}, "sweep": {"through": ["shut", "open"]},
+                       "shove": {"from": "shut", "moves": {"gate": [{"kind": "translation", "travelMm": [10, 0, 0]}]}}}
     return data
 
 
@@ -69,7 +71,7 @@ class Stale(unittest.TestCase):
         """Catches records reported stale when nothing has changed."""
         found = states(self.after())
         self.assertEqual(set(found.values()), {"current"})
-        self.assertEqual(sorted(found), ['clearance along "sweep"', 'clearance along "swing"', "measures as drawn", 'measures at the pose "open"',
+        self.assertEqual(sorted(found), ['clearance along "shove"', 'clearance along "sweep"', 'clearance along "swing"', "measures as drawn", 'measures at the pose "open"',
                                          'measures at the pose "shut"', 'trial "hold"', 'trial "ride"'])
 
     def test_a_moved_solid_makes_stale_exactly_the_records_that_used_it(self):
@@ -101,6 +103,8 @@ class Stale(unittest.TestCase):
         self.assertEqual(grip["measures as drawn"]["state"], "current")
         moved = {r["record"]: r for r in self.after(lambda d: d["motions"]["swing"]["moves"]["gate"][0].update(travelDeg=31))["records"]}
         self.assertEqual((moved['clearance along "swing"']["changes"], moved['clearance along "sweep"']["state"]), (["motion changed"], "current"))
+        shoved = {r["record"]: r for r in self.after(lambda d: d["motions"]["shove"]["moves"]["gate"][0].update(travelMm=[12, 0, 0]))["records"]}
+        self.assertEqual((shoved['trial "ride"']["changes"], shoved['trial "hold"']["state"]), (['the motion "shove" changed'], "current"))     # a mover follows it
         heavier = {r["record"]: r for r in self.after(lambda d: d["solids"][2].update(massKg=0.3))["records"]}
         self.assertEqual(heavier["measures as drawn"]["changes"], ['solid "gate" changed (massKg)'])
 
@@ -114,7 +118,7 @@ class Stale(unittest.TestCase):
             trials = json.loads((Path(out) / "trials.json").read_text(encoding="utf-8"))
             measures = json.loads((Path(out) / "measurements.json").read_text(encoding="utf-8"))
         self.assertEqual(sorted(trials["trials"]), ["hold", "ride"])
-        self.assertEqual((sorted(measures["motions"]), len(measures["poses"])), (["sweep", "swing"], 3))
+        self.assertEqual((sorted(measures["motions"]), len(measures["poses"])), (["shove", "sweep", "swing"], 3))
         self.assertIn("keeping the trials that were not run again", text.getvalue())
         self.assertNotIn('Trial "hold"', text.getvalue())
 
