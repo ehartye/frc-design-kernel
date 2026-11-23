@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ehartye/frc-design-kernel/trial.schema.json",
+  "title": "frc-design-kernel trial definition",
+  "type": "object",
+  "required": ["plane", "piece", "materials", "surfaces", "stepS", "durationS", "events", "pass"],
+  "additionalProperties": false,
+  "properties": {
+    "note": {"type": "string"},
+    "plane": {
+      "type": "object",
+      "required": ["normal", "atMm"],
+      "additionalProperties": false,
+      "properties": {"normal": {"enum": ["x", "y", "z"]}, "atMm": {"$ref": "#/$defs/number"}}
+    },
+    "pose": {"type": "string"},
+    "gravityMps2": {"$ref": "#/$defs/number"},
+    "stepS": {"$ref": "#/$defs/number"},
+    "durationS": {"$ref": "#/$defs/number"},
+    "traceS": {"$ref": "#/$defs/number"},
+    "fitToleranceMm": {"$ref": "#/$defs/number"},
+    "contactPoint": {"enum": ["onSurface", "onPiece"]},
+    "piece": {
+      "type": "object",
+      "required": ["radiusMm", "massKg", "start"],
+      "additionalProperties": false,
+      "properties": {
+        "radiusMm": {"$ref": "#/$defs/number"},
+        "massKg": {"$ref": "#/$defs/number"},
+        "inertiaFactor": {"$ref": "#/$defs/number"},
+        "inertiaKgM2": {"$ref": "#/$defs/number"},
+        "start": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "atMm": {"$ref": "#/$defs/point2"},
+            "velocityMps": {"$ref": "#/$defs/point2"},
+            "spinRadps": {"$ref": "#/$defs/number"},
+            "after": {"type": "string"},
+            "atRest": {"type": "boolean"}
+          }
+        }
+      }
+    },
+    "rest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"speedMps": {"$ref": "#/$defs/number"}, "rimSpeedMps": {"$ref": "#/$defs/number"}}
+    },
+    "materials": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/material"}},
+    "surfaces": {"type": "array", "items": {"$ref": "#/$defs/surface"}},
+    "flaps": {"type": "array", "items": {"$ref": "#/$defs/flap"}},
+    "drives": {"type": "object", "additionalProperties": {"$ref": "#/$defs/drive"}},
+    "loads": {"type": "array", "items": {"$ref": "#/$defs/load"}},
+    "movers": {"type": "object", "additionalProperties": {"$ref": "#/$defs/mover"}},
+    "forces": {"type": "array", "items": {"$ref": "#/$defs/customUse"}},
+    "events": {"type": "array", "items": {"$ref": "#/$defs/event"}},
+    "measures": {"type": "object", "additionalProperties": {"$ref": "#/$defs/measure"}},
+    "pass": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "outcomes": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "limits": {"type": "array", "items": {"$ref": "#/$defs/limit"}},
+        "custom": {"$ref": "#/$defs/customUse"}
+      }
+    },
+    "control": {
+      "type": "object",
+      "required": ["change", "note"],
+      "additionalProperties": false,
+      "properties": {"change": {"type": "object", "minProperties": 1}, "note": {"type": "string", "minLength": 10}}
+    },
+    "brackets": {"type": "array", "items": {"$ref": "#/$defs/bracket"}}
+  },
+  "$defs": {
+    "number": {
+      "oneOf": [{"type": "number"}, {"type": "string", "pattern": "^="}],
+      "fix": "Give a number, or an expression in quotes that starts with =, such as \"=width / 2\""
+    },
+    "point2": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/number"}},
+    "material": {
+      "type": "object",
+      "required": ["stiffnessNPerM", "friction"],
+      "additionalProperties": false,
+      "properties": {
+        "stiffnessNPerM": {"$ref": "#/$defs/number"},
+        "restitution": {"$ref": "#/$defs/number"},
+        "dampingRatio": {"$ref": "#/$defs/number"},
+        "friction": {"$ref": "#/$defs/number"},
+        "law": {"enum": ["stick", "smooth"]},
+        "tangentStiffnessNPerM": {"$ref": "#/$defs/number"},
+        "slipSpeedMps": {"$ref": "#/$defs/number"}
+      }
+    },
+    "surface": {
+      "type": "object",
+      "required": ["name", "material"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "material": {"type": "string"},
+        "solid": {"type": "string"},
+        "segmentsMm": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/point2"}},
+        "circleMm": {
+          "type": "object",
+          "required": ["centreMm", "radiusMm"],
+          "additionalProperties": false,
+          "properties": {"centreMm": {"$ref": "#/$defs/point2"}, "radiusMm": {"$ref": "#/$defs/number"}}
+        },
+        "speedMps": {"$ref": "#/$defs/number"},
+        "drive": {"type": "string"},
+        "ratio": {"$ref": "#/$defs/number"},
+        "runs": {"enum": ["counterclockwise", "clockwise"]},
+        "mover": {"type": "string"}
+      }
+    },
+    "flap": {
+      "type": "object",
+      "required": ["name", "material", "hingeMm", "lengthMm", "restDirection", "inertiaKgM2", "springNmPerRad", "limitDeg"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "material": {"type": "string"},
+        "hingeMm": {"$ref": "#/$defs/point2"},
+        "lengthMm": {"$ref": "#/$defs/number"},
+        "restDirection": {"$ref": "#/$defs/point2"},
+        "inertiaKgM2": {"$ref": "#/$defs/number"},
+        "preloadNm": {"$ref": "#/$defs/number"},
+        "springNmPerRad": {"$ref": "#/$defs/number"},
+        "dampingNmSPerRad": {"$ref": "#/$defs/number"},
+        "limitDeg": {"$ref": "#/$defs/number"},
+        "stopRestitution": {"$ref": "#/$defs/number"},
+        "mover": {"type": "string"}
+      }
+    },
+    "drive": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["imposed", "motor"]},
+        "speedMps": {"$ref": "#/$defs/number"},
+        "rampS": {"$ref": "#/$defs/number"},
+        "startMps": {"$ref": "#/$defs/number"},
+        "motor": {
+          "type": "object",
+          "required": ["ktNmPerA", "ohm", "keVsPerRad"],
+          "additionalProperties": false,
+          "properties": {"ktNmPerA": {"$ref": "#/$defs/number"}, "ohm": {"$ref": "#/$defs/number"}, "keVsPerRad": {"$ref": "#/$defs/number"}}
+        },
+        "count": {"$ref": "#/$defs/number"},
+        "gear": {"$ref": "#/$defs/number"},
+        "efficiency": {"$ref": "#/$defs/number"},
+        "radiusMm": {"$ref": "#/$defs/number"},
+        "movingKg": {"$ref": "#/$defs/number"},
+        "inertiaKgM2": {"$ref": "#/$defs/number"},
+        "statorLimitA": {"$ref": "#/$defs/number"},
+        "supplyLimitA": {"$ref": "#/$defs/number"},
+        "busV": {"type": ["number", "string", "null"]},
+        "dragNm": {"$ref": "#/$defs/number"},
+        "oneWay": {"type": "boolean"},
+        "control": {"$ref": "#/$defs/control"},
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["when", "set"],
+            "additionalProperties": false,
+            "properties": {"when": {"$ref": "#/$defs/condition"}, "set": {"type": "object", "minProperties": 1}, "note": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "control": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"enum": ["voltage", "speed", "hold"]},
+        "setpointMps": {"$ref": "#/$defs/number"},
+        "band": {"$ref": "#/$defs/number"},
+        "fullTorqueAtRad": {"$ref": "#/$defs/number"}
+      }
+    },
+    "load": {
+      "type": "object",
+      "required": ["along", "accelerationMps2", "durationS"],
+      "additionalProperties": false,
+      "properties": {
+        "along": {"$ref": "#/$defs/point2"},
+        "accelerationMps2": {"$ref": "#/$defs/number"},
+        "shape": {"enum": ["step", "halfSine"]},
+        "startS": {"$ref": "#/$defs/number"},
+        "after": {"type": "string"},
+        "delayS": {"$ref": "#/$defs/number"},
+        "durationS": {"$ref": "#/$defs/number"},
+        "note": {"type": "string"}
+      }
+    },
+    "mover": {
+      "type": "object",
+      "required": ["durationS"],
+      "additionalProperties": false,
+      "properties": {
+        "velocityMps": {"$ref": "#/$defs/point2"},
+        "motion": {"type": "string"},
+        "group": {"type": "string"},
+        "startS": {"$ref": "#/$defs/number"},
+        "after": {"type": "string"},
+        "delayS": {"$ref": "#/$defs/number"},
+        "durationS": {"$ref": "#/$defs/number"}
+      }
+    },
+    "customUse": {
+      "type": "object",
+      "required": ["use"],
+      "additionalProperties": false,
+      "properties": {"use": {"type": "string"}, "parameters": {"type": "object", "additionalProperties": {"type": ["number", "string"]}}}
+    },
+    "event": {
+      "type": "object",
+      "required": ["name", "when"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "when": {"$ref": "#/$defs/condition"},
+        "outcome": {"type": "string", "minLength": 1},
+        "note": {"type": "string"}
+      }
+    },
+    "condition": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "signal": {"type": "string"},
+        "above": {"$ref": "#/$defs/number"},
+        "below": {"$ref": "#/$defs/number"},
+        "after": {"type": "string"},
+        "delayS": {"$ref": "#/$defs/number"},
+        "notYet": {"type": "string"},
+        "restFor": {"$ref": "#/$defs/number"},
+        "all": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/condition"}},
+        "any": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/condition"}},
+        "not": {"$ref": "#/$defs/condition"}
+      }
+    },
+    "measure": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {"peak": {"type": "string"}, "lowest": {"type": "string"}, "final": {"type": "string"}, "timeOf": {"type": "string"}}
+    },
+    "limit": {
+      "type": "object",
+      "required": ["measure"],
+      "additionalProperties": false,
+      "properties": {"measure": {"type": "string"}, "atMost": {"$ref": "#/$defs/number"}, "atLeast": {"$ref": "#/$defs/number"}}
+    },
+    "bracket": {
+      "type": "object",
+      "required": ["input", "values"],
+      "additionalProperties": false,
+      "properties": {
+        "input": {"type": "string", "minLength": 1},
+        "unit": {"type": "string"},
+        "values": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/number"}},
+        "note": {"type": "string"}
+      }
+    }
+  }
+}

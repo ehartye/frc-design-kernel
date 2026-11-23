@@ -84,6 +84,15 @@ def check_custom(design):
                 if name not in design["custom"]:
                     raise unknown(step(section, i, solid), "custom shape", name, design["custom"])
                 used.setdefault(name, []).append(solid["name"])
+    for trial, entry in design["trials"].items():
+        for kind, uses in (("force", entry.get("forces", [])), ("criterion", [entry["pass"]["custom"]] if "custom" in entry["pass"] else [])):
+            for use in uses:
+                if use["use"] not in design["custom"]:
+                    raise unknown(f'trials "{trial}"', f"custom {kind}", use["use"], design["custom"])
+                if design["custom"][use["use"]].get("kind", "shape") != kind:
+                    raise DesignError(f'trials "{trial}"', f'uses "{use["use"]}" as a custom {kind}, but it is registered as another kind',
+                                      f'Register it with "kind": "{kind}"')
+                used.setdefault(use["use"], []).append(f"trial {trial}")
     for name in design["custom"]:
         if name not in used:
             raise DesignError(f'custom "{name}"', "is registered but no solid uses it", "Remove it, or use it in a shape")
@@ -139,6 +148,30 @@ def check_poses_and_motions(design):
         check_group_ops(motion.get("moves", {}), f"{where} moves", groups)
 
 
+def check_trials(design, solids):
+    trials = design["trials"]
+    for name, trial in trials.items():
+        where = f'trials "{name}"'
+        for surface in trial["surfaces"]:
+            if "solid" in surface and surface["solid"] not in solids:
+                raise unknown(f'{where} surface "{surface["name"]}"', "solid", surface["solid"], solids)
+            if sum(key in surface for key in ("solid", "segmentsMm", "circleMm")) != 1:
+                raise DesignError(f'{where} surface "{surface["name"]}"', 'needs exactly one of "solid", "segmentsMm" or "circleMm"', "Say where the surface is, once")
+        if "pose" in trial and trial["pose"] not in design["poses"]:
+            raise unknown(where, "pose", trial["pose"], design["poses"])
+        start = trial["piece"]["start"]
+        if ("after" in start) == ("atMm" in start):
+            raise DesignError(f"{where} piece.start", 'needs exactly one of "atMm" or "after"', "Give a start point, or the trial whose end state this one starts from")
+        trail = [name]
+        while "after" in trials[trail[-1]]["piece"]["start"]:
+            before = trials[trail[-1]]["piece"]["start"]["after"]
+            if before not in trials:
+                raise unknown(f'trials "{trail[-1]}" piece.start', "trial", before, trials)
+            if before in trail:
+                raise DesignError(where, f"starts after itself: {' -> '.join([*trail, before])}", "Give one trial in the chain a start point")
+            trail.append(before)
+
+
 def check_all(design):
     """Run every check on a plain design. Returns {custom shape name: [solids that use it]}."""
     check_groups(design)
@@ -146,5 +179,6 @@ def check_all(design):
     used = check_custom(design)
     check_mounts(design, solids)
     check_contacts(design, solids)
+    check_trials(design, solids)
     check_poses_and_motions(design)
     return used

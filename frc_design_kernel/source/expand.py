@@ -6,7 +6,7 @@ from .expressions import evaluate, is_expression
 from .schema import step
 
 REPEATABLE = ("solids", "fixtures", "mounts", "contacts")
-PLAIN = ("groups", "poses", "motions")
+PLAIN = ("groups", "poses", "motions", "trials")
 
 
 def text_of(value):
@@ -40,11 +40,13 @@ def work_out(value, names, where):
     return value
 
 
-def parameters(raw):
-    """Parameters worked out top to bottom; each may use the ones above it."""
-    names = {}
+def parameters(raw, overrides=None):
+    """Parameters worked out top to bottom; each may use the ones above it. overrides replace values by name."""
+    names, overrides = {}, dict(overrides or {})
     for key, value in raw.get("parameters", {}).items():
-        names[key] = work_out(value, names, f"parameters.{key}")
+        names[key] = overrides.pop(key) if key in overrides else work_out(value, names, f"parameters.{key}")
+    if overrides:
+        raise DesignError("parameters", f'there is no parameter named "{sorted(overrides)[0]}" to change', f"Known parameters: {', '.join(names) or 'none'}")
     return names
 
 
@@ -66,9 +68,9 @@ def rows(entries, section, names):
     return out
 
 
-def expand(raw):
+def expand(raw, overrides=None):
     """The plain design: no "each", no expressions. Every list and table the build reads is present."""
-    names = parameters(raw)
+    names = parameters(raw, overrides)
     plain = {k: raw[k] for k in ("schema", "name", "units")}
     plain["frame"] = raw.get("frame", "")
     plain["parameters"] = names
