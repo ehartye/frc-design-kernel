@@ -145,7 +145,7 @@ class ReadyFor3d(unittest.TestCase):
         data["drives"] = {"loose": {"radiusMm": 20}}
         found = ready.report(kernel.build(load_data(data)))
         self.assertEqual(found["trialSolids"], ["belt bed", "ell", "sleeve"])
-        self.assertEqual(found["concaveWithNoBreakdown"], [{"solid": "sleeve", "why": "a hollow tube"}])     # the ell is a union of two boxes
+        self.assertEqual(found["concaveWithNoBreakdown"], [])     # the ell is a union of two boxes; the sleeve breaks into a ring of wedges
         self.assertEqual(found["solidsWithNoMass"], ["belt bed", "wedge"])
         self.assertEqual(found["groupsNotOneHingeOrSlider"], [{"motion": "sweep", "group": "gate"}])       # "swing" is one hinge
         self.assertEqual(found["drivesNotOnASolid"], ["loose"])
@@ -156,9 +156,13 @@ class ReadyFor3d(unittest.TestCase):
         box = {"kind": "box", "fromMm": [0, 0, 0], "toMm": [1, 1, 1]}
         self.assertEqual(ready.breakdown(box), "convex")
         self.assertEqual(ready.breakdown({"kind": "union", "of": [box, box]}), "union of convex pieces")
-        self.assertEqual(ready.breakdown({"kind": "difference", "from": box, "cut": [box]}), "a shape with material cut away")
-        self.assertEqual(ready.breakdown({"kind": "prism", "plane": "xy", "outlineMm": [[0, 0], [4, 0], [4, 4], [2, 1], [0, 4]], "fromMm": 0, "toMm": 1}),
-                         "a prism with an outline that turns inward")
+        ball = {"kind": "sphere", "centerMm": [0, 0, 0], "radiusMm": 1}
+        built = "convex pieces from its construction"
+        self.assertEqual(ready.breakdown({"kind": "difference", "from": box, "cut": [box]}), built)       # a box less boxes leaves boxes
+        self.assertEqual(ready.breakdown({"kind": "difference", "from": box, "cut": [ball]}), "a shape with material cut away")
+        self.assertEqual(ready.breakdown({"kind": "prism", "plane": "xy", "outlineMm": [[0, 0], [4, 0], [4, 4], [2, 1], [0, 4]], "fromMm": 0, "toMm": 1}), built)
+        self.assertEqual(ready.breakdown({"kind": "tube", "section": "round", "fromMm": [0, 0, 0], "toMm": [0, 0, 9], "outerDiameterMm": 9, "wallMm": 1}), built)
+        self.assertEqual(ready.breakdown({"kind": "intersection", "of": [box, ball]}), "convex")
         self.assertEqual(ready.breakdown({"kind": "cylinder", "fromMm": [0, 0, 0], "toMm": [0, 0, 1], "radiusMm": 1, "sweepDeg": 270}), "a pie slice wider than a half turn")
 
 

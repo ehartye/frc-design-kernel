@@ -134,6 +134,7 @@ frc_design_kernel/
     campaign.py      plan the runs, count the cost, run them, write the record
     engines.py       which engine builds and runs a trial; the engine stamp
     mujoco_scene.py  a trial's case as a MuJoCo model (plain text; no MuJoCo import)
+    convex.py        a hollow or cut shape as its true convex pieces, from how it was built
     mujoco_run.py    run that model and report it like a planar run (the only module that imports MuJoCo)
 ```
 
@@ -955,8 +956,14 @@ MuJoCo.
 
 - Each solid the trial names becomes a fixed body at the trial's pose. A box, a ball and a full cylinder become that
   exact primitive. A union becomes its parts. A prism with a convex outline becomes its exact hull.
-- Anything else (a hollow tube, a cut shape, a custom shape, an imported part) is used as its convex hull. The
-  record lists every solid treated this way under `saw.hulled`, and the engine's assumptions say so.
+- A hollow or cut shape whose construction allows it is run as its **true convex pieces** (`trials/convex.py`): a
+  rectangular tube as four walls, a box with boxes cut out as the boxes that are left, a prism of any outline as
+  triangles pushed through (all exact); a round tube as a ring of 24 wedges and a pie slice as slices of at most a
+  half turn (their round faces become flat facets, and `saw.faceted` states by how much).
+- Anything else (a shape cut by a round, a custom shape, an imported part) is used as its convex hull, which fills in
+  its hollows. The record lists every such solid under `saw.hulled`. **When the piece touched one during any run,
+  the result word says so** (`passed, on a hulled surface`), `touchedHulled` names it and a finding explains: the
+  outcome may rest on a surface that is not there.
 - The piece is a free body built from its one 3D definition: its shape, its mass, and the inertia that shape gives.
   The planar start (point, velocity, spin) is placed on the trial's plane.
 - Each material's spring `k` and damper `c` are handed to MuJoCo's soft contact as `solref = (-k / (m d), -c / (m d))`
@@ -966,9 +973,22 @@ MuJoCo.
   `tiltDeg` (how far it has tipped). On a case that truly is planar both stay at zero; when they do not, the planar
   assumption `in-plane` has been tested and found wanting.
 
-**Calibration.** The same trial definition is run in both engines on cases that truly are planar, and both are held
-to the closed form: a ball and a bar rolling down a slope arrive at the exact rolling time within 0.5% in each
-engine and agree on spin within 1%; a bounce agrees on rebound height and deepest press within 5%.
+**Calibration.** The same trial definition is run in both engines on cases that truly are planar, as part of the
+engine's own tests:
+
+| Case | Closed form | Planar | MuJoCo |
+|---|---|---|---|
+| Ball rolling 100 mm down a 20 degree slope | 0.2889 s | 0.2890 s | 0.2889 s |
+| Bar rolling the same | 0.2991 s | 0.2992 s | 0.2991 s |
+| Bounce from 200 mm, bounce value 0.5: rebound | | 60.2 mm | 59.1 mm |
+| Same bounce: deepest press | | 2.34 mm | 2.25 mm |
+| Same bounce: peak contact force | | 523 N | 538 N |
+| Contact force at rest | the weight | the weight | the weight |
+
+Outcome and timing agree within 0.5%, spin within 1%, rebound and peak force within 3%, depth within 4%. One thing
+does not compare: under a steady load MuJoCo holds the piece at almost no depth, where the planar spring sinks by
+weight over stiffness. Forces compare; resting depths do not (assumption `no-resting-depth`). A piece started
+already sunk by the planar depth shows a short force spike in MuJoCo for that reason.
 
 **Stages.**
 

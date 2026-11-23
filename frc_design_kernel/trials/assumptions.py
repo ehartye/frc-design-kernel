@@ -17,8 +17,9 @@ PLANAR = [
 MUJOCO = [
     {"id": "rigid-bodies", "text": "Every body is rigid. All give is in the contact between the piece and a surface."},
     {"id": "single-piece", "text": "One free piece. No other piece is present or touches it."},
-    {"id": "convex-shapes", "text": "A solid that is hollow, cut or imported is used as its convex hull; the record lists which."},
+    {"id": "convex-shapes", "text": "A tube, a box with boxes cut out, a prism and a pie slice are run as their true convex pieces. Any other hollow, cut or imported solid is used as its convex hull; the record lists which, and says when the piece touched one."},
     {"id": "mapped-contact", "text": "Each material's spring and damper are handed to the engine's own soft contact for the piece's mass; the engine's friction is a hard limit, not a spring."},
+    {"id": "no-resting-depth", "text": "Under a steady load the engine holds the piece at almost no depth: contact forces compare with the planar engine, resting depths do not."},
     {"id": "fixed-surfaces", "text": "Surfaces stand still. Drives, flaps, loads and movers are not run by this engine yet."},
     {"id": "no-air", "text": "No air drag or lift."},
     {"id": "fixed-step", "text": "Time moves in fixed steps; the half-step repeat is the check on the step."},
