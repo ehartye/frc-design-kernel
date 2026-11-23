@@ -567,7 +567,7 @@ These were the simpler choice at the time. Any of them may change while the libr
 16. **Measure results are not rounded.** The same source gives the same numbers on one machine; tiny differences
     between machines or kernel versions are possible in the last digits.
 17. **Trials in three dimensions.** The owner has decided: option A below, an optional engine adapter with MuJoCo
-    as an optional extra. Its first stage is built (section 16); "bring your own results" (option B) is not wanted.
+    as an optional extra. Fixed surfaces, driven surfaces and moved groups are built (section 16); "bring your own results" (option B) is not wanted.
     The options are kept for the record.
     What was weighed: **Trials in three dimensions and with several bodies.** A flow of many balls, a chain climb, a ring
     modelled as linked capsules and anything a general physics engine does are outside the planar solver. The owner
@@ -952,7 +952,7 @@ The library never imports it unless a trial names that engine. Without it, such 
 install line. `mujoco_scene.py` writes the model as plain text and imports nothing; only `mujoco_run.py` imports
 MuJoCo.
 
-**How the scene is made from the design source (stage one).**
+**How the scene is made from the design source.**
 
 - Each solid the trial names becomes a fixed body at the trial's pose. A box, a ball and a full cylinder become that
   exact primitive. A union becomes its parts. A prism with a convex outline becomes its exact hull.
@@ -969,6 +969,18 @@ MuJoCo.
 - Each material's spring `k` and damper `c` are handed to MuJoCo's soft contact as `solref = (-k / (m d), -c / (m d))`
   for the piece's mass `m` and impedance `d` = 0.95, so the same physical numbers serve both engines. Friction is the
   material's coefficient; MuJoCo treats it as a hard limit.
+- **A driven surface** is any solid a declared drive turns (`turns`): a roller, a wheel or a belt. It stays a still
+  shape with the engine's own friction switched off. Its surface runs at the drive's speed across the turn's axis,
+  and its friction is the planar engine's smooth law (friction times the pressing force, against the slip), applied
+  to the piece as a force at the point of contact, one step late. The same force loads the drive's motor model, so
+  current and sag come out as in planar. Why not a spinning body with the engine's friction: at a contact that keeps
+  slipping, MuJoCo's solver raises the pressing force to buy more friction, and the piece chatters. Measured on a
+  block dragged against a wall, the wall force swung between 0 and 16 N around a true 5.2 N.
+- **A moved group** is a group whose surface names a mover that follows a design motion. One slide becomes a slider,
+  one turn becomes a hinge, and its joint is set each step so contact feels its speed. Any other motion (several
+  steps, a path, a motion through poses) is carried along its path, and its speed is not felt in contact; the record
+  says which under `saw.bodies`. A group carried by a moving group takes its carrier's movement too. Mechanisms are
+  driven, not driving: contact cannot push one off its motion.
 - Two signals are added to the planar ones: `offPlaneMm` (how far the piece has left the trial's plane) and
   `tiltDeg` (how far it has tipped). On a case that truly is planar both stay at zero; when they do not, the planar
   assumption `in-plane` has been tested and found wanting.
@@ -984,6 +996,10 @@ engine's own tests:
 | Same bounce: deepest press | | 2.34 mm | 2.25 mm |
 | Same bounce: peak contact force | | 523 N | 538 N |
 | Contact force at rest | the weight | the weight | the weight |
+| Block dragged by a roller against a slick wall: wall force | 5.18 N | within 3% | within 3% |
+| Same, holding speed: motor current | 3.10 A | within 5% | within 5% |
+| Block set on a belt at 1 m/s: speed at 0.1 s, then at 0.4 s | 0.49, 1.00 m/s | within 0.02 | within 0.02 |
+| Ball pushed by a sliding gate: distance | | (reference) | within 5% |
 
 Outcome and timing agree within 0.5%, spin within 1%, rebound and peak force within 3%, depth within 4%. One thing
 does not compare: under a steady load MuJoCo holds the piece at almost no depth, where the planar spring sinks by
@@ -995,8 +1011,8 @@ already sunk by the planar depth shows a short force spike in MuJoCo for that re
 | Stage | What | State |
 |---|---|---|
 | 1 | Fixed surfaces from the named solids, one free piece, the shared method and record, calibration against planar | Built |
-| 2 | Drives: a roller as a hinged solid with a motor from the declared motor and gear; groups as bodies with `carriedBy` as the tree; hinges and sliders from single-axis motions; path-driven groups otherwise | Not built |
-| 3 | Moving belt surfaces: the belt stays a fixed geom and the moving-surface friction is added as a force law, the same law the planar engine uses | Not built |
+| 2 | Driven surfaces (rollers, wheels) with the declared motor and gear; moved groups as hinges, sliders or paths, carriers included | Built |
+| 3 | Belts: the same driven surface, since only the surface speed differs | Built |
 | 4 | Flaps, loads and movers; a ring piece; more than one piece | Not built |
 
 A trial that uses a part the engine does not run yet is refused by name; nothing is silently left out.
