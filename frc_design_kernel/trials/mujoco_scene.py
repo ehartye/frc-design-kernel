@@ -2,8 +2,12 @@
 
 The same trial definition the planar engine runs is read here. The solids the trial names become fixed bodies at the
 trial's pose: a box, a ball or a full cylinder as that exact primitive, a union as its parts, a convex prism as its
-exact hull. Anything else (a hollow tube, a cut shape, an imported part) is used as its convex hull, and listed. The
-piece is a free body built from its one 3D definition. Nothing here imports MuJoCo; the model is plain text.
+exact hull, a hollow or cut shape as the convex pieces its construction gives, and anything else (a round cut, an
+imported part) as the convex pieces its own faces cut it into (kernel/split.py). A bore or other inward round face
+becomes flat facets, and the record states how far inside it they sit. Only a piece with a free-form face or an inward
+ball is used as its convex hull: its solid is listed, and its geoms are marked so the runner can say when a piece
+touched one. The piece is a free body built from its one 3D definition. Nothing here imports MuJoCo; the model is
+plain text.
 
 A solid that a declared drive turns (a roller, a wheel, a belt) stays a still, frictionless shape; the friction of
 its moving surface is worked out by the planar engine's smooth law and applied to the piece as a force. A group that
@@ -88,20 +92,19 @@ class Model:
         self.geom(solid, surface, found, material)
 
     def split(self, solid, surface, built, placed_at, material):
-        """A solid with no construction to read, as the convex pieces its own faces cut it into. A bore is cut into wedges
-        run as flat facets, and said so. A piece a free-form face keeps from being convex is hulled: the solid is listed
-        with the share of it so taken, and its hulled pieces are marked, so only a touch on one of them counts."""
+        """A solid with no construction to read, as the convex pieces its own faces cut it into. An inward round face
+        is wedged into flat facets, and said so. A piece a free-form face or an inward ball keeps from being convex is
+        hulled: the solid is listed with the share of it so taken, and the hulled piece's geom is marked as rough."""
         done, rough, faceted = pieces_of(built)
-        for piece in done + rough:
-            if any(piece is r for r in rough):
+        for piece, is_rough in [(p, False) for p in done] + [(p, True) for p in rough]:
+            if is_rough:
                 self.rough_geoms[f"g{len(self.geoms)}"] = solid
             self.geom(solid, surface, self.mesh([mx.scale(mx.apply(placed_at, v), MM) for v in triangles(piece, 0.2)["vertices"]]), material)
         if faceted > 0:
-            self.faceted[solid] = f"its inward round faces (bores, wraps, lands) as flat facets, at most {faceted:.2f} mm inside them"
+            self.faceted[solid] = f"its inward round faces (bores, countersinks, wraps) as flat facets, at most {faceted:.2f} mm inside them"
         if rough:
-            share = sum(volume(p) for p in rough) / volume(built)
             self.hulled.append(solid)
-            self.rough[solid] = round(share, 4)
+            self.rough[solid] = round(sum(volume(p) for p in rough) / volume(built), 4)
 
     def mesh(self, points):
         name = f"mesh{len(self.meshes)}"

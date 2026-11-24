@@ -153,7 +153,8 @@ def rough_touched(model, data, scene, pieces, found):
 
 
 def run(scene, step=None, forces=()):
-    """Run one MuJoCo scene. Returns the same summary a planar run gives, with two more signals: offPlaneMm and tiltDeg."""
+    """Run one MuJoCo scene. Returns the same summary a planar run gives, with two more signals (offPlaneMm and tiltDeg)
+    and touchedRough: the solids whose hulled pieces a piece pressed into during the run."""
     mujoco = engine()
     dt = step or scene["stepS"]
     model, data, pieces, masses = start(mujoco, scene, dt)

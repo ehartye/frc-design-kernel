@@ -1066,11 +1066,23 @@ MuJoCo.
   (`kernel/split.py`). A solid is convex when all of it lies on the inner side of each face's plane: the plane of a
   flat face, or a plane touching a round face that bulges outward. Where some of it does not, that plane cuts it in
   two, and each half is split again. A bracket, an angle, a bevelled blade or a plate with windows from a supplier's
-  STEP file comes apart into exact convex pieces. A piece that a bore, a groove or a free-form face keeps from being
-  convex is used as its convex hull, which fills the bore. The record lists every solid with such a piece under
-  `saw.hulled`, and the share of its volume in them under `saw.hulledShare`. **When the piece touched one during any
-  run, the result word says so** (`passed, on a hulled surface`), `touchedHulled` names it and a finding explains:
-  the outcome may rest on a surface that is not there.
+  STEP file comes apart into exact convex pieces.
+- **A round face that dips inward is wedged about its own axis.** A bore, a countersink, a belt's wrap round its
+  pulley, the inside of a relieved land: each is an inward cylinder or cone. Planes through its axis halve it until no
+  wedge spans more of it than keeps the flat chord within **0.2 mm** of the arc (`FACET_MM`); a plane through a wedge's
+  chord cuts it again if any other material lies in front of that chord. Each wedge is then convex but for the
+  sliver between chord and arc, and is run as flat facets. The record states the most any wedge of a solid sits inside
+  its face, under `saw.faceted` (`"its inward round faces (bores, countersinks, wraps) as flat facets, at most 0.06 mm
+  inside them"`), beside the construction notes above. The test fixtures are a bore, a countersink, a belt wrap, a
+  relieved roller land and a cross-drilled block; each is checked against its own surface, not the splitter's word.
+- **Only a truly rough piece is hulled.** A face no wedge about one axis can make convex (a free-form face, a torus,
+  an inward ball such as a dimple) leaves its piece rough, as does a piece that will not cut or would take a solid past
+  128 pieces. Wedging still runs on such a piece first, so what is left rough is as small as it can be. A rough piece
+  is used as its convex hull, which fills its hollow. The record lists every solid with such a piece under
+  `saw.hulled`, and the share of its volume in them under `saw.hulledShare`. **When a piece pressed into a rough
+  piece's own hull during any run, the result word says so** (`passed, on a hulled surface`), `touchedHulled` names
+  the solid and a finding explains: the outcome may rest on a surface that is not there. Each MuJoCo run lists those
+  solids under `touchedRough`; a touch on the same solid's exact pieces does not count.
 - The piece is a free body built from its one 3D definition: its shape, its mass, and the inertia that shape gives.
   The planar start (point, velocity, spin) is placed on the trial's plane.
 - **The contact law is the library's own, the same one the planar engine uses** (`trials/mujoco_contact.py`).

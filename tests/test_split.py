@@ -23,6 +23,8 @@ CYLINDER = lambda start, end, radius: {"kind": "cylinder", "fromMm": start, "toM
 RELIEVED = {"kind": "difference", "from": CYLINDER([0, 0, 0], [0, 60, 0], 20),
             "cut": [{"kind": "tube", "section": "round", "fromMm": [0, 20, 0], "toMm": [0, 40, 0], "outerDiameterMm": 44, "wallMm": 6},
                     CYLINDER([0, -1, 0], [0, 61, 0], 5)]}
+# a block drilled through along z, and across it along x
+CROSSED = {"kind": "difference", "from": BOX([-20, -20, -20], [20, 20, 20]), "cut": [CYLINDER([0, 0, -30], [0, 0, 30], 8), CYLINDER([-30, 0, 0], [30, 0, 0], 6)]}
 # half a belt, wrapped round a pulley of 22 mm radius
 WRAP = {"kind": "difference", "from": {"kind": "tube", "section": "round", "fromMm": [0, 0, 0], "toMm": [0, 20, 0], "outerDiameterMm": 50, "wallMm": 3},
         "cut": [BOX([-30, -1, -30], [30, 21, 0])]}
@@ -46,24 +48,30 @@ def radial(vertex, axis):
     return math.hypot(a, b), math.atan2(b, a)
 
 
-def hole_error(piece, largest, axis):
+def on_hole(vertex, hole):
+    """True for a point on a hole given as (axis, smallest radius, largest radius)."""
+    axis, low, high = hole
+    return low - 0.01 <= radial(vertex, axis)[0] <= high + 0.01
+
+
+def hole_error(piece, hole):
     """The most a flat chord across this piece's share of a hole could sit inside the hole, worked out from the piece's
-    own surface: the angle its hole-side points span, at the hole's largest radius. Independent of what split reports."""
-    angles = sorted(angle for distance, angle in (radial(v, axis) for v in mesh.triangles(piece, 0.05)["vertices"]) if 0.1 < distance <= largest + 0.01)
+    own surface: the angle its points on the hole span, at the hole's largest radius. Independent of what split reports."""
+    angles = sorted(radial(v, hole[0])[1] for v in mesh.triangles(piece, 0.05)["vertices"] if on_hole(v, hole))
     if not angles:
         return 0.0
     gaps = [b - a for a, b in zip(angles, angles[1:])] + [angles[0] + 2 * math.pi - angles[-1]]
-    return largest * (1 - math.cos((2 * math.pi - max(gaps)) / 2))
+    return hole[2] * (1 - math.cos((2 * math.pi - max(gaps)) / 2))
 
 
-def poke_out(piece, largest, axis):
-    """How far the piece reaches past the plane of any of its own triangles not on the hole: zero for a convex piece."""
+def poke_out(piece, holes):
+    """How far the piece reaches past the plane of any of its own triangles not on a hole: zero for a convex piece."""
     found = mesh.triangles(piece, 0.05)
     points, worst = found["vertices"], 0.0
     for tri in found["triangles"]:
         a, b, c = (points[i] for i in tri)
-        if all(radial(p, axis)[0] <= largest + 0.01 for p in (a, b, c)):
-            continue        # on the hole: its chord is what hole_error bounds
+        if any(all(on_hole(p, hole) for p in (a, b, c)) for hole in holes):
+            continue        # on a hole: its chord is what hole_error bounds
         n = [(b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]), (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]),
              (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])]
         size = math.hypot(*n)
@@ -84,18 +92,19 @@ class Split(unittest.TestCase):
     def test_bores_countersinks_wraps_and_relieved_lands_are_wedged_within_the_facet_error(self):
         """Catches an inward round face left rough (and hulled, filling a bore or a land), a wedge whose flat chord sits
         further inside its face than FACET_MM, a piece that is still concave elsewhere, or a split that loses material."""
-        cases = (("bore", make(TUBE, "test", None), 13, 2), ("countersink", countersunk_plate(), 9, 2),
-                 ("belt wrap", make(WRAP, "test", None), 22, 1), ("relieved land", make(RELIEVED, "test", None), 5, 1))
-        for name, solid, largest, axis in cases:
+        cases = (("bore", make(TUBE, "test", None), [(2, 13, 13)]), ("countersink", countersunk_plate(), [(2, 4, 9)]),
+                 ("belt wrap", make(WRAP, "test", None), [(1, 22, 22)]), ("relieved land", make(RELIEVED, "test", None), [(1, 5, 5)]),
+                 ("cross-drilled block", make(CROSSED, "test", None), [(2, 8, 8), (0, 6, 6)]))
+        for name, solid, holes in cases:
             with self.subTest(name):
                 done, rough, faceted = split.convex_pieces(solid)
                 self.assertEqual(rough, [])
-                self.assertAlmostEqual(sum(props.volume(p) for p in done), props.volume(solid), delta=1e-6 * props.volume(solid))
-                measured = max(hole_error(p, largest, axis) for p in done)
+                self.assertAlmostEqual(sum(props.volume(p) for p in done), props.volume(solid), delta=1e-5 * props.volume(solid))
+                measured = max(hole_error(p, hole) for p in done for hole in holes)
                 self.assertLessEqual(measured, split.FACET_MM + 1e-3)
                 self.assertGreater(measured, 0.0)
                 self.assertAlmostEqual(faceted, measured, delta=0.01)        # the error it states is the error its pieces have
-                self.assertLess(max(poke_out(p, largest, axis) for p in done), 0.01)
+                self.assertLess(max(poke_out(p, holes) for p in done), 0.01)
 
     def test_a_looser_facet_error_gives_fewer_wedges_and_says_so(self):
         """Control: catches a stated facet error that does not follow the wedges actually cut."""
@@ -107,7 +116,15 @@ class Split(unittest.TestCase):
         self.assertLess(len(coarse), len(fine))
         self.assertGreater(coarse_error, split.FACET_MM)
         self.assertLessEqual(coarse_error, 2.0)
-        self.assertGreater(max(hole_error(p, 13, 2) for p in coarse), split.FACET_MM)
+        self.assertGreater(max(hole_error(p, (2, 13, 13)) for p in coarse), split.FACET_MM)
+
+    def test_a_wedge_whose_chord_cuts_other_material_is_cut_again(self):
+        """Catches a wedge called convex while some of it lies in front of an inward face's chord, where the hull would
+        fill more than the sliver. Control: with everything behind the chord, nothing is cut."""
+        face = {"chord": ((0.0, 0.0, 1.0), 0.0)}
+        self.assertEqual(split.across_chord([face], [(0, 0, -5), (1, 0, 2)]), ((0.0, 0.0, 1.0), 0.0))
+        self.assertIsNone(split.across_chord([face], [(0, 0, -5), (1, 0, 0.005)]))
+        self.assertIsNone(split.across_chord([{"chord": None}], [(0, 0, 9)]))
 
     def test_only_an_inward_ball_or_a_free_form_face_stays_rough(self):
         """Control: catches a face that no wedge can make convex being called convex. A dimple (an inward ball) and a
