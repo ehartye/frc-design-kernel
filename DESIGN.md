@@ -61,6 +61,7 @@ frc_design_kernel/
   status.py          which records are current, which are stale, and why
   errors.py          DesignError: where, what is wrong, how to fix it
   version.py         library version and commit, for information
+  motor.py           the DC motor model, shared by the trials and the electrical measure
 
   motion/            the motion vocabulary. Pure arithmetic, no CAD kernel.
     matrix.py        rigid transforms as 3x4 number tables
@@ -118,6 +119,7 @@ frc_design_kernel/
     attachment.py    what touches what, what is loose, measured mounts
     sets.py          connected sets
     mass.py          mass with its range, centre of mass, and the inertia of groups about any line
+    electrical.py    a motion's load: torque, current and motor voltage per drive, and the bus voltage
     extremes.py      clearance at both ends of every mechanical adjustment
     screen.py        screen facts: is an interaction the same in every section?
     symmetry.py      what kind of shape a solid is, read from its faces
@@ -150,9 +152,9 @@ frc_design_kernel/
     mujoco_run.py    run that model and report it like a planar run (the only module that imports MuJoCo)
 ```
 
-**Import direction.** `motion` imports nothing from the rest. `source` imports `motion` (to check operations).
-`kernel` imports only OCP. `builder` imports `source`, `motion` and `kernel`. `measure` imports `builder`, `motion`
-and `kernel`; `trials` does too. Nothing imports upward, and nothing imports in a circle. A test enforces the
+**Import direction.** `motion` and `motor` import nothing from the rest. `source` imports `motion` (to check
+operations). `kernel` imports only OCP. `builder` imports `source`, `motion` and `kernel`. `measure` imports
+`builder`, `motion`, `motor` and `kernel`; `trials` does too. Nothing imports upward, and nothing imports in a circle. A test enforces the
 no-circle rule.
 
 ## 4. The design source
@@ -317,7 +319,7 @@ A contact says that two solids are meant to touch. It is a fact about the design
 written. The measure layer leaves a declared pair out of its clearance search and counts it. `during` is optional and
 limits the contact to the named motions; without it the contact holds always. `each` works here too.
 
-### 4.5b Pieces, materials, motors and drives
+### 4.5b Pieces, materials, motors, drives and the battery
 
 The physical facts that trials use live in the design source, once, in physical units. They belong to no engine.
 
@@ -334,7 +336,9 @@ The physical facts that trials use live in the design source, once, in physical 
               "pivot": {"motor": "small", "motorSolid": "arm motor", "count": 2, "gear": 60, "efficiency": {...}, "supplyLimitA": 40,
                         "joint": {"group": "arm", "kind": "rotation", "axis": [0, -1, 0], "originMm": [0, 0, 100], "travel": [-10, 120]}},
               "lift":  {"motor": "small", "motorSolid": "lift motor", "gear": 5,
-                        "joint": {"group": "carriage", "kind": "slide", "axis": [0, 0, 1], "perOutputTurn": 100, "travel": [0, 400]}}}
+                        "joint": {"group": "carriage", "kind": "slide", "axis": [0, 0, 1], "perOutputTurn": 100, "travel": [0, 400]}}},
+"battery":   {"openCircuitV": {"value": 12.6, "assumed": [12.2, 12.9]}, "resistanceOhm": {"value": 0.02, "assumed": [0.015, 0.03]},
+              "note": "Bench figures for the packs in use."}
 ```
 
 - A **piece** is a game piece or other free body, declared with its real 3D shape. An engine works out what it needs
@@ -355,6 +359,11 @@ The physical facts that trials use live in the design source, once, in physical 
   its `radiusMm` and what the motor has to speed up (`movingKg` or `inertiaKgM2`). Which way a surface runs in a
   section follows from the axis. A drive with a joint may keep `radiusMm` and `turns` for the surfaces it runs. A
   drive says at least one of the two; a trial may use only a drive with `radiusMm`.
+- A drive's **current limits** are per motor: `statorLimitA` (the winding) and `supplyLimitA` (from the bus).
+- The **battery** is one per design, in the top file: its `openCircuitV` (volts with no load) and its
+  `resistanceOhm` (the pack, its leads and the main breaker, as one figure), each sourced. The low open-circuit
+  voltage and the high resistance together are the weak pack. The electrical measure (12.7) uses it; without one a
+  motion's currents are still worked out, and no bus voltage is stated.
 - **Every physical input states its source**: `{"value": v, "assumed": [low, high]}` or `{"value": v, "measured":
   "where"}`. An assumed value with a range is a normal, complete state: a best guess. A measured value only narrows
   the range to nothing. A plain number states neither, so nothing says how far it may be off; a trial that uses it
@@ -384,7 +393,7 @@ that apply to it under `adjustments`; the campaign then asks whether they cover 
 ### 4.5d Interactions and what solids are made of
 
 An interaction is a piece meeting some solids in a section plane: the thing a trial would be about. Declaring it lets
-the screen facts (section 12.7) be worked out at the arrangement stage, before any trial exists.
+the screen facts (section 12.6a) be worked out at the arrangement stage, before any trial exists.
 
 ```json
 "interactions": {"pickup": {"piece": "ball", "plane": {"normal": "y", "atMm": 0}, "solids": ["belt module", "bumper"],
@@ -433,13 +442,14 @@ it: motors, through drive commands, or a stated cause for typed geometry.
   (a pose that also shifts it sideways) is refused.
 - `durationS` (sourced) is how long the motion takes. A motion that commands drives must give it.
 - `alsoRunning` lists drives that run at the same time without being part of the motion, such as the drivetrain
-  during a lift, each with `currentA` (sourced) or `"atLimit": true` (its current limit, so it needs one). A drive
-  the motion commands is already running and is not listed.
+  during a lift, each with `currentA` (sourced, the whole drive's current from the bus) or `"atLimit": true` (its
+  current limit times its `count`, so it needs a limit). A drive the motion commands is already running and is not
+  listed.
 - `extraLoad` is `{drive: load}` (sourced) for a commanded drive: a load at its joint beyond the moved groups'
   weight and acceleration, such as a spring or friction. It is N m about the joint for a rotation and N along it
   for a slide.
 - The library states these numbers. Torque, current and bus voltage are worked out from them by the electrical
-  measure; whether they are enough is for a tool that judges.
+  measure (12.7); whether they are enough is for a tool that judges.
 
 **Refused:** a command that starts or ends outside its joint's `travel`; two drives in one motion whose joints move
 the same group (two motors on one joint are one drive with `count`); a typed operation on a group a commanded drive
@@ -547,7 +557,7 @@ Each subsystem file (`frc-design-kernel/subsystem@1`, schema `source/subsystem.s
 ```
 
 - **One place for each kind of entry.** The top file keeps `schema`, `name`, `units`, `frame`, `parameters`,
-  `custom`, `fixtures`, `pieces`, `materials`, `motors` and `trials`. A top file that lists `subsystems` holds none
+  `custom`, `fixtures`, `battery`, `pieces`, `materials`, `motors` and `trials`. A top file that lists `subsystems` holds none
   of the subsystem entries; a subsystem file holds none of the whole-design ones. Each section has one definition,
   in `design.schema.json`, which the subsystem schema refers to.
 - **Merged on load.** The library reads the top file, then each subsystem file in the order listed, and joins their
@@ -791,8 +801,15 @@ These were the simpler choice at the time. Any of them may change while the libr
 22. **A joint value read from a pose takes the turn inside the travel nearest 0.** A pose cannot say which whole turn a
     rotation joint is on; a chain of motions carries the exact value instead. If a joint ever travels more than a
     turn from a pose, the pose will need to state its joint values.
-23. **A motor-driven motion moves each joint at an even rate.** There is no speed profile; `durationS` is the whole
-    motion's time, and the electrical measure works out acceleration from it.
+23. **A motor-driven motion's geometry moves each joint at an even rate, and its electrical load takes a triangle
+    speed profile.** The placements share the stroke evenly, so the geometry needs no timing. `durationS` is the
+    whole motion's time, and the electrical measure (12.7) speeds each joint up evenly over the first half and
+    slows it over the second, the gentlest profile that makes the time. If a motion ever needs its own profile
+    (a trapezoid, a speed cap), it belongs on the motion as a stated choice.
+24. **The electrical load is a peak load.** Each drive's peak current is added to the others as though the peaks
+    came at once, a motor's winding current is counted as drawn from the bus in full, and a back-driven gear is
+    charged as though it were driving. All three overstate the load. Heat, a breaker's trip curve and how long a
+    current lasts are not modelled. If a statistical or timed load is ever wanted, it belongs here.
 
 ## 12. The measure layer
 
@@ -853,6 +870,7 @@ counted); `absent` (solids taken out of the scene, such as a cover removed befor
 | `mass.roll_up` | What does it weigh, within what range, and where is the centre of mass, at a pose? | Per group and whole: `totalKg`, `rangeKg`, `centreMm`, `unweighed`. A solid's mass sits at the centre of its volume; a lump group mass is spread over the group by volume; weight with no solid is a point at the centre of the group's volume. A pose moves solids rigidly, so the centre as drawn is moved by the group's placement and no shape is measured again |
 | `mass.inertia` | What is the inertia of these groups about this line, at a pose or a point of a motion? | `kgM2` and `rangeKgM2`, from each solid's second moments of volume times its mass over its volume, turned with its group and moved to the line; weight with no solid as a point. Unweighed solids are named |
 | `compression.indentation` | How deep does a solid press into a ball or a round ring along a motion? | Deepest sample, and a proven ceiling |
+| `electrical.measured` | What does a motion ask of its motors and the battery? | Per commanded drive: load, current, motor voltage; the bus voltage (12.7) |
 
 `attachment` takes its own inputs as data: the touching `gap`, the `floor_z`, solids to `ignore` (a game piece, a
 gauge), a `base` solid, and declared `contacts`. Without a `base`, the largest connected set is the base.
@@ -890,6 +908,7 @@ writes `out/measurements/clearance.motion.lift.json`, `out/measurements/reach.li
 | `withdrawal` along a `motion` | How far the moved solids end from the rest (12.2) | `absent` ([]) |
 | `attachment` at a `pose` | What touches what, what is loose, mounts, fixtures off the floor (12.2) | `touchGapMm` (0), `floorZMm` (0), `ignore` ([]), `base` (null), `contacts` (`"declared"`), `absent` ([]), `pairs` (true) |
 | `mass` at a `pose` | Mass and centre of mass (12.2) | `absent` ([]) |
+| `electrical` along a `motion` | Torque, current and motor voltage per drive, and the bus voltage (12.7) | `samples` (32) |
 
 `contacts` is `"declared"` (the source's declared contacts for that motion, or those declared for every motion at a
 pose, each with both solids present) or a list of pairs. A job with `displace` is a control (12.6b); it names its
@@ -899,7 +918,7 @@ in the design is refused, naming the job by its place in the list.
 **File names.** A job's id is its file name: the kind, then what it is about, each name in lower case with anything
 else turned into a dash: `clearance.motion.lift`, `clearance.pose.raised`, `clearance.drawn`,
 `clearance.motion.lift.displaced.post`, `reach.lift.hook.bar`, `indentation.squeeze.ball.roller`,
-`withdrawal.pin-out`, `attachment.pose.raised`, `mass.drawn`. A job may give its own `"id"` (lower-case letters,
+`withdrawal.pin-out`, `attachment.pose.raised`, `mass.drawn`, `electrical.lift`. A job may give its own `"id"` (lower-case letters,
 digits, dots, dashes and underscores). Two jobs with the same id in one list are refused; give one of them an id.
 
 **One job file:**
@@ -931,6 +950,7 @@ digits, dots, dashes and underscores). Two jobs with the same id in one list are
   `contacts`, `mounts` (notes left out), `fixtures` and a digest of which group each solid is in; a mass's `masses`,
   `massRanges`, `groupMasses` (each as value, low, high), `extraMass` (notes left out of the comparison),
   `unweighed` and the same group digest. A change to a range alone, or to any weight with no solid, makes it stale.
+  An electrical job's are in 12.7.
 - `checked` says what this run did: for a clearance, the pairs measured and carried (12.4a); for an attachment, its
   touching pairs and mounts measured and carried; for the others `{"measured": "whole"}`.
 - A clearance also has `counts`: every pair, under exactly one of `declaredContacts`, `bothStill`, `farApart`,
@@ -968,8 +988,8 @@ python -m frc_design_kernel measure SOURCE --out DIR [--min-gap MM] [--touch-gap
                                                      [--carry] [--focus SOLID]
 ```
 
-records a clearance job along every motion, and a clearance, an attachment and a mass job as drawn and at every
-pose (only those named with `--motion` and `--pose`), into `DIR/measurements/`. It prints one line per job as it
+records a clearance job along every motion, an electrical job for every motion that commands a drive or lists one
+under `alsoRunning`, and a clearance, an attachment and a mass job as drawn and at every pose (only those named with `--motion` and `--pose`), into `DIR/measurements/`. It prints one line per job as it
 finishes, with numbers and counts, not verdicts, and then how many it wrote and how many were carried. `--extremes`
 also writes `DIR/adjustments.json` (section 4.5c).
 
@@ -1017,7 +1037,7 @@ those that boxes proved far apart (`counts.measured` is only the pairs that need
 without an earlier result measures only the focus solids' pairs and leaves the rest out (`pairsNotMeasured`); such
 a result is never carried from.
 
-Attachment, mass, reach, indentation and withdrawal jobs are carried whole when current. A stale attachment still
+Attachment, mass, reach, indentation, withdrawal and electrical jobs are carried whole when current. A stale attachment still
 carries from its earlier file: the touching gaps and mount distances of pairs of unchanged solids are copied, only
 pairs and mounts with a changed solid are measured, and the sets, loose solids and fixtures are worked out again
 from them. Its `checked` gives `pairsMeasured`, `pairsCarried`, `mountsMeasured` and `mountsCarried`, or
@@ -1072,10 +1092,99 @@ good or bad, and nothing says which engine to use.
 
 - **Guidelines and verdicts.** No built-in gap, no "floating is an error", no pass or fail.
 - **Reading evidence files.** A declared contact is a pair of names. Whether a trial justifies it is not asked here.
-- **Mass ranges, weight limits and electrical budgets.** Mass is one figure; budgeting is a judging tool's work.
+- **Weight limits and electrical budgets.** The library states the mass and its range, the currents and the bus
+  voltage; comparing them with a limit or a minimum is a judging tool's work.
+- **Electrical physics beyond the bus.** Heat, a breaker's trip curve and how long a current lasts (decision 24).
 - **Progress lines, receipts and advice text.**
 - **Line-of-sight checks** and the advisory test for a solid that turns about its own axis. They can be added as
   measures when a second project needs them.
+
+### 12.7 The electrical load of a motion
+
+The question: what does a motion ask of its motors and of the battery? `measure/electrical.py` answers it as the
+`electrical` job, one per motion that commands a drive or lists one under `alsoRunning`. A motion with neither has
+no electrical load, and asking for one is refused.
+
+**The load.** Every drive the motion commands, plus every drive it lists under `alsoRunning` (4.7). Nothing is
+picked by hand: placing a motor and commanding it is what puts it in the load.
+
+**Each commanded drive**, worked out at `samples` + 1 even stroke fractions (32 by default):
+
+1. **The moved groups** are the joint's group and every group it carries, at any depth. Their weight comes from the
+   mass roll-up (4.2, 4.3a): each solid's share at the centre of its volume, a lump spread by volume, extra mass at
+   its group's centre. Fixtures are not weighed, so a carried game piece's weight is stated as `extraLoad` or
+   `extraMass`.
+2. **The joint's line** rides on its group's carrier: at each fraction it is placed by the carrier's placement, so a
+   wrist on a moving arm is worked out about where its pivot is.
+3. **Gravity** (9.80665 m/s^2 along -z) on the moved groups about the joint: the torque `(r x m g) . axis` about a
+   rotation joint, in N m, or the force `m g . axis` along a slide, in N. The worst over the motion is reported.
+4. **Acceleration** from the speed profile, a triangle (decision 23): the joint speeds up evenly over the first half
+   of `durationS` and slows evenly over the second. Its acceleration is `4 * change / durationS^2` and its peak
+   speed `2 * change / durationS`, at mid-stroke. The inertia is the moved groups' about the joint's line
+   (`mass.inertia`) for a rotation, or their mass for a slide.
+5. **The load at the joint** at each fraction is `inertia * acceleration - gravity` (signed along the joint, speeding
+   up over the first half and slowing over the second, both at mid-stroke). `peak` is the most of it over the
+   motion, the still loads at the start and the end included, plus `extraLoad`. `hold` is the still load at the end,
+   gravity plus `extraLoad`: what holding there takes.
+6. **Current per motor** from the motor model (`motor.py`): the load as a torque at the gear's output (a slide's
+   force times `perOutputTurn / 2 pi`), over `kt * gear * efficiency * count`. `neededA` is what the peak needs.
+   `currentA` is that clamped at the drive's **limit**, the lower of its stated `statorLimitA` and `supplyLimitA`
+   (`null` when it states neither), and `clamped` says whether the high end was cut. `holdA` is the hold's current.
+7. **Required motor voltage** at the peak speed: `neededA * ohm + ke * motor speed`, the motor speed being the
+   output's turning speed times `gear`. Peak current and peak speed are taken together, which overstates it.
+8. **Bus current** of the drive: `count * currentA`.
+
+**Each drive running beside it** draws its `currentA` (the whole drive), or `count` times its limit for `atLimit`,
+at both ends.
+
+**The bus** sums every drive's bus current `I` and takes the battery (4.5b): `[Voc low - I high * R high, Voc high
+- I low * R low]`, with the nominal `Voc - I * R`. Without a battery `bus` is `null`.
+
+**Ranges.** Every figure is `{"value": nominal, "range": [low, high]}`. The weights are taken all at their low ends
+or all at their high ends at once, as the roll-up adds them (decision 8); each load's range is the least and the
+most over those and the two ends of `durationS`. The current's low end takes the high `kt` and efficiency, its high
+end the low ones. The motor voltage's high end takes the high `ohm` and `ke`. The bus's low end is the weak pack
+under the high current.
+
+**Conservative peaks.** The record says so in `conservative`: each drive's peak current is added as though the
+peaks came at once, and a motor's winding current is counted as drawn from the bus in full (decision 24). Efficiency
+divides the torque whichever way the load turns the gear.
+
+**One job file** (`electrical.<motion>`; `job`, `inputs`, `checked` as in 12.4):
+
+```json
+{"job": {"kind": "electrical", "motion": "raise", "samples": 32},
+ "inputs": {"rules": {"samples": 32}, "solids": {"arm bar": "1f0e9a2b3c4d5e6f"}},
+ "used": {"start": {}, "joints": {"arm": {"kind": "rotation", "from": 0.0, "to": 30}},
+          "masses": {"arm bar": 2.0}, "massRanges": {"arm bar": [2.0, 2.0]}, "groupMasses": {}, "extraMass": [],
+          "unweighed": [], "groups": "9a8b7c6d5e4f3a2b",
+          "drives": {"pivot": {"motor": {"ktNmPerA": [0.02, 0.019, 0.021], "ohm": [0.05, 0.045, 0.06], "keVsPerRad": [0.02, 0.019, 0.021]},
+                               "gear": 60, "count": 1, "efficiency": [0.9, 0.85, 0.95], "limits": {"supplyLimitA": 40},
+                               "joint": {"group": "arm", "kind": "rotation", "axis": [0, -1, 0], "originMm": [0, 0, 500], "travel": [-10, 120]}}},
+          "durationS": [0.5, 0.4, 0.7], "extraLoad": {}, "alsoRunning": [],
+          "battery": {"openCircuitV": [12.6, 12.2, 12.9], "resistanceOhm": [0.02, 0.015, 0.03]}},
+ "result": {"motion": "raise", "profile": "triangle: ...", "samples": 32, "durationS": {"value": 0.5, "range": [0.4, 0.7]},
+            "drives": {"pivot": {"group": "arm", "kind": "rotation", "moved": ["arm"], "count": 1, "change": 30.0,
+                                 "load": {"unit": "N m", "gravity": {...}, "acceleration": {...}, "extra": {...}, "hold": {...}, "peak": {...}},
+                                 "peakSpeed": {"unit": "deg/s", "value": 120.0, "range": [85.7, 150.0]}, "motorRadPerS": {...},
+                                 "neededA": {...}, "limitA": 40.0, "clamped": false, "currentA": {...}, "holdA": {...},
+                                 "motorV": {...}, "busA": {...}, "unweighed": []}},
+            "alsoRunning": [{"drive": "wheels", "from": "atLimit", "busA": {"value": 160.0, "range": [160.0, 160.0]}}],
+            "bus": {"loadA": {...}, "openCircuitV": [12.6, 12.2, 12.9], "resistanceOhm": [0.02, 0.015, 0.03], "volts": {...}},
+            "conservative": "conservative: each drive's peak current is added ..."}}
+```
+
+**What it uses** (`used`): the motion's resolved `start` and `joints` (12.4); the moved groups' weights (`masses`,
+`massRanges`, `groupMasses`, `extraMass`, `unweighed`, the group digest); each drive in the load (its motor's
+figures, `gear`, `count`, `efficiency`, `limits`, and a commanded drive's `joint`); `durationS`, `extraLoad` and
+`alsoRunning`; and the battery's two figures. `inputs.solids` holds the identities of the moved groups' robot
+solids. Each sourced figure is kept as (value, low, high) and notes are left out, so a note edit, or the weight of a
+solid the motion does not move, leaves the record current, and a changed mass, range, motor, gear, duration, drive
+beside it or battery figure makes it stale. The result names each drive, so a renamed drive does too. The job takes
+a few milliseconds beyond the build, so it is carried whole or measured whole.
+
+**What it does not say.** Whether the bus is high enough, or a current low enough, is for a tool that judges. The
+library compares nothing with a minimum.
 
 ## 13. The try layer: planar trials
 
@@ -1120,8 +1229,8 @@ signal. A ready band is a rule on a drive's speed.
   `stick`: a tangential spring capped at friction times normal force, with memory; a clamped piece holds still.
 - **Moving surfaces.** A belt, roller or wheel is a surface with a speed along itself. The friction it gives the
   piece is fed back to its drive as a load.
-- **Motors.** Torque from current, back-EMF from speed, winding resistance, gear and efficiency; a winding current
-  limit and an optional supply limit. Bus voltage `null` is power off (coasting); 0 is shorted windings (a brake).
+- **Motors.** Torque from current, back-EMF from speed, winding resistance, gear and efficiency (`motor.py`, the same
+  model the electrical measure uses); a winding current limit and an optional supply limit. Bus voltage `null` is power off (coasting); 0 is shorted windings (a brake).
 - **Air**, when the trial states `air`. Drag is 1/2 rho Cd A v^2 against the piece's motion through still air. Lift
   is the spin's Magnus force, 1/2 rho A Cl v^2 along spin x velocity, with Cl = `liftSlope` times the spin ratio
   (spin times radius over speed), capped at `liftMax` when it is given. `dragCoefficient`, `frontalAreaM2`,
@@ -1259,7 +1368,8 @@ settled layout. When a later stage finds a problem, the author changes the desig
 again only what the change touched. To make that possible:
 
 - Every measurement job record carries its `inputs` (its rules and the identity of each solid its answer depends
-  on) and a `used` block (the other design facts it depends on: contacts, mounts, fixtures, masses), section 12.4.
+  on) and a `used` block (the other design facts it depends on: contacts, mounts, fixtures, masses, and for an
+  electrical load its drives, the battery and what runs beside it), sections 12.4 and 12.7.
   Every trial record carries a `used` block: the solids it drew on, each with its group, kind, volume, bounding box
   as drawn and mass; the motions it follows, as their resolved stages (so a chained start counts by where it is),
   and the pose; the parameters its numbers were worked out from, with their values.
