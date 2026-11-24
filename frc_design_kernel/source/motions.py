@@ -1,9 +1,11 @@
-"""Checks on drives and motions that need no placement worked out. Each raises a DesignError naming what is wrong.
+"""Checks on drives, motions and the battery that need no placement worked out. Each raises a DesignError naming what
+is wrong.
 
 A drive with a motor names the solid that is the motor, so every motor is weighed and sits somewhere. A drive with a
 joint moves one group. A motion either commands drives, or states what moves its typed geometry ("by"). A motion may
 start where another ends, and no chain of such starts may loop. What needs a placement (a command past a joint's
-travel, a group that does not start on its joint) is checked when the placements are worked out.
+travel, a group that does not start on its joint) is checked when the placements are worked out. The battery states
+its two figures with their sources.
 """
 from ..errors import DesignError, unknown
 from ..motion import matrix as mx
