@@ -103,13 +103,13 @@ class ScreenFacts(unittest.TestCase):
                          [{"motion": "swing out of plane", "group": "tilt", "why": "turns about an axis that is not square to the plane"}])
 
     def test_a_path_that_turns_about_an_axis_not_square_to_the_plane_is_listed(self):
-        """Catches a turning path passing as planar when its turn tips the body out of the plane; control: a square turn is not listed."""
+        """Catches a turning path passing as planar when its turn tips the body out of the plane; control: a square turn, either way round and of any axis length, is not listed."""
         def listed(axis):
             path = {"kind": "path", "curve": "straight", "throughMm": [[0, 0, 0], [100, 0, 0]], "turnDeg": [0, 30], "turnAxis": axis}
             design = load_data(edited(lambda d: d["motions"].update(follow={"moves": {"slide": [path]}})))
             return [row["why"] for row in screen.out_of_plane(design.data, ["follow"], "y")]
         self.assertEqual(listed([0, 0, 1]), ["turns about an axis that is not square to the plane"])
-        self.assertEqual((listed([0, 1, 0]), listed([0, -1, 0])), ([], []))
+        self.assertEqual((listed([0, 1, 0]), listed([0, -2, 0])), ([], []))     # either way round, any length
 
     def test_the_squeeze_ratio_is_the_deepest_press_over_the_thickness(self):
         """Catches a wrong ratio: the ball is pushed 6 mm down onto a pad whose top is 3 mm under it, so it ends 3 mm in, of 40."""
