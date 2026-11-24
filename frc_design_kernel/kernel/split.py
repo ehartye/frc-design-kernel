@@ -33,6 +33,7 @@ from .props import bounds, volume
 
 TOLERANCE_MM = 0.01
 FACET_MM = 0.2       # how far a wedge's flat chord may sit inside the round face it stands for
+NUDGE_MM = 0.001     # how far off a plane a cut is tried again when the splitter will not take it
 LOST = 1e-4          # the share of a solid's volume its pieces may differ by: the kernel's volume of a round face is not exact
 AS_SOLID = getattr(TopoDS, "Solid_s", None) or TopoDS.Solid
 
@@ -218,6 +219,16 @@ def halves(shape, normal, offset):
     return found
 
 
+def cut(shape, normal, offset):
+    """halves, tried again a thousandth of a millimetre to either side when it gives one part: a plane exactly through
+    an edge of an imported part can defeat the splitter, and one just off it does not."""
+    for shift in (0.0, NUDGE_MM, -NUDGE_MM):
+        parts = halves(shape, normal, offset + shift)
+        if len(parts) >= 2:
+            break
+    return parts
+
+
 def convex_pieces(shape, most=128, deflection_mm=0.2):
     """([convex solid, ...], [solid still not convex, ...], the most a wedge's facets sit inside a round face, mm).
 
@@ -241,7 +252,7 @@ def convex_pieces(shape, most=128, deflection_mm=0.2):
                 done.append(piece)
                 faceted = max(faceted, sagitta(hollows))
             continue
-        parts = halves(piece, *plane)
+        parts = cut(piece, *plane)
         if len(parts) < 2 or len(done) + len(left) + len(parts) > most:
             rough.append(piece)
             continue

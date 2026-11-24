@@ -1066,7 +1066,8 @@ MuJoCo.
   (`kernel/split.py`). A solid is convex when all of it lies on the inner side of each face's plane: the plane of a
   flat face, or a plane touching a round face that bulges outward. Where some of it does not, that plane cuts it in
   two, and each half is split again. A bracket, an angle, a bevelled blade or a plate with windows from a supplier's
-  STEP file comes apart into exact convex pieces.
+  STEP file comes apart into exact convex pieces. A cut the CAD kernel's splitter will not take (a plane lying exactly
+  on an edge of an imported part) is tried again 0.001 mm to either side.
 - **A round face that dips inward is wedged about its own axis.** A bore, a countersink, a belt's wrap round its
   pulley, the inside of a relieved land: each is an inward cylinder or cone. Planes through its axis halve it until no
   wedge spans more of it than keeps the flat chord within **0.2 mm** of the arc (`FACET_MM`); a plane through a wedge's

@@ -126,6 +126,21 @@ class Split(unittest.TestCase):
         self.assertIsNone(split.across_chord([face], [(0, 0, -5), (1, 0, 0.005)]))
         self.assertIsNone(split.across_chord([{"chord": None}], [(0, 0, 9)]))
 
+    def test_a_cut_the_splitter_refuses_is_tried_just_off_its_plane(self):
+        """Catches a piece left rough (and hulled) because the kernel's splitter would not take a plane lying exactly on
+        one of an imported part's edges, as it did on a supplier's screw and crossbar. Control: a plane it refuses on
+        every try leaves the piece rough."""
+        solid, real = make(TUBE, "test", None), split.halves
+        refuse_exact = lambda shape, normal, offset: [shape] if offset == 0.0 else real(shape, normal, offset)     # every cut of the tube is through its axis
+        with mock.patch.object(split, "halves", side_effect=refuse_exact):
+            done, rough, faceted = split.convex_pieces(solid)
+        self.assertEqual(rough, [])
+        self.assertLessEqual(faceted, split.FACET_MM)
+        self.assertAlmostEqual(sum(props.volume(p) for p in done), props.volume(solid), delta=1e-5 * props.volume(solid))
+        with mock.patch.object(split, "halves", side_effect=lambda shape, normal, offset: [shape]):
+            done, rough, _ = split.convex_pieces(solid)
+        self.assertEqual((done, len(rough)), ([], 1))
+
     def test_only_an_inward_ball_or_a_free_form_face_stays_rough(self):
         """Control: catches a face that no wedge can make convex being called convex. A dimple (an inward ball) and a
         ring (a torus face, neither flat, cylindrical, conical nor spherical) stay rough; a plain roller is convex as it is."""
