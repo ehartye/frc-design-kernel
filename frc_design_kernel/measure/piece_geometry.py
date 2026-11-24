@@ -24,7 +24,7 @@ from ..kernel import hull, props
 from ..kernel.between import distance
 from ..source import schema
 from ..source.expand import work_out
-from ..source.expressions import CONSTANTS, FUNCTIONS, is_expression
+from ..source.expressions import CONSTANTS, is_expression
 from ..source.load import not_a_number
 from ..version import generator
 from . import symmetry
@@ -40,12 +40,17 @@ def no_custom(name, parameters, where):
 
 
 def read(path):
-    """{name: piece} from a pieces file. Refuses a missing file, bad JSON, or a file with no pieces block."""
+    """{name: piece} from a pieces file in UTF-8 (a leading byte-order mark is allowed). Refuses a missing or unreadable
+    file, text that is not UTF-8, bad JSON, or a file with no pieces block."""
     path = Path(path)
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"), parse_constant=not_a_number)
+        raw = json.loads(path.read_text(encoding="utf-8-sig"), parse_constant=not_a_number)
     except FileNotFoundError:
         raise DesignError(str(path), "the pieces file does not exist", "Check the path") from None
+    except UnicodeDecodeError:
+        raise DesignError(str(path), "is not UTF-8 text", "Save it as UTF-8") from None
+    except OSError as problem:          # a folder, or a file with no read access
+        raise DesignError(str(path), f"cannot be read ({problem.strerror or problem})", "Give the path of a pieces file you can read") from None
     except json.JSONDecodeError as problem:
         raise DesignError(f"{path.name} line {problem.lineno}", f"is not valid JSON ({problem.msg})", "Look for a missing comma, quote or bracket near that line") from None
     pieces = raw.get("pieces") if isinstance(raw, dict) else None
@@ -72,7 +77,8 @@ def no_parameters(value, where):
             tree = ast.parse(value[1:].strip(), mode="eval")
         except SyntaxError:
             return              # worked out next, which reports the bad arithmetic
-        names = sorted({node.id for node in ast.walk(tree) if isinstance(node, ast.Name)} - set(FUNCTIONS) - set(CONSTANTS))
+        called = {id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}     # a function's name, not a parameter
+        names = sorted({node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and id(node) not in called} - set(CONSTANTS))
         if names:
             raise DesignError(where, f'the expression "{value}" uses "{names[0]}", but piece-geometry has no parameters', "Write the number itself")
     elif isinstance(value, list):
@@ -103,7 +109,11 @@ def bore(shape, found, centre, bounds):
     axis = found["axis"]
     reach = math.dist(bounds[:3], bounds[3:]) + 1.0
     ends = [[c + side * reach * a for c, a in zip(centre, axis)] for side in (-1, 1)]
-    gap = distance(BRepBuilderAPI_MakeEdge(gp_Pnt(*ends[0]), gp_Pnt(*ends[1])).Edge(), shape)
+    try:
+        gap = distance(BRepBuilderAPI_MakeEdge(gp_Pnt(*ends[0]), gp_Pnt(*ends[1])).Edge(), shape)
+    except ValueError:
+        raise DesignError("", "the CAD kernel could not measure the gap from the axis to the shape, for its bore",
+                          "Report the shape") from None
     if gap < MISSES_MM:
         return None
     return {"diameterMm": round(2 * gap, PLACES), "axis": axis, "centreMm": tidy(centre)}

@@ -160,6 +160,25 @@ def on_circle(centre, normal, radius, count=720):
             for i in range(count)]
 
 
+class Extent(unittest.TestCase):
+    def test_the_hull_reaches_at_most_t_past_the_fitted_box_and_exactly_t_for_flat_faces(self):
+        """Catches a hull that reaches more than t past the solid's fitted box along an axis, or one that falls short of
+        exactly t for a solid with only flat faces (here a wedge with slanted faces, not a box)."""
+        from frc_design_kernel.kernel import props
+        wedge = {"kind": "prism", "plane": "xz", "outlineMm": [[0, 0], [70, 10], [20, 45]], "fromMm": -5, "toMm": 25}
+        ball = {"kind": "sphere", "centerMm": [1, 2, 3], "radiusMm": 40}
+        for name, entry in (("wedge", wedge), ("ball", ball)):
+            shape = made(entry)
+            found, bounds = hull.hull(shape), props.bounds(shape)
+            t = found["toleranceMm"]
+            for axis in range(3):
+                with self.subTest(name, axis=axis):
+                    past = (bounds[axis] - min(v[axis] for v in found["vertices"]), max(v[axis] for v in found["vertices"]) - bounds[axis + 3])
+                    for side in past:
+                        self.assertLessEqual(side, t + 1e-6)
+                        self.assertGreaterEqual(side, t - 1e-6 if name == "wedge" else -1e-6)
+
+
 class Trimmed(unittest.TestCase):
     """Round faces that stop at an edge before their surface does: a frustum's rims, a ball with a slice cut off."""
     SPHERE_R = 50
@@ -247,6 +266,22 @@ class Meshing(unittest.TestCase):
                 with self.subTest(key=key, value=value), self.assertRaises(DesignError) as caught:
                     hull.hull(shape, **{key: value})
                 self.assertIn(key, caught.exception.problem)
+
+    def test_a_face_the_mesher_leaves_bare_is_refused(self):
+        """Catches a face with no triangles being skipped, which would leave part of the solid outside the hull."""
+        from unittest import mock
+        real, seen = hull.BRep_Tool, []
+
+        class OneBare:      # the first face comes back with no triangles, the rest as meshed
+            Surface_s = staticmethod(real.Surface_s)
+
+            @staticmethod
+            def Triangulation_s(face, location):
+                seen.append(face)
+                return None if len(seen) == 1 else real.Triangulation_s(face, location)
+        with mock.patch.object(hull, "BRep_Tool", OneBare), self.assertRaises(DesignError) as caught:
+            hull.hull(made({"kind": "cylinder", "fromMm": [0, 0, 0], "toMm": [0, 0, 40], "radiusMm": 30}))
+        self.assertIn("mesh", caught.exception.problem)
 
     def test_control_a_round_face_keeps_the_meshers_deflection_as_a_floor(self):
         """Control: catches the flat-face rule dropping the floor for a solid that has a round face."""

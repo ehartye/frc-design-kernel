@@ -10,7 +10,18 @@ FUNCTIONS = {"sin": math.sin, "cos": math.cos, "tan": math.tan, "asin": math.asi
              "atan2": math.atan2, "sqrt": math.sqrt, "abs": abs, "min": min, "max": max, "radians": math.radians,
              "degrees": math.degrees}
 CONSTANTS = {"pi": math.pi}
-BINARY = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv, ast.Pow: operator.pow}
+POWER_BITS = 1100      # an exact whole-number power longer than this many bits is far past any float, so it is refused
+
+
+def power(base, exponent):
+    """base ** exponent, refusing at once a whole-number power too large for any ordinary number (9 ** 9 ** 9)."""
+    if isinstance(base, int) and isinstance(exponent, int) and abs(base) > 1 and exponent > 0 \
+            and exponent * math.log2(abs(base)) > POWER_BITS:
+        raise OverflowError("the power is too large")
+    return operator.pow(base, exponent)
+
+
+BINARY = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv, ast.Pow: power}
 UNARY = {ast.USub: operator.neg, ast.UAdd: operator.pos}
 ALLOWED = "Use numbers, parameter names, + - * / **, brackets and: " + ", ".join([*FUNCTIONS, *CONSTANTS])
 
@@ -27,6 +38,8 @@ def evaluate(text, names):
         raise DesignError("", f'the expression "{text}" is not valid arithmetic', ALLOWED) from None
     try:
         value = _walk(tree.body, names, text)
+    except DesignError:
+        raise                   # already says what is wrong with the expression; it is a ValueError too
     except (ZeroDivisionError, ValueError, OverflowError, TypeError) as problem:
         raise DesignError("", f'the expression "{text}" cannot be worked out ({problem})', "Check the numbers it uses") from None
     if isinstance(value, complex) or not math.isfinite(value):

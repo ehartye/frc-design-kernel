@@ -1102,12 +1102,15 @@ measures game pieces with no design source. It gives the numbers a tool needs to
 such as a delivery envelope: the piece's bounds, volume, symmetry, a convex hull that holds it and any hole through
 it. It does not say whether a piece fits anything.
 
-**The input** is a design source's own `pieces` block: `{"pieces": {name: {"shape": {...}, ...}}}`. Only `shape` is
-read. `massKg`, `note` and any other field are ignored, so a block copied from a design source, or written by another
-tool, is read as it is. Each shape is checked against the schema's shape definition, then its `"=..."` texts are
-worked out with no parameters, then it is built as one solid. An expression that names a parameter is an error for
-that shape (`the expression "=tall" uses "tall", but piece-geometry has no parameters. Fix: Write the number
-itself`). A `custom` shape is refused, because it needs a design folder and its code (section 6).
+**The input** is a design source's own `pieces` block, `{"pieces": {name: {"shape": {...}, ...}}}`, in a UTF-8 file
+(a leading byte-order mark is allowed). An empty block is allowed: nothing is measured, the record holds no shapes,
+and the command exits 0. Only `shape` is read. `massKg`, `note` and any other field are ignored, so a block copied
+from a design source, or written by another tool, is read as it is. Each shape is checked against the schema's shape
+definition, then its `"=..."` texts are worked out with no parameters, then it is built as one solid. An expression
+that names a parameter is an error for that shape (`the expression "=tall" uses "tall", but piece-geometry has no
+parameters. Fix: Write the number itself`). A call of a function that is not on the list is reported as not
+allowed, not as a parameter. A power so large it could not be an ordinary number (`"=9**9**9"`) is refused at once.
+A `custom` shape is refused, because it needs a design folder and its code (section 6).
 
 **The record** is always written, even when some shapes fail:
 
@@ -1140,10 +1143,12 @@ itself`). A `custom` shape is refused, because it needs a design folder and its 
 record: there is no design source to compare it with.
 
 **Exit codes.** 0 when every shape was measured. 1 when any shape failed: the file is still written, and each failed
-shape gets one line on stderr, `Error: where: problem. Fix: fix`. 1 also when the file is missing, is not JSON or has
-no `pieces` block, or when `--out` cannot be written (a folder, or a place with no write access); then nothing is
-written. 2 for a usage error: no `--out`, or a `--linear-mm` or `--angular-rad` that is not a finite number greater
-than 0 (`hull()` itself refuses such a value with a DesignError).
+shape gets one line on stderr, `Error: where: problem. Fix: fix`. 1 also when the file is missing, cannot be read
+(a folder), is not UTF-8 text, is not JSON or has no `pieces` block; when `--out` names the pieces file itself; or
+when `--out` cannot be written (a folder, or a place with no write access). Then nothing is written. 2 for a usage
+error: no `--out`, or a `--linear-mm` or `--angular-rad` that is not a finite number greater than 0 (`hull()` itself
+refuses such a value with a DesignError). A piece name the console cannot show (a Windows code page, a pipe) is
+printed with `\u` escapes rather than stopping the run.
 
 **The hull holds the true solid** (`kernel/hull.py`: `hull(shape, linear_mm=0.2, angular_rad=0.3)`, and
 `planes(points)` for the faces of the hull of any points).
@@ -1181,8 +1186,10 @@ like the faces. That cone now reaches 0.207 mm past its rim.
 than t / cos 15° (1.036 t) plus 0.002 mm outside the hull of the mesh's corners. That hull lies inside the solid's own
 convex hull, so for a convex solid no hull corner is farther than that from the solid; for a solid with a hollow or
 a notch, the bound is to its convex hull. At t = 0.202 mm the bound is 0.211 mm. The hull also stands at most t
-clear of a flat face of the solid, and its extent along x, y or z exceeds the solid's by exactly t on each side. On
-a box, each hull corner is within t of the box's corner along every axis.
+clear of a flat face of the solid, and along x, y or z it reaches at most t past the solid's fitted box on each
+side: exactly t for a solid with only flat faces, and less where the mesh's corners fall short of a round face's
+extreme (a ball 120 mm across reaches 0.105 to 0.202 mm past, depending on the axis and side). On a box, each hull
+corner is within t of the box's corner along every axis.
 
 **The bore, by one rule.** A shape that classifies as a body of revolution has a bore straight through it when its
 axis line does not meet the solid. The line is drawn through the centre of volume, which lies on the axis of every

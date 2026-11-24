@@ -4,11 +4,14 @@ import io
 import json
 import math
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from frc_design_kernel import DesignError
 from frc_design_kernel.cli import main
+from frc_design_kernel.measure import piece_geometry
 
 DATA = Path(__file__).resolve().parent / "data" / "piece_shapes.json"
 KINDS = {"ball": "sphere", "ring": "torus", "pipe": "tube", "bar": "cylinder", "crate": "box", "disc": "difference", "cup": "difference",
@@ -213,6 +216,128 @@ class Failures(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(len(stderr.splitlines()), 1)
         self.assertTrue(stderr.startswith("Error: "))
+
+
+BALL = {"kind": "sphere", "centerMm": [0, 0, 0], "radiusMm": 5}
+PIPE = {"kind": "tube", "section": "round", "fromMm": [0, 0, 0], "toMm": [0, 0, 40], "outerDiameterMm": 20, "wallMm": 2}
+
+
+def one_line(test, code, stderr, words=""):
+    """The run failed with exit 1 and exactly one plain error line holding words, and no traceback."""
+    test.assertEqual(code, 1)
+    test.assertEqual(len(stderr.splitlines()), 1, stderr)
+    test.assertTrue(stderr.startswith("Error: ") and words in stderr, stderr)
+    test.assertEqual(stderr.count("Fix:"), 1, stderr)
+
+
+class Input(unittest.TestCase):
+    """What the command meets in a real folder: other encodings, a folder, its own source as --out, odd names."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.dir = Path(self.folder.name)
+
+    def pieces(self, name, pieces, encoding="utf-8"):
+        path = self.dir / name
+        path.write_text(json.dumps({"pieces": pieces}, ensure_ascii=False), encoding=encoding)
+        return path
+
+    def test_a_file_that_is_not_utf8_or_is_a_folder_exits_1_with_one_line(self):
+        """Catches a UTF-16 or Latin-1 pieces file, or a folder given as the file, ending in a traceback."""
+        cases = {"utf-16": (self.pieces("wide.json", {"ball": {"shape": BALL}}, "utf-16"), "UTF-8"),
+                 "latin-1": (self.pieces("accent.json", {"ballé": {"shape": BALL}}, "latin-1"), "UTF-8"),
+                 "folder": (self.dir, "cannot be read")}
+        for name, (source, words) in cases.items():
+            with self.subTest(name):
+                code, _, stderr = run(source, "--out", self.dir / "g.json")
+                one_line(self, code, stderr, words)
+
+    def test_control_a_utf8_file_with_a_byte_order_mark_is_read(self):
+        """Control: catches the encoding checks refusing UTF-8 that starts with a byte-order mark (Windows tools write it)."""
+        source = self.pieces("marked.json", {"ball": {"shape": BALL}}, "utf-8-sig")
+        self.assertEqual(run(source, "--out", self.dir / "g.json")[0], 0)
+
+    def test_out_naming_the_pieces_file_itself_is_refused(self):
+        """Catches --out the same as the source silently writing the record over the pieces file."""
+        source = self.pieces("p.json", {"ball": {"shape": BALL}})
+        before = source.read_text(encoding="utf-8")
+        code, _, stderr = run(source, "--out", self.dir / "." / "p.json")
+        one_line(self, code, stderr, "pieces file")
+        self.assertEqual(source.read_text(encoding="utf-8"), before)
+
+    def test_an_empty_pieces_block_measures_nothing_and_exits_0(self):
+        """Catches an empty block being refused, or a record not written for it."""
+        code, _, _ = run(self.pieces("none.json", {}), "--out", self.dir / "g.json")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads((self.dir / "g.json").read_text(encoding="utf-8"))["shapes"], {})
+
+    def test_a_name_outside_the_console_code_page_is_printed_not_crashed(self):
+        """Catches a piece name such as "ring \u2192 big" crashing the summary line on a Windows console or pipe, whose
+        code page cannot write it."""
+        source = self.pieces("names.json", {"ring \u2192 big": {"shape": BALL}})
+        raw = io.BytesIO()
+        console = io.TextIOWrapper(raw, encoding="cp1252")
+        with contextlib.redirect_stdout(console), contextlib.redirect_stderr(io.StringIO()):
+            code = main(["piece-geometry", str(source), "--out", str(self.dir / "g.json")])
+            console.flush()
+        self.assertEqual(code, 0)
+        self.assertIn("ring \\u2192 big", raw.getvalue().decode("cp1252"))
+
+    def test_control_that_code_page_cannot_write_the_name(self):
+        """Control: catches the console test passing only because its stand-in console could write the name anyway."""
+        console = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+        with self.assertRaises(UnicodeEncodeError):
+            console.write("ring \u2192 big")
+            console.flush()
+
+
+class Expressions(unittest.TestCase):
+    def failed(self, text):
+        found = piece_geometry.measure({"p": {"shape": {**BALL, "radiusMm": text}}})["shapes"]["p"]
+        self.assertFalse(found["ok"])
+        return found["error"]
+
+    def test_a_bad_expression_gives_one_fix(self):
+        """Catches an error inside an expression being wrapped in another, so one line carries two Fix clauses, and an
+        unknown function being called a parameter."""
+        for text in ("=pi.real", "=foo(2)"):
+            with self.subTest(text):
+                error = self.failed(text)
+                self.assertEqual(str(DesignError(**error)).count("Fix:"), 1)
+                self.assertNotIn("no parameters", error["problem"])
+
+    def test_control_a_parameter_is_still_named_as_one(self):
+        """Control: catches the function rule hiding a real parameter name."""
+        self.assertIn("has no parameters", self.failed("=size * 2")["problem"])
+
+    def test_a_huge_power_fails_at_once(self):
+        """Catches "=9**9**9" being worked out exactly, which takes the run hours."""
+        began = time.perf_counter()
+        error = self.failed("=9**9**9")
+        self.assertLess(time.perf_counter() - began, 1)
+        self.assertEqual(str(DesignError(**error)).count("Fix:"), 1)
+
+    def test_control_an_ordinary_power_is_worked_out(self):
+        """Control: catches the power rule refusing a small power."""
+        found = piece_geometry.measure({"p": {"shape": {**BALL, "radiusMm": "=2**3"}}})["shapes"]["p"]
+        self.assertAlmostEqual(found["volumeMm3"], 4 / 3 * math.pi * 8 ** 3, places=0)
+
+
+class KernelFailures(unittest.TestCase):
+    def test_a_kernel_failure_measuring_the_bore_fails_only_that_shape(self):
+        """Catches a plain error from the CAD kernel inside the bore rule escaping, so no record is written at all."""
+        def broken(a, b):
+            raise ValueError("the CAD kernel could not measure the gap between two shapes")
+        with mock.patch.object(piece_geometry, "distance", broken):
+            shapes = piece_geometry.measure({"pipe": {"shape": PIPE}, "ball": {"shape": BALL}})["shapes"]
+        self.assertFalse(shapes["pipe"]["ok"])
+        self.assertIn("bore", shapes["pipe"]["error"]["problem"])
+        self.assertTrue(shapes["ball"]["ok"])
+
+    def test_control_the_same_pipe_measures_without_the_failure(self):
+        """Control: catches the failure test passing because the pipe fails anyway."""
+        self.assertTrue(piece_geometry.measure({"pipe": {"shape": PIPE}})["shapes"]["pipe"]["ok"])
 
 
 if __name__ == "__main__":

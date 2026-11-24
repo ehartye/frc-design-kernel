@@ -16,8 +16,8 @@ solid, no hull corner is farther than that from the solid. Pushing faces alone w
 meet at a small angle, as at a thin rim, their pushed planes meet far outside (20 mm past a cone 200 mm across and
 2 mm high, at t = 0.2 mm). So at every edge and corner of the ungrown hull where the faces turn by more than 15
 degrees, trimming planes are added whose directions fill the turn, each no more than 15 degrees from the next, every
-one touching that corner and pushed out by t like the faces. Along each axis the hull reaches exactly t past the
-solid's fitted box.
+one touching that corner and pushed out by t like the faces. Along each axis the hull reaches at most t past the
+solid's fitted box on each side, and exactly t for a solid with only flat faces.
 
 How t is bounded. Every point of the true surface lies within some distance s of the mesh, and the mesh lies inside
 the ungrown hull, so pushing every plane out by s holds the whole solid. s is 4/3 of the most the true surface strays
@@ -289,8 +289,9 @@ def _meshed(shape, linear_mm, angular_rad):
         flat = flat and BRepAdaptor_Surface(face).GetType() == GeomAbs_Plane
         location = TopLoc_Location()
         triangulation = BRep_Tool.Triangulation_s(face, location)
-        if triangulation is None:
-            continue
+        if triangulation is None:       # skipping it would leave that face out of the hull
+            raise DesignError("", "the CAD kernel did not mesh one of the shape's faces, so no hull can be sure to hold it",
+                              "Report the shape; try a different linear_mm or angular_rad")
         move = location.Transformation()
         nodes = [triangulation.Node(i).Transformed(move).Coord() for i in range(1, triangulation.NbNodes() + 1)]
         corners.update(nodes)
@@ -299,8 +300,8 @@ def _meshed(shape, linear_mm, angular_rad):
 
 
 def _box_faces(bounds):
-    """The six faces of the box fitted to the true surfaces. Pushed out with the rest, they hold the hull's extent along
-    each axis to exactly push past the solid's."""
+    """The six faces of the box fitted to the true surfaces. Pushed out with the rest, they keep the hull from reaching
+    more than push past the solid's fitted box along any axis."""
     low, high = bounds[:3], bounds[3:]
     axes = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
     return [(list(axis), high[k]) for k, axis in enumerate(axes)] + [([-a for a in axis], -low[k]) for k, axis in enumerate(axes)]

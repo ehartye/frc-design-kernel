@@ -207,8 +207,10 @@ def status(args):
 
 def piece_geometry(args):
     from .measure import piece_geometry as geometry    # the CAD kernel is needed only from here on
-    record = geometry.measure(geometry.read(args.source), args.linear_mm, args.angular_rad)
     out = Path(args.out)
+    if out.resolve() == Path(args.source).resolve():
+        raise DesignError(str(out), "is the pieces file itself, so the record would be written over it", "Give --out another file")
+    record = geometry.measure(geometry.read(args.source), args.linear_mm, args.angular_rad)
     try:
         write(out.parent, out.name, record)
     except OSError as problem:
@@ -239,6 +241,9 @@ def above_zero(text):
 
 
 def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):     # a name the console's code page cannot write is escaped, not a crash
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     made = generator()
     parser = argparse.ArgumentParser(prog="python -m frc_design_kernel", description="Build, measure and try a preliminary robot design from a design source.")
     parser.add_argument("--version", action="version", version=f"{made['library']} {made['version']} (commit {made['commit'] or 'unknown'})")
