@@ -124,15 +124,15 @@ def measure(args):
 
 def extremes(args, motions, poses):
     """Clearance at both ends of every mechanical adjustment, written to adjustments.json."""
-    from .measure.extremes import at_extremes
-    found = at_extremes(args.source, args.min_gap, args.depth, args.workers, motions, poses)
+    from .measure import extremes as ends
+    found = ends.at_extremes(args.source, args.min_gap, args.depth, args.workers, motions, poses)
     for name, entry in found.items():
         for row in entry["settings"]:
             closer = sum(len(m["closer"]) for m in row["motions"].values()) + sum(len(p["closer"]) for p in row["poses"])
             print(f'Adjustment "{name}" at {row["setting"]:g}: moves {count(len(row["moves"]), "solid")}; '
                   f'{count(closer, "pair")} with one of them closer than the gap over the motions and poses measured.')
-    write(args.out, "adjustments.json", {"schema": "frc-design-kernel/adjustments@1", "generator": generator(), "adjustments": found})
-    print(f"Wrote adjustments.json to {args.out}.")
+    write(args.out, ends.FILE, {"schema": ends.SCHEMA, "generator": generator(), "adjustments": found})
+    print(f"Wrote {ends.FILE} to {args.out}.")
 
 
 def screen(args):
@@ -189,7 +189,7 @@ def trials(args):
 
 def status(args):
     from .status import status as compare    # the CAD kernel is needed only from here on
-    found = compare(args.source, args.folder)
+    found = compare(args.source, args.folder, args.min_gap, args.depth)
     print(f'Records in {args.folder} against "{found["design"]}" as it is now:')
     if not found["records"]:
         print("No records found.")
@@ -289,9 +289,11 @@ def main(argv=None):
     attempt.add_argument("--workers", type=int, help="worker processes for the runs (default 1)")
     attempt.add_argument("--estimate", action="store_true", help="print the cost and stop")
     attempt.set_defaults(run=trials)
-    state = commands.add_parser("status", help="say which records in a folder are current and which are stale, and why")
+    state = commands.add_parser("status", help="say which records in a folder are current, stale or missing, and why")
     state.add_argument("source", help="the design source JSON file")
     state.add_argument("folder", help="the folder holding measurements/ and trials.json")
+    state.add_argument("--min-gap", type=float, default=0.0, help="the gap in mm the ends of each mechanical adjustment are asked for (default 0)")
+    state.add_argument("--depth", type=int, default=9, help="the search depth those ends are asked for (default 9)")
     state.add_argument("--json", action="store_true", help="also print everything as JSON")
     state.set_defaults(run=status)
     geometry = commands.add_parser("piece-geometry", help="measure each game piece's shape on its own: bounds, symmetry, hull and bore")

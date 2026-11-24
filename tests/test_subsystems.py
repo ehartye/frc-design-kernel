@@ -228,7 +228,7 @@ class Status(unittest.TestCase):
         moved = written(top, files)
         report = status(moved, out)
         self.assertTrue(report["records"])
-        self.assertEqual([row for row in report["records"] if row["state"] != "current"], [])
+        self.assertEqual([row for row in report["records"] if row["state"] == "stale"], [])     # the fork height's ends were never measured, before or after
         plate["shape"]["fromMm"][0] = "=post_x + 25"
         shifted = status(written(top, files), out)
         self.assertIn("stale", [row["state"] for row in shifted["records"]])

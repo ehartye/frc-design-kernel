@@ -390,9 +390,15 @@ in configurability." So what the built robot can change is design data too:
 position set in software). `input` is a design parameter (`parameters.NAME`) or a path into a trial. A mechanical
 adjustment is always a design parameter, so the solids move with it: `measure --extremes` builds and measures the
 design at both ends of each such adjustment, so clearance is known across the range. Only mechanical adjustments are
-measured (a setpoint or a spring moves no solid), only the pairs with a solid that end moves (`moves`), shared between
+measured (a setpoint or a spring moves no solid), only the pairs with a solid that end moves or shapes otherwise
+(`moves`, by the identity of section 12.4a over every motion and pose, so a slot moved inside a plate counts), shared between
 the same workers as the rest of `measure`, and only the motions and poses `--motion` and `--pose` name. A trial lists the adjustments
 that apply to it under `adjustments`; the campaign then asks whether they cover its uncertain inputs (section 13.3).
+
+`DIR/adjustments.json` has schema `frc-design-kernel/adjustments@2`. Each adjustment holds its `parameter`, `kind` and
+`range`; `inputs.rules`, what it was measured under (`minGapMm`, `depth`, the `motions` and the `poses`, null being as drawn);
+`used`, what its answer rests on (`drawn`: every solid's identity; `ends`: for each end, the solids that differ there;
+`contacts`: one digest of the pairs meant to touch); and its `settings`. The status command reads it (section 14).
 
 ### 4.5d Interactions and what solids are made of
 
@@ -1427,7 +1433,12 @@ elsewhere; the library reports the numbers.
   unstated.
 - `saw`: the section plane, the section taken of the piece, each solid that was cut and how many segments and arcs
   it gave, and any surface that was typed in.
-- `used`: what the trial depended on, for the status command (section 14).
+- `used`: what the trial depended on, for the status command (section 14): the `solids` it cut (group, kind, volume, box,
+  mass) and their `standing` (each one's full identity, section 12.4a, at the trial's pose); the pose's operations; the
+  `motions` its movers follow and its `frames`, as placements; the `parameters` its numbers came from; `start`, the resolved
+  values it was handed when it starts where another trial ended (null otherwise; no name is kept); `custom`, a digest of what
+  each piece of custom code does; `adjustments`, each one named with its input, kind, range and step; and `varied`, for each
+  design parameter its runs changed, a digest of everything it took from the design at the lowest and highest setting.
 - `result`, `findings`; the `nominal` run with a **replayable trace** and contact rows per surface; `stepComparison`;
   `control`; `ranges` (per input: held or flipped, and between which values); `grid`; `sensitivity`.
 - `handForward`: the nominal inputs, the range each input held over, the marginal edges, the sensitivity order, the
@@ -1492,17 +1503,24 @@ again only what the change touched. To make that possible:
 - Every measurement job record carries its `inputs` (its rules and the identity of each solid its answer depends
   on) and a `used` block (the other design facts it depends on: contacts, mounts, fixtures, masses, and for an
   electrical load its drives, the battery and what runs beside it), sections 12.4 and 12.7.
-  Every trial record carries a `used` block: the solids it drew on, each with its group, kind, volume, bounding box
-  as drawn and mass; the motions it follows, as their resolved stages (so a chained start counts by where it is),
-  and the pose; the parameters its numbers were worked out from, with their values.
+  Every adjustment's record carries the same two (section 4.5c), and every trial record a `used` block (section 13.5).
 - `python -m frc_design_kernel status SOURCE DIR` works those out again from the source as it is now, for every job
-  file under `DIR/measurements/` and every trial in `DIR/trials.json`, and prints, per record, `current` or
-  `stale` and what changed: `solid "belt bed" changed`, `massRanges "gate" changed: [0.2, 0.2] to [0.3, 0.3]`, `the motion
+  file under `DIR/measurements/`, every mechanical adjustment the source declares and every trial in `DIR/trials.json`,
+  and prints, per record, `current` or `stale` and what changed: `solid "belt bed" changed`, `massRanges "gate" changed: [0.2, 0.2] to [0.3, 0.3]`, `the motion
   "lift" is no longer in the source`, `parameter "squeeze" changed: 20 to 15`, `the trial definition changed at
   materials.tread.friction.value`. Plain facts. It does not say whether to run anything again, and it decides from
   what each record's answer depends on, never from file bytes. It ends with how long it took, the build included:
   0.4 s on the 228-solid design of section 12.4, and about 2 s expected on a design whose build reads a large STEP
-  file. `status()` returns the same as `seconds`.
+  file. `status()` returns the same as `seconds`. The design is built once more for each end of an adjustment and each
+  end of a parameter a trial varied, each set of values once.
+- **An adjustment** has a row of its own, `adjustment "channel gap"`. It is `missing` when its ends were never measured.
+  Its ends are asked for every motion and pose against `--min-gap` (default 0) at `--depth` (default 9): a record made
+  against a smaller gap, a shallower search or only some motions is `stale`, because it does not answer that. One made
+  against a larger gap or a deeper search does.
+- **A trial that starts where another ended** is stale when that end is elsewhere now, and when the other trial's record is
+  stale or gone, because then where it starts is not known. The other trial rerun to the same end changes nothing.
+- **Custom trial code** is known by its parsed code without comments, docstrings and layout. It may import only `math`, so
+  its own file is all of it. Code that breaks its contract now makes its trial stale and says why.
 - A design's name and every `note` are outside all identities. Renaming a design or editing a note makes nothing
   stale.
 - A targeted rerun is one command: `measure --motion NAME` or `--pose NAME`, and `try --trial NAME`. Each writes

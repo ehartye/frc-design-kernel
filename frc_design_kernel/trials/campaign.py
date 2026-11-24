@@ -5,21 +5,18 @@ cheapest sufficient bracket plan (trials.plan). No trial definition and no custo
 """
 import copy
 import itertools
-import json
 import math
 from concurrent.futures import ProcessPoolExecutor
 
-from ..builder import identity, placement
 from ..errors import DesignError
 from ..source.load import load
-from ..source.uses import parameters_used
 from ..version import generator
-from . import assumptions, custom, engines, fit, inputs, record
+from . import assumptions, custom, engines, fit, inputs, record, used
 from . import plan as plans_
 from .plan import DEFAULT_REFINE, Bracket, Window
+from .used import PARAMETERS
 
 SCHEMA = "frc-design-kernel/trial-campaign@2"
-PARAMETERS = "parameters."
 # Roughly what each engine manages; only used to state a time before running. The 3D figure is for a pickup scene
 # with a ring of 48 segments against about 20 solids; a simpler scene runs faster.
 STEPS_PER_SECOND = {"planar": 200000, "mujoco": 2000}
@@ -176,6 +173,10 @@ class Builder:
             self.built[key] = build(load(self.source, overrides or None))
         return self.built[key]
 
+    def parameters(self, overrides):
+        """The design built with these design parameters."""
+        return self.assembly({PARAMETERS + name: value for name, value in overrides.items()})
+
 
 class Runner:
     """Runs the changed cases of one trial and keeps every result by run id."""
@@ -209,19 +210,6 @@ class Runner:
 def run_summary(run_id, changes, run, met, unmet):
     return {"id": run_id, "changes": changes, "stepS": run["stepS"], "outcome": run["outcome"], "met": met, "firstUnmet": unmet,
             "endS": run["endS"], "steps": run["steps"], "measures": run["measures"], "events": run["events"]}
-
-
-def what_it_used(design, assembly, name, case, facts):
-    """Exactly what a trial drew on, with enough of each thing's identity to tell later whether it changed."""
-    raw = design.raw
-    written = [raw["trials"][name]] + [raw.get(table, {}).get(key) for table in inputs.TABLES for key in case[table]]
-    pose = case.get("pose")
-    motions = sorted({entry["motion"] for entry in case.get("movers", {}).values() if "motion" in entry})
-    return {"solids": identity.solids(assembly, [row["solid"] for row in facts["sections"]]),
-            "pose": pose, "poseOperations": assembly.data["poses"].get(pose) if pose else None,
-            "motions": {key: json.loads(json.dumps(placement.motion_stages(assembly.data, key))) for key in motions},
-            "parameters": {key: design.data["parameters"][key] for key in parameters_used(raw, written)},
-            "tables": {table: sorted(case[table]) for table in inputs.TABLES}}
 
 
 def cover(design, name, case, plans, runner, met, trial, judge):
@@ -296,7 +284,7 @@ def run_trial(design, name, builder, handed, workers):
     ranking = record.sensitivity(ranges, nominal["measures"])
     return {"engine": engines.stamp(trial.get("engine", "planar")),
             "definition": case, "assumptions": {"stated": stated, "engine": standing}, "inputs": found, "saw": runner.facts,
-            "used": what_it_used(design, builder.assembly(), name, case, runner.facts),
+            "used": used.what_it_used(design, builder.assembly(), name, case, runner.facts, handed, used.ends_of(runner.changes.values()), builder.parameters),
             "result": word, "findings": findings, "touchedHulled": touched, "firstUnmet": met["nominal"][1],
             "nominal": {**run_summary("nominal", {}, nominal, *met["nominal"]), "end": nominal["end"], "trace": nominal["trace"], "contacts": nominal["contacts"]},
             "stepComparison": steps, "control": control, "ranges": ranges, "coverage": covered, "grid": grid_found, "sensitivity": ranking,

@@ -129,7 +129,7 @@ After a change to the source, ask which records it touched:
 python -m frc_design_kernel status swing-arm.json out
 ```
 
-`status` prints, per record, `current` or `stale` and what changed. `measure --motion NAME` and `try --trial NAME`
+`status` prints, per record, `current`, `stale` (and what changed) or `missing` (a mechanical adjustment whose ends were not measured). `measure --motion NAME` and `try --trial NAME`
 run again only the part you name.
 
 To measure game pieces on their own, with no design source:
