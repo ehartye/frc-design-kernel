@@ -69,6 +69,7 @@ frc_design_kernel/
     screw.py         smooth movement from one pose to the next
     stages.py        a body's whole movement as stages, with a proven speed limit
     sampling.py      any placement written as one turn and one slide
+    joints.py        a drive's joint: its placement at a joint value, and the value read back from a placement
 
   source/            reading the design source. No CAD kernel needed.
     expressions.py   safe arithmetic for "=..." values
@@ -78,6 +79,7 @@ frc_design_kernel/
     trial.schema.json
     expand.py        "each" rows and "=..." values turned into plain numbers
     checks.py        cross-references: names exist, no loops, no double mass
+    motions.py       drives and motions: motor solids, joints, one cause per motion, no loop of chained starts
     sourced.py       a physical input's number and the range it may lie in
     uses.py          which parameters something depends on
     subsystems.py    what a subsystem file holds, and naming its file in a problem
@@ -100,7 +102,7 @@ frc_design_kernel/
     shape.py         a shape entry to one solid
     parts.py         solids taken from STEP files by name
     custom.py        the escape hatch: load, check and report custom code
-    placement.py     who is carried by whom; transforms per group
+    placement.py     who is carried by whom; chained starts and drive commands; transforms per group
     assembly.py      the built design: solids as drawn, placed at a pose or along a motion
     identity.py      enough of a solid's identity to tell later whether it changed
     manifest.py      the manifest
@@ -326,16 +328,33 @@ The physical facts that trials use live in the design source, once, in physical 
                         "restitution":    {"value": 0.3,   "assumed": [0.2, 0.5]},
                         "friction":       {"value": 0.8,   "assumed": [0.6, 1.0]}}},
 "motors":    {"small": {"ktNmPerA": {"value": 0.0097, "measured": "maker's data sheet"}, "ohm": {...}, "keVsPerRad": {...}}},
-"drives":    {"belt":  {"motor": "small", "gear": 2, "efficiency": {...}, "radiusMm": 18.5, "movingKg": {...},
+"drives":    {"belt":  {"motor": "small", "motorSolid": "belt motor", "gear": 2, "efficiency": {...}, "radiusMm": 18.5, "movingKg": {...},
                         "statorLimitA": 40, "supplyLimitA": 30,
-                        "turns": [{"solid": "belt module", "axis": [0, 1, 0]}, {"solid": "top roller", "axis": [0, 1, 0], "ratio": 2}]}}
+                        "turns": [{"solid": "belt module", "axis": [0, 1, 0]}, {"solid": "top roller", "axis": [0, 1, 0], "ratio": 2}]},
+              "pivot": {"motor": "small", "motorSolid": "arm motor", "count": 2, "gear": 60, "efficiency": {...}, "supplyLimitA": 40,
+                        "joint": {"group": "arm", "kind": "rotation", "axis": [0, -1, 0], "originMm": [0, 0, 100], "travel": [-10, 120]}},
+              "lift":  {"motor": "small", "motorSolid": "lift motor", "gear": 5,
+                        "joint": {"group": "carriage", "kind": "slide", "axis": [0, 0, 1], "perOutputTurn": 100, "travel": [0, 400]}}}
 ```
 
 - A **piece** is a game piece or other free body, declared with its real 3D shape. An engine works out what it needs
   from that (the planar engine takes a round section and its inertia).
 - A **material** is how the piece meets a surface of that kind: spring, bounce or damping ratio, friction.
-- A **drive** is declared on solids: "this solid turns about this axis" (right-hand rule), with its motor, gear and
-  what the motor has to speed up. Which way a surface runs in a section follows from the axis.
+- A **drive** is a motor and what it moves. Its `motor` names a motor model; `count` motors share the load; `gear` is
+  motor turns per turn of the output (default 1); `efficiency` defaults to 1.
+- **Every motor is a solid.** A drive with a `motor` names the robot solid that is the motor in `motorSolid`, so the
+  motor is weighed like any solid and sits where it is mounted. A motor drive without one is refused.
+- A drive's **joint** is the one movement it gives a group (section 4.7): `{group, kind, axis, travel}`, with
+  `originMm` (a point on the turning line) for a `rotation`, or `perOutputTurn` (mm per turn of the gear's output: a
+  lead, or a pulley's circumference) for a `slide`. The joint value is degrees or mm from the group as drawn, so 0 is
+  the drawing. A rotation joint turns its group `360 / gear` degrees per motor turn about the line through `originMm`
+  along `axis` (right-hand rule); a slide moves it `perOutputTurn / gear` mm per motor turn along `axis`. `travel` is
+  `[low, high]`, the joint values at its two stops. The joint is in the group's own coordinates, before its carrier
+  moves it, so a joint rides on its carrier. A joint needs a motor.
+- A drive may also be **declared on solids** for trials: "this solid turns about this axis" (right-hand rule), with
+  its `radiusMm` and what the motor has to speed up (`movingKg` or `inertiaKgM2`). Which way a surface runs in a
+  section follows from the axis. A drive with a joint may keep `radiusMm` and `turns` for the surfaces it runs. A
+  drive says at least one of the two; a trial may use only a drive with `radiusMm`.
 - **Every physical input states its source**: `{"value": v, "assumed": [low, high]}` or `{"value": v, "measured":
   "where"}`. An assumed value with a range is a normal, complete state: a best guess. A measured value only narrows
   the range to nothing. A plain number states neither, so nothing says how far it may be off; a trial that uses it
@@ -394,26 +413,80 @@ first and then everything its carrier gets.
 
 ### 4.7 Motions
 
-A motion says how groups get from one pose to another. There are two ways to write one.
+A motion says how groups get from one place to another, and what makes them move. Every motion states what moves
+it: motors, through drive commands, or a stated cause for typed geometry.
 
-**Moves:** start at a pose, then apply operations by stroke fraction `t`:
-
-```json
-"raise": {"from": "stowed", "to": "raised",
-          "moves": {"stage": [{"kind": "translation", "travelMm": [0, 0, 180]}]}}
-```
-
-`to` is optional. When it is given, the build checks that the motion really ends at that pose and refuses if not.
-
-**Through:** pass smoothly through a list of poses, as one motion:
+**Drive commands.** The motion says what each motor does, and the library works out where every group is:
 
 ```json
-"swing": {"through": ["stowed", "half", "raised"]}
+"raise arm": {"from": "stowed", "to": "up", "drive": {"pivot": {"to": 95}}, "durationS": {"value": 0.5, "assumed": [0.4, 0.7]}},
+"lift":      {"drive": {"lift": {"by": 300}}, "durationS": {"value": 0.8, "assumed": [0.6, 1.0]},
+              "alsoRunning": [{"drive": "drivetrain", "atLimit": true}], "extraLoad": {"lift": {"value": 15, "assumed": [5, 30]}}}
 ```
 
-Between each pair of poses a group turns and slides at an even rate along the one natural path between them (a turn
-about a fixed axis plus a slide along that axis). An arm drawn at two angles about its pivot therefore swings about
-that pivot. The poses share the stroke evenly.
+- `drive` maps each drive to `{"to": joint value}` or `{"by": joint change}`, in degrees for a rotation joint and mm
+  for a slide. Each commanded joint's group turns or slides at an even rate over the stroke, from the joint value it
+  starts at to the one commanded.
+- The joint value a motion starts at is carried along a chain of motions (below). Otherwise it is read from the
+  group's own placement at the start: as drawn it is 0, and at a pose it is the value the joint must have to put the
+  group there. A turn is read as the angle inside the travel nearest 0. A group whose start the joint cannot give
+  (a pose that also shifts it sideways) is refused.
+- `durationS` (sourced) is how long the motion takes. A motion that commands drives must give it.
+- `alsoRunning` lists drives that run at the same time without being part of the motion, such as the drivetrain
+  during a lift, each with `currentA` (sourced) or `"atLimit": true` (its current limit, so it needs one). A drive
+  the motion commands is already running and is not listed.
+- `extraLoad` is `{drive: load}` (sourced) for a commanded drive: a load at its joint beyond the moved groups'
+  weight and acceleration, such as a spring or friction. It is N m about the joint for a rotation and N along it
+  for a slide.
+- The library states these numbers. Torque, current and bus voltage are worked out from them by the electrical
+  measure; whether they are enough is for a tool that judges.
+
+**Refused:** a command that starts or ends outside its joint's `travel`; two drives in one motion whose joints move
+the same group (two motors on one joint are one drive with `count`); a typed operation on a group a commanded drive
+moves; a drive with no joint; `through` in a driven motion. A driven motion may also move other groups by typed
+moves, such as a piece pushed along, when it says what moves them with `by`.
+
+**A stated cause.** A motion no motor drives says what does, in `by`, and is written as typed geometry:
+
+```json
+"hand off": {"from": "raised", "to": "set down", "by": "hand",
+             "moves": {"load": [{"kind": "path", "curve": "arc", "throughMm": [[0, 0, 350], [130, 0, 400], [260, 0, 350]]}]}},
+"swing":    {"by": "hand", "through": ["stowed", "half", "raised"]}
+```
+
+`by` is `hand`, `spring`, `gravity` or `piece` (a payload moved by what it touches, whose path comes from a trial
+fit). A motion with neither `drive` nor `by` is refused. Typed geometry is one of two forms:
+
+- **Moves:** start at a pose (or after another motion, below), then apply operations by stroke fraction `t`.
+- **Through:** pass smoothly through a list of poses, as one motion. Between each pair of poses a group turns and
+  slides at an even rate along the one natural path between them (a turn about a fixed axis plus a slide along that
+  axis). An arm drawn at two angles about its pivot therefore swings about that pivot. The poses share the stroke
+  evenly. A `through` motion starts at its first pose, so it takes no `from` or `to`.
+
+Such a motion has no electrical load unless it lists `alsoRunning`.
+
+**Where a motion starts.** `from` is a pose, or nothing (as drawn), or `{"after": "<motion>"}`: each group then
+starts at its own placement at the end of that motion, the earlier motion's own start included.
+
+- **How a chained start composes.** Every group's own placement at the end of the earlier motion is worked out
+  (its start, then its commanded joint, then its typed moves) before carriers, and becomes the group's start, as if
+  it were a pose. The later motion's own drive commands and moves apply after it, and carriers are added last, as
+  for any pose. So a carried group ends the earlier motion and starts the later one in the same place, and a joint
+  rides on its carrier in both.
+- **A joint value follows the chain.** A drive the earlier motion commanded starts the later motion at the value it
+  was commanded to, so `{"by": -45}` counts from there, even past a whole turn. A drive whose group the earlier
+  motion did not move starts at the value it had at the earlier motion's start, and so on up the chain. A group the
+  earlier motion moved some other way (by typed moves, through poses, or another drive) has its value read from
+  its placement.
+- **Known by where it is, never by name.** A chained start is kept as the placement it works out to, with arithmetic
+  noise in the last digits removed. Records of the later motion hold that placement and the joint values (section
+  12.4), not the name of the earlier motion. Changing how the earlier motion gets to its end, without changing where
+  it ends, leaves the later motion's records current.
+- A chain that loops back on itself is refused, naming every motion in the loop. A chain is worked out once per
+  motion, so a long chain costs one working-out per link.
+
+`to` is optional on any motion with a start. When it is given, the build checks that the motion really ends at that
+pose and refuses if not. `validate` checks joint travel and end poses too; it needs no CAD kernel.
 
 ### 4.8 What the source does not say, and where it goes
 
@@ -429,6 +502,8 @@ a builder used to do now lives.
 | Place a supplier's solid, picked by name | `part` (4.2) |
 | Move a mechanism's members together, and what rides on them | groups and `carriedBy` (4.3) |
 | Split a curved move into many straight cases | one `path` operation or one `through` motion (4.7, 5) |
+| Type an arm's swing as a rotation by hand | a drive command through the motor's joint (4.5b, 4.7) |
+| Write the same start pose for every step of a sequence | `"from": {"after": "<motion>"}` (4.7) |
 | Draw a second copy of a mechanism in its other position | a named pose (4.6) |
 | Fix the STEP header time and names so builds repeat | the library does it (7) |
 | Revolve a profile, sweep or loft a section | a custom shape (6), until two projects need the same one |
@@ -482,7 +557,8 @@ Each subsystem file (`frc-design-kernel/subsystem@1`, schema `source/subsystem.s
   two files is refused, and the message names both files. A solid's name is checked after its `each` rows are
   written out, and a subsystem solid may not take a fixture's name.
 - **References cross files freely.** A solid names a group from another file, a group is `carriedBy` a group in
-  another file, a mount or contact names solids anywhere.
+  another file, a mount or contact names solids anywhere, a motion starts `{"after": ...}` a motion in another file,
+  and a drive's joint group and motor solid may be in any file.
 - **Numbers come from the top file.** `each` rows and `=` expressions work inside subsystem files with the top
   file's parameters. A changed parameter reaches every file.
 - **Paths are relative to the top file.** Subsystem files, part files (`part.file`) and custom code
@@ -590,8 +666,10 @@ The library cannot detect all of these. It makes them visible. Judging them is t
 
 The manifest holds: the source file name and fingerprint; units; the pose that was exported; each solid (name, group,
 kind, volume, bounding box, mass, its range and where the mass came from); each group (role, carrier, members); the
-weight with no solid; mounts; poses and motions with every number worked out; parts used (file, fingerprint, solid
-name); custom shapes used; the mass block; and the library version and commit.
+weight with no solid; mounts; poses and motions with every number worked out, and for each drive command what it
+works out to (`commands`: its group, the joint values it goes `from` and `to`, the `change` and the `motorTurns` it
+takes); parts used (file, fingerprint, solid name); custom shapes used; the mass block; and the library version
+and commit.
 
 The mass block is the robot's weight, fixtures left out:
 
@@ -708,6 +786,13 @@ These were the simpler choice at the time. Any of them may change while the libr
     million steps, the inner loop is the place to spend effort.
 19. **The default plan moves one input at a time.** Combinations are only run when a trial asks for a grid.
 20. **A hand-off passes the piece's end state, and drive speeds when asked (`carryDrives`).** Flap angles start fresh.
+21. **A joint has one degree of freedom and one drive per motion.** Two motors on one joint are one drive with
+    `count`. A differential, or a joint two drives share by adding their movements, is not offered; it is two groups.
+22. **A joint value read from a pose takes the turn inside the travel nearest 0.** A pose cannot say which whole turn a
+    rotation joint is on; a chain of motions carries the exact value instead. If a joint ever travels more than a
+    turn from a pose, the pose will need to state its joint values.
+23. **A motor-driven motion moves each joint at an even rate.** There is no speed profile; `durationS` is the whole
+    motion's time, and the electrical measure works out acceleration from it.
 
 ## 12. The measure layer
 
@@ -838,7 +923,11 @@ digits, dots, dashes and underscores). Two jobs with the same id in one list are
   out), the two named solids for a reach or an indentation, and for a mass the solids whose shape the roll-up uses
   (those with a mass, and every member of a group with a lump mass or with extra mass, which sits at the centre of
   its group's volume).
-- `used` holds the other design facts the answer depends on: a clearance's declared `contacts`; an attachment's
+- `used` holds the other design facts the answer depends on: for every job along a motion, the motion's resolved
+  `start` (each group's whole placement at `t` = 0, carriers included, as 12 numbers, groups as drawn left out) and
+  its `joints` (each commanded joint, by its group: `kind`, and the values it goes `from` and `to`), so a chained start
+  is known by where it is and never by the motion it starts after, and a renamed drive changes nothing; a
+  clearance's declared `contacts`; an attachment's
   `contacts`, `mounts` (notes left out), `fixtures` and a digest of which group each solid is in; a mass's `masses`,
   `massRanges`, `groupMasses` (each as value, low, high), `extraMass` (notes left out of the comparison),
   `unweighed` and the same group digest. A change to a range alone, or to any weight with no solid, makes it stale.
@@ -1172,8 +1261,8 @@ again only what the change touched. To make that possible:
 - Every measurement job record carries its `inputs` (its rules and the identity of each solid its answer depends
   on) and a `used` block (the other design facts it depends on: contacts, mounts, fixtures, masses), section 12.4.
   Every trial record carries a `used` block: the solids it drew on, each with its group, kind, volume, bounding box
-  as drawn and mass; the motions and the pose it follows; the parameters its numbers were worked out from, with
-  their values.
+  as drawn and mass; the motions it follows, as their resolved stages (so a chained start counts by where it is),
+  and the pose; the parameters its numbers were worked out from, with their values.
 - `python -m frc_design_kernel status SOURCE DIR` works those out again from the source as it is now, for every job
   file under `DIR/measurements/` and every trial in `DIR/trials.json`, and prints, per record, `current` or
   `stale` and what changed: `solid "belt bed" changed`, `massRanges "gate" changed: [0.2, 0.2] to [0.3, 0.3]`, `the motion
