@@ -400,6 +400,9 @@ class Fit(unittest.TestCase):
         found = fit.path_operation({"columns": ["tS", "xMm", "zMm", "spinRadps", "speedMps"], "rows": rows}, {"normal": "x", "atMm": 0}, 1.0, 1.0)
         self.assertEqual(found["operation"]["turnAxis"], [1, 0, 0])
         self.assertGreater(found["maxTurnDeviationDeg"], 40.0)
+        still = fit.path_operation({"columns": ["tS", "xMm", "zMm", "spinRadps"], "rows": [[i / 10, 5.0, 5.0, 1.0] for i in range(11)]}, {"normal": "y", "atMm": 0}, 1.0)
+        self.assertIsNone(still["operation"])
+        self.assertAlmostEqual(still["maxTurnDeviationDeg"], math.degrees(1.0), places=6)
 
 
 class Command(unittest.TestCase):

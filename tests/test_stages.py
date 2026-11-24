@@ -73,7 +73,7 @@ class SpeedLimit(unittest.TestCase):
         quarter = {"kind": "path", "curve": "arc", "throughMm": [[100, 0, 0], [100 * math.sqrt(0.5), 100 * math.sqrt(0.5), 0], [0, 100, 0]],
                    "turnDeg": [0, 45, 90], "turnAxis": [0, 0, 1]}
         listed = [("ops", [quarter])]
-        swing = math.pi / 2 * max(math.dist(p, (0, 0, 0)) for p in stages.corners(BOX))
+        swing = math.pi / 2 * max(math.hypot(p[0], p[1]) for p in stages.corners(BOX))     # distance from the turning axis
         self.assertAlmostEqual(fastest(listed), swing, delta=0.01 * swing)
         limit = stages.speed_limit(listed, BOX)
         self.assertAlmostEqual(limit, math.pi / 2 * (100 + max(math.dist(p, (100, 0, 0)) for p in stages.corners(BOX))), places=6)

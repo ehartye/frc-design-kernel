@@ -818,6 +818,15 @@
                 "arc",
                 "smooth"
               ]
+            },
+            "turnDeg": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/number"
+              }
+            },
+            "turnAxis": {
+              "$ref": "#/$defs/vector"
             }
           }
         }

@@ -4,6 +4,7 @@
     {"kind": "rotation", "originMm": [x, y, z], "axis": [x, y, z], "travelDeg": d}
     {"kind": "gravity-drop", "fallMm": h, "quadraticFraction": w}
     {"kind": "path", "throughMm": [[x, y, z], ...], "curve": "straight" | "arc" | "smooth"}
+    {"kind": "path", ..., "turnDeg": [a, ...], "turnAxis": [x, y, z]}      a path that turns as it goes
 
 A start pose is the same list applied in full (t = 1).
 """
@@ -27,7 +28,11 @@ def one(op, t):
         return mx.translation((0.0, 0.0, -h * ((1 - w) * t + w * t * t)))
     if kind == "path":
         points = op["throughMm"]
-        return mx.translation(mx.sub(paths.position(op["curve"], points, t), points[0]))
+        slide = mx.translation(mx.sub(paths.position(op["curve"], points, t), points[0]))
+        if "turnDeg" not in op:
+            return slide
+        angles = op["turnDeg"]     # the body turns about the followed point, by the angle gained since the first point
+        return mx.compose(slide, mx.rotation(points[0], op["turnAxis"], paths.turn(op["curve"], points, angles, t) - angles[0]))
     raise DesignError("", f'unknown motion kind "{kind}"', f"Use one of: {', '.join(KINDS)}")
 
 
@@ -61,3 +66,17 @@ def _check_path(op, place):
             raise DesignError(place, f"an arc needs exactly 3 points, not {len(points)}", "Give the start, a point on the way and the end")
         if paths.circle_through(*points) is None:
             raise DesignError(place, "the three arc points are in a straight line", 'Use "curve": "straight", or move the middle point')
+    _check_turn(op, place, len(points))
+
+
+def _check_turn(op, place, count):
+    if "turnDeg" not in op and "turnAxis" not in op:
+        return
+    if "turnDeg" not in op:
+        raise DesignError(place, 'turnAxis is given without "turnDeg"', 'Add "turnDeg", one angle per point, or remove "turnAxis" for a path that slides')
+    if "turnAxis" not in op:
+        raise DesignError(place, 'a path with "turnDeg" needs a "turnAxis"', 'Give the direction the body turns about, such as [0, 1, 0]')
+    if len(op["turnDeg"]) != count:
+        raise DesignError(place, f"turnDeg has {len(op['turnDeg'])} angles for {count} points", "Give one angle per point of throughMm")
+    if mx.length(op["turnAxis"]) == 0:
+        raise DesignError(place, "the turnAxis is [0, 0, 0]", "Give the direction the body turns about, such as [0, 1, 0]")
