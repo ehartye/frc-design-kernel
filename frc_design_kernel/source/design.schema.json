@@ -1088,6 +1088,9 @@
             },
             "toMm": {
               "$ref": "#/$defs/vector"
+            },
+            "edgeRadiusMm": {
+              "$ref": "#/$defs/number"
             }
           }
         },
@@ -1333,6 +1336,34 @@
               "$ref": "#/$defs/number"
             },
             "minorRadiusMm": {
+              "$ref": "#/$defs/number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "fromMm",
+            "toMm",
+            "radiusFromMm",
+            "radiusToMm"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "cone"
+            },
+            "fromMm": {
+              "$ref": "#/$defs/vector"
+            },
+            "toMm": {
+              "$ref": "#/$defs/vector"
+            },
+            "radiusFromMm": {
+              "$ref": "#/$defs/number"
+            },
+            "radiusToMm": {
               "$ref": "#/$defs/number"
             }
           }

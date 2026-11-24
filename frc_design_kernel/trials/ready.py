@@ -8,7 +8,7 @@ from ..builder import placement
 from ..motion import stages as stage_math
 from . import convex
 
-CONVEX = ("box", "sphere")
+CONVEX = ("box", "sphere", "cone")
 GOOD = ("convex", "union of convex pieces", "convex pieces from its construction")
 
 
@@ -36,7 +36,7 @@ def breakdown(shape):
     if convex.pieces(shape) is not None:
         return "convex pieces from its construction"
     return {"tube": "a hollow tube", "difference": "a shape with material cut away", "intersection": "an overlap of shapes",
-            "custom": "a custom shape", "cylinder": "a pie slice wider than a half turn"}[kind]
+            "custom": "a custom shape", "cylinder": "a pie slice wider than a half turn", "torus": "a ring (a torus)"}[kind]
 
 
 def construction(data):
@@ -67,4 +67,4 @@ def report(assembly):
     return {"trialSolids": cut, "concaveWithNoBreakdown": concave, "solidsWithNoMass": sorted(weightless),
             "groupsNotOneHingeOrSlider": paths, "drivesNotOnASolid": sorted(name for name, drive in data["drives"].items() if "radiusMm" in drive and not drive.get("turns")),
             "surfacesNotFromSolids": typed,
-            "piecesNotPrimitive": sorted(name for name, piece in data["pieces"].items() if piece["shape"]["kind"] not in ("sphere", "cylinder", "tube", "box"))}
+            "piecesNotPrimitive": sorted(name for name, piece in data["pieces"].items() if piece["shape"]["kind"] not in ("sphere", "cylinder", "tube", "box") or piece["shape"].get("edgeRadiusMm"))}

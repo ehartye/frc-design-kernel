@@ -47,7 +47,8 @@ def classify(shape, built_as=None):
     """{"class": "sphere" | "body of revolution" | "prismatic" | "general", "axis": [x, y, z]} for a solid.
 
     A body of revolution is the same after any turn about its axis: a bar, a tube, a ring, a cone. A ball is the
-    special case with no preferred axis. built_as is the shape kind from the design source; a box or a prism is prismatic.
+    special case with no preferred axis. built_as is the shape kind from the design source; a box or a prism with only
+    flat faces is prismatic. A box with rounded edges is not: its section changes near every face.
     """
     found = surfaces(shape)
     kinds = {kind for kind, _, _ in found}
@@ -61,7 +62,7 @@ def classify(shape, built_as=None):
         centred = all(off_line(point, origin, axis) < TOLERANCE for kind, _, point in found if kind == "sphere")
         if same and flat and centred:
             return {"class": "body of revolution", "axis": [round(v, 9) + 0.0 for v in axis]}
-    if built_as in ("box", "prism"):
+    if built_as in ("box", "prism") and kinds == {"plane"}:
         return {"class": "prismatic"}
     return {"class": "general"}
 

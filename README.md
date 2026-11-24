@@ -132,6 +132,16 @@ python -m frc_design_kernel status swing-arm.json out
 `status` prints, per record, `current` or `stale` and what changed. `measure --motion NAME` and `try --trial NAME`
 run again only the part you name.
 
+To measure game pieces on their own, with no design source:
+
+```
+python -m frc_design_kernel piece-geometry pieces.json --out geometry.json
+```
+
+`pieces.json` holds a `pieces` block written as in a design source. For each piece, `geometry.json` gives its bounds,
+volume, symmetry, a convex hull that holds the whole piece, and any hole straight through it. See
+[DESIGN.md](DESIGN.md) section 12.6c.
+
 The same thing from Python:
 
 ```python
