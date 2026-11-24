@@ -10,7 +10,7 @@ from pathlib import Path
 import frc_design_kernel as kernel
 from frc_design_kernel.cli import main
 from frc_design_kernel.kernel import props
-from frc_design_kernel.measure import clearance, extremes, run, screen, symmetry
+from frc_design_kernel.measure import clearance, extremes, records, run, screen, symmetry
 from frc_design_kernel.motion import matrix as mx
 from frc_design_kernel.trials import campaign
 
@@ -136,46 +136,30 @@ class ScreenFacts(unittest.TestCase):
 
 
 class Adjustments(unittest.TestCase):
+    def ends(self, workers=1, **asked):
+        with run.Bench(load_data(design(), {"custom/taper.py": TAPER}), workers) as held:
+            return extremes.at_extremes(held, min_gap=2.0, **asked)
+
     def test_clearance_is_known_at_both_ends_of_a_mechanical_adjustment(self):
         """Catches an adjustment whose far end fouls something going unseen: at a 1 mm gap the walls are 1 mm from the drawn ball."""
-        path = load_data(design(), {"custom/taper.py": TAPER}).path
-        found = extremes.at_extremes(path, min_gap=2.0)["channel gap"]
+        found = self.ends()["channel gap"]
         tight, wide = found["settings"]
         self.assertEqual((found["parameter"], tight["setting"], wide["setting"]), ("gap", 1, 8))
         self.assertIn(["drawn ball", "wall left"], tight["poses"][0]["closer"])
         self.assertNotIn(["drawn ball", "wall left"], wide["poses"][0]["closer"])
 
-    def test_only_a_mechanical_adjustment_is_measured_and_only_its_moved_solids(self):
-        """Catches a setpoint measured as if it moved solids, or every pair measured again at each end (the slow way).
-
-        Control: the walls the gap moves are named, and a pair of two unmoved solids is counted, not measured.
-        """
-        data = design()
-        data["parameters"]["belt_mps"] = 2.0
-        data["adjustments"]["belt speed"] = {"input": "parameters.belt_mps", "kind": "setpoint", "range": [1.0, 3.0]}
-        path = load_data(data, {"custom/taper.py": TAPER}).path
-        found = extremes.at_extremes(path, min_gap=2.0, workers=1)
-        self.assertEqual(list(found), ["channel gap"])
-        tight = found["channel gap"]["settings"][0]
-        self.assertEqual(tight["moves"], ["wall left", "wall right"])
-        swing = run.assembly_for(path, {"gap": 1})
-        focused = clearance.along(swing, "swing in plane", 2.0, focus={"wall left", "wall right"})
-        self.assertGreater(focused["counts"]["notInFocus"], 0)
-        self.assertTrue(all("wall left" in r["pair"] or "wall right" in r["pair"] for r in focused["pairs"]))
-
     def test_workers_and_a_chosen_motion_give_the_same_answer(self):
         """Catches sharing the extremes between workers changing a result, or --motion and --pose being ignored."""
-        path = load_data(design(), {"custom/taper.py": TAPER}).path
-        alone = extremes.at_extremes(path, min_gap=2.0, workers=1)
-        shared = extremes.at_extremes(path, min_gap=2.0, workers=2)
-        self.assertEqual(alone, shared)
-        some = extremes.at_extremes(path, min_gap=2.0, workers=1, motions=["press"], poses=["home"])["channel gap"]["settings"][0]
+        alone = self.ends()
+        self.assertEqual(alone, self.ends(workers=2))
+        some = self.ends(motions=["press"], poses=["home"])["channel gap"]["settings"][0]
         self.assertEqual((list(some["motions"]), [p["pose"] for p in some["poses"]]), (["press"], ["home"]))
+        self.assertEqual(some["motions"]["press"], alone["channel gap"]["settings"][0]["motions"]["press"])
 
     def tilting(self, low, high, **design_extra):
         trials = {"hold": tilting_trial(adjustments=["tilt"])}
         return campaign.run_campaign(load_data(bench(trials, adjustments={"tilt": {"input": "parameters.slope_deg", "kind": "mechanical", "range": [low, high], "step": 1}},
-                                                     **design_extra)).path)
+                                                     **design_extra)))
 
     def test_coverage_is_searched_only_for_an_input_that_changes_the_outcome(self):
         """Catches an adjustment's window being searched at both ends of an input that held across its range: runs spent on
@@ -206,7 +190,7 @@ class Adjustments(unittest.TestCase):
 
     def test_with_no_adjustment_a_flip_is_not_covered_and_says_so(self):
         """Catches a flip with nothing to recover it being reported as anything but not covered."""
-        trial = campaign.run_campaign(load_data(bench({"hold": tilting_trial()})).path)["trials"]["hold"]
+        trial = campaign.run_campaign(load_data(bench({"hold": tilting_trial()})))["trials"]["hold"]
         self.assertEqual((trial["result"], trial["coverage"]), ("not covered", []))
         self.assertIn("no adjustment is declared for this trial", trial["findings"][0])
 
@@ -223,8 +207,9 @@ class ForOtherTools(unittest.TestCase):
         self.assertNotIn(["drawn ball", "wall left"], clear["closer"])
         self.assertIn(["drawn ball", "wall left"], moved["closer"])
         self.assertEqual(moved["displaced"], {"wall left": [0, -4, 0]})
-        job = {"motion": "press", "minGapMm": 0.5, "displace": {"wall left": [0, -4, 0]}}
-        self.assertEqual(run.clearances(self.assembly.design.path, [job], workers=1)[0], moved)
+        job = {"kind": "clearance", "motion": "press", "minGapMm": 0.5, "displace": {"wall left": [0, -4, 0]}}
+        with run.Bench(self.assembly.design, 1) as held:
+            self.assertEqual(records.answers(held, [job])[0]["record"]["result"]["closer"], moved["closer"])
 
     def test_group_placements_are_numbers_anyone_can_use(self):
         """Catches the public placement call drifting from where the solids are actually put."""

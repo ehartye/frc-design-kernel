@@ -6,11 +6,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import frc_design_kernel as kernel
 from frc_design_kernel import DesignError
 from frc_design_kernel.cli import main
-from frc_design_kernel.measure import approach, attachment, clearance, compression, mass, run, summary
+from frc_design_kernel.measure import approach, attachment, clearance, compression, mass, records, run
 
 from .helpers import load_data
 
@@ -163,20 +164,26 @@ class Pressing(unittest.TestCase):
 
 
 class Sharing(unittest.TestCase):
+    JOBS = [{"kind": "clearance", "motion": "press", "minGapMm": 1.0, "nearMm": 1e6, "contacts": []},
+            {"kind": "clearance", "motion": "lift off", "minGapMm": 1.0, "nearMm": 1e6, "absent": ["loose"]},
+            {"kind": "clearance", "motion": "press", "minGapMm": 1.0, "nearMm": 1e6, "id": "press-declared"}]
+
+    def answers(self, design, workers):
+        with run.Bench(design, workers) as bench:
+            return [entry["record"] for entry in records.answers(bench, self.JOBS)]
+
     def test_any_worker_count_gives_the_same_result(self):
         """Catches results that change with the number of workers, or rows lost between processes."""
         assembly = built()
-        source = assembly.design.path
-        jobs = [{"motion": "press", "minGapMm": 1.0}, {"motion": "lift off", "minGapMm": 1.0, "absent": ["loose"]},
-                {"motion": "press", "minGapMm": 1.0, "contacts": summary.contacts_for(assembly.data, "press")}]
-        alone = run.clearances(source, jobs, workers=1)
-        self.assertEqual(alone[0], clearance.along(assembly, "press", 1.0))
-        self.assertEqual(alone[0]["closer"], [["ball", "bracket"]])
-        self.assertEqual((alone[2]["closer"], alone[2]["counts"]["declaredContacts"]), ([], 1))
+        alone = self.answers(assembly.design, 1)
+        self.assertEqual(alone[0]["result"]["pairs"], clearance.along(assembly, "press", 1.0)["pairs"])
+        self.assertEqual(alone[0]["counts"], clearance.along(assembly, "press", 1.0)["counts"])
+        self.assertEqual(alone[0]["result"]["closer"], [["ball", "bracket"]])
+        self.assertEqual((alone[2]["result"]["closer"], alone[2]["counts"]["declaredContacts"]), ([], 1))
         old = run.PAIRS_PER_SHARE
         try:
             run.PAIRS_PER_SHARE = 1     # cut even this small design into one share per worker
-            self.assertEqual(run.clearances(source, jobs, workers=2), alone)
+            self.assertEqual(self.answers(assembly.design, 2), alone)
         finally:
             run.PAIRS_PER_SHARE = old
         self.assertGreaterEqual(run.default_workers(), 1)
@@ -194,19 +201,24 @@ class Quicker(unittest.TestCase):
         self.assertEqual([(m["member"], m["on"]) for m in quick["mounts"]], [("bracket", "post")])
 
     def test_a_fixed_pair_is_measured_once_across_motions_and_gives_the_same_rows(self):
-        """Catches the memory of fixed pairs changing a result, or not being used at all."""
+        """Catches the memory of fixed pairs changing a result, not being used, or outliving the run it belongs to."""
         assembly = built()
-        source = assembly.design.path
-        jobs = [{"motion": "press", "minGapMm": 1.0, "includeStill": True}, {"motion": "lift off", "minGapMm": 1.0, "includeStill": True}]
-        run._built.clear()
-        run._fixed.clear()
-        found = run.clearances(source, jobs, workers=1)
-        self.assertEqual(found[0], clearance.along(assembly, "press", 1.0, include_still=True))
-        self.assertEqual(found[1], clearance.along(assembly, "lift off", 1.0, include_still=True))
-        remembered = len(run._fixed)
-        self.assertGreater(remembered, 0)
-        run.clearances(source, jobs, workers=1)
-        self.assertEqual(len(run._fixed), remembered)       # the second time nothing new had to be measured
+        jobs = [{"kind": "clearance", "motion": name, "minGapMm": 1.0, "includeStill": True, "nearMm": 1e6, "contacts": []} for name in ("press", "lift off")]
+        gaps, real = [], clearance.gap_and_overlap
+
+        def counting(a, b):
+            gaps.append(1)
+            return real(a, b)
+
+        with mock.patch.object(clearance, "gap_and_overlap", counting):
+            alone = [clearance.along(assembly, name, 1.0, include_still=True) for name in ("press", "lift off")]
+            apart = len(gaps)
+            with run.Bench(assembly.design, 1) as bench:
+                for _ in range(2):
+                    gaps.clear()
+                    found = [entry["record"] for entry in records.answers(bench, jobs)]
+                    self.assertTrue(0 < len(gaps) < apart, (len(gaps), apart))      # shared across the motions, not across askings
+        self.assertEqual([held["result"]["pairs"] for held in found], [one["pairs"] for one in alone])
 
 
 class Command(unittest.TestCase):
@@ -226,7 +238,7 @@ class Command(unittest.TestCase):
             "clearance.motion.press", "clearance.motion.lift-off", *(f"{kind}.{at}" for kind in ("clearance", "attachment", "mass")
                                                                     for at in ("drawn", "pose.home", "pose.lifted")))))
         press = found["clearance.motion.press.json"]
-        self.assertEqual((press["schema"], press["generator"]["library"]), ("frc-design-kernel/measurement-job@1", "frc-design-kernel"))
+        self.assertEqual((press["schema"], press["generator"]["library"]), ("frc-design-kernel/measurement-job@2", "frc-design-kernel"))
         self.assertEqual(press["job"], {"kind": "clearance", "motion": "press", "minGapMm": 1.0, "depth": 9, "includeStill": False, "nearMm": 0.0,
                                         "contacts": "declared", "absent": [], "displace": {}})
         self.assertEqual(press["result"]["declaredContacts"], [["ball", "bracket"]])

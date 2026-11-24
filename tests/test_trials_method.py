@@ -28,14 +28,14 @@ GRIPPY = {"panel": {**PANEL, "friction": {"value": 0.5, "assumed": [0.42, 0.8]}}
 
 
 def campaign_for(trials, files=None, **design):
-    path = load_data(bench(trials, **design), files).path
-    return campaign.run_campaign(path), path
+    loaded = load_data(bench(trials, **design), files)
+    return campaign.run_campaign(loaded), loaded
 
 
 class Method(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.record, cls.path = campaign_for({"hold": hold_trial()}, materials=GRIPPY)
+        cls.record, cls.design = campaign_for({"hold": hold_trial()}, materials=GRIPPY)
         cls.trial = cls.record["trials"]["hold"]
 
     def test_a_complete_trial_that_holds_across_its_ranges_is_passed(self):
@@ -101,14 +101,14 @@ class Method(unittest.TestCase):
 
     def test_the_same_campaign_gives_the_same_record(self):
         """Catches anything that makes two campaigns of one source differ, including sharing runs between workers."""
-        self.assertEqual(campaign.run_campaign(self.path), self.record)
-        self.assertEqual(campaign.run_campaign(self.path, workers=2), self.record)
+        self.assertEqual(campaign.run_campaign(self.design), self.record)
+        self.assertEqual(campaign.run_campaign(self.design, workers=2), self.record)
         self.assertEqual(json.loads(json.dumps(self.record)), self.record)
 
     def test_the_record_says_what_ran_what_it_assumed_and_what_it_saw(self):
         """Catches a record a second engine could not pick up: no engine stamp, no assumptions, no sources, no section, no trace."""
         trial = self.trial
-        self.assertEqual((self.record["schema"], trial["engine"]["name"], bool(trial["engine"]["version"])), ("frc-design-kernel/trial-campaign@2", "planar", True))
+        self.assertEqual((self.record["schema"], trial["engine"]["name"], bool(trial["engine"]["version"])), ("frc-design-kernel/trial-campaign@3", "planar", True))
         self.assertEqual([row["id"] for row in trial["assumptions"]["stated"]], ["dry-surfaces"])
         self.assertEqual([row["id"] for row in trial["assumptions"]["engine"]][:4], ["in-plane", "single-piece", "round-piece", "rigid-surfaces"])
         sources = {row["path"]: row["source"] for row in trial["inputs"]}
@@ -179,15 +179,15 @@ class Sensitivity(unittest.TestCase):
 class Cost(unittest.TestCase):
     def test_the_cost_is_counted_before_anything_runs_and_can_be_capped(self):
         """Catches a campaign that starts without saying what it may cost, or ignores the caller's cap."""
-        path = load_data(bench({"hold": hold_trial()}, materials=GRIPPY)).path
+        loaded = load_data(bench({"hold": hold_trial()}, materials=GRIPPY))
         told = []
-        found = campaign.run_campaign(path, announce=told.append)
+        found = campaign.run_campaign(loaded, announce=told.append)
         self.assertEqual(told, [{"runs": 11, "steps": 120000, "aboutSeconds": 0.6, "trials": {"hold": {"runs": 11, "steps": 120000, "aboutSeconds": 0.6}}}])
         self.assertEqual((found["cost"]["runsAtMost"], found["cost"]["runs"]), (11, 5))
         self.assertLess(found["cost"]["stepsRun"], found["cost"]["stepsAtMost"])
         told.clear()
         with self.assertRaisesRegex(DesignError, "needs up to 120000 steps in up to 11 runs, over the cap of 50000"):
-            campaign.run_campaign(path, max_steps=50000, announce=told.append)
+            campaign.run_campaign(loaded, max_steps=50000, announce=told.append)
         self.assertEqual(len(told), 1)      # the cost was still stated before the refusal
 
 

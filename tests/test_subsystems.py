@@ -4,9 +4,7 @@ The example is split into three subsystem files by group. Every test compares th
 as one file, or refuses a split that defines a name twice, so a merge that loses, doubles or reorders what is
 measured shows up as a difference.
 """
-import contextlib
 import copy
-import io
 import json
 import shutil
 import tempfile
@@ -16,12 +14,11 @@ from pathlib import Path
 from frc_design_kernel.builder.assembly import build
 from frc_design_kernel.cli import main
 from frc_design_kernel.errors import DesignError
-from frc_design_kernel.measure import jobs as jobs_kinds, records, summary
+from frc_design_kernel.measure import summary
 from frc_design_kernel.source import schema
 from frc_design_kernel.source.load import load
-from frc_design_kernel.status import status
 
-from .helpers import EXAMPLE
+from .helpers import EXAMPLE, job_files, recorded
 from .test_source import keywords_in
 
 WHOLE = ("schema", "name", "units", "frame", "parameters", "custom", "fixtures", "battery", "pieces", "materials", "motors", "trials")
@@ -90,25 +87,37 @@ def solid_entry(files, file, name):
     return next(entry for entry in files[file]["solids"] if entry["name"] == name)
 
 
-def identities(assembly):
-    """Every job identity the library keys its records to: the inputs and used block of each job the measure command
-    records (clearance along each motion and at each pose, attachment and mass)."""
-    jobs = summary.design_jobs(assembly.data, 1.0, 1.0)
-    return {name: jobs_kinds.drawn_on(assembly, job) for name, job in records.requested(assembly.data, jobs)}
+def measured(path):
+    """Every file the measure command's jobs write for a design: clearance along each motion and at each pose, attachment, mass."""
+    design = load(path)
+    with tempfile.TemporaryDirectory() as out:
+        recorded(design, summary.design_jobs(design.data, 1.0, 1.0, near=5.0), out)
+        return job_files(out)
 
 
 class Merge(unittest.TestCase):
-    def test_split_example_gives_the_same_identities(self):
-        """Catches a merge that changes what is measured: every job identity of the split example equals the one-file example's."""
-        whole, parts = build(load(EXAMPLE)), build(load(split_example()))
-        self.assertEqual(sorted(parts.solids), sorted(whole.solids))
-        self.assertEqual(identities(parts), identities(whole))
+    @classmethod
+    def setUpClass(cls):
+        cls.whole = measured(EXAMPLE)
 
-    def test_identities_can_differ(self):
+    def test_split_example_gives_the_same_records(self):
+        """Catches a merge that changes what is measured: every record of the split example equals the one-file example's."""
+        self.assertEqual(sorted(build(load(split_example())).solids), sorted(build(load(EXAMPLE)).solids))
+        self.assertEqual(measured(split_example()), self.whole)
+
+    def test_moving_an_entry_to_another_file_gives_the_same_records(self):
+        """Catches a record that changes only because an entry moved to another subsystem file."""
+        def move(top, files):
+            plate = solid_entry(files, LAST, "carriage plate")
+            files[LAST]["solids"].remove(plate)
+            files["subsystems/base.json"]["solids"].insert(0, plate)
+        self.assertEqual(measured(split_example(move)), self.whole)
+
+    def test_control_a_moved_solid_gives_other_records(self):
         """Control: the comparison sees a solid that moved in a subsystem file."""
         def shift(top, files):
             solid_entry(files, LAST, "carriage plate")["shape"]["fromMm"][0] = "=post_x + 25"
-        self.assertNotEqual(identities(build(load(split_example(shift)))), identities(build(load(EXAMPLE))))
+        self.assertNotEqual(measured(split_example(shift)), self.whole)
 
     def test_parameters_and_each_rows_come_from_the_top_file(self):
         """Catches a subsystem file worked out without the top file's parameters, or a changed parameter not reaching it."""
@@ -116,12 +125,9 @@ class Merge(unittest.TestCase):
         post = next(s for s in design.data["solids"] if s["name"] == "post right")
         self.assertEqual(post["shape"]["fromMm"], [-120, -100, 8])
 
-    def test_raw_holds_every_file(self):
-        """Catches a design whose raw source misses the subsystem files, so a record could not say which parameters a table used."""
-        design = load(split_example())
-        self.assertIn("lift", design.raw["motions"])
-        self.assertEqual(len(design.raw["solids"]), len(example()["solids"]))
-        self.assertEqual([path.name for path in design.files], ["design.json", "base.json", "drive.json", "carriage.json"])
+    def test_the_design_lists_every_file_read(self):
+        """Catches a design that does not say which files it was read from."""
+        self.assertEqual([path.name for path in load(split_example()).files], ["design.json", "base.json", "drive.json", "carriage.json"])
 
     def test_source_hash_covers_every_file(self):
         """Catches a source hash that stays the same when a subsystem file changes."""
@@ -212,26 +218,6 @@ class Schema(unittest.TestCase):
         self.assertEqual(set(sections), {"groups", "solids", "mounts", "contacts", "drives", "motions", "poses", "adjustments", "interactions", "extraMass"})
         for key, value in sections.items():
             self.assertEqual(value, {"$ref": f"design.schema.json#/properties/{key}"}, key)
-
-
-class Status(unittest.TestCase):
-    def test_moving_a_solid_to_another_file_leaves_every_record_current(self):
-        """Catches a record that goes stale only because an entry moved to another subsystem file; the control moves the solid itself."""
-        top, files = split(example())
-        source = written(top, files)
-        out = source.parent / "out"
-        with contextlib.redirect_stdout(io.StringIO()):
-            main(["measure", str(source), "--out", str(out), "--motion", "lift", "--pose", "raised", "--workers", "1"])
-        plate = solid_entry(files, LAST, "carriage plate")
-        files[LAST]["solids"].remove(plate)
-        files["subsystems/base.json"]["solids"].insert(0, plate)
-        moved = written(top, files)
-        report = status(moved, out)
-        self.assertTrue(report["records"])
-        self.assertEqual([row for row in report["records"] if row["state"] != "current"], [])
-        plate["shape"]["fromMm"][0] = "=post_x + 25"
-        shifted = status(written(top, files), out)
-        self.assertIn("stale", [row["state"] for row in shifted["records"]])
 
 
 if __name__ == "__main__":

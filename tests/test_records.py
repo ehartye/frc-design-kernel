@@ -1,7 +1,7 @@
-"""Every measurement is a job with its own file, written as the job finishes, and carried while it is current.
+"""Every measurement is a job with its own file, measured each time it is asked and written as it finishes.
 
-The design is the small stack of test_measure, with one job of every kind. Each test compares files on disk, so a
-job carried when it should have been measured, or a file written with the wrong content, shows up as a difference.
+The design is the small stack of test_measure, with one job of every kind. A record holds the question, the answer
+and the library version. Nothing reads an earlier file, so no earlier file can change what a run measures or writes.
 """
 import contextlib
 import copy
@@ -16,7 +16,7 @@ from frc_design_kernel import DesignError
 from frc_design_kernel.cli import main
 from frc_design_kernel.measure import approach, attachment, clearance, compression, mass, records, run
 
-from .helpers import load_data
+from .helpers import job_files, load_data, recorded
 from .test_clearance import ARM
 from .test_measure import STACK
 
@@ -42,115 +42,116 @@ def source(change=None):
     data = copy.deepcopy(STACK)
     if change:
         change(data)
-    return load_data(data).path
+    return load_data(data)
 
 
 def move_loose(data):
     next(s for s in data["solids"] if s["name"] == "loose")["shape"] = LOOSE_NEAR
 
 
-def files(folder):
-    """{job id: the job file as data} for every job file in a folder."""
-    return {path.stem: json.loads(path.read_text(encoding="utf-8")) for path in sorted((Path(folder) / records.FOLDER).glob("*.json"))}
-
-
 def raw(folder):
     return {path.name: path.read_bytes() for path in sorted((Path(folder) / records.FOLDER).iterdir())}
 
 
-def results(folder):
-    """Each job file without what says how it was made (checked, generator): what must equal a fresh measurement."""
-    return {name: {k: v for k, v in found.items() if k not in ("checked", "generator")} for name, found in files(folder).items()}
-
-
 @contextlib.contextmanager
 def watched():
-    """Count what is really measured, by kind of question."""
-    seen = {"pairs": 0, "poseGaps": 0, "reach": 0, "indentation": 0, "withdrawn": 0, "attachment": 0, "mass": 0}
+    """Count what is really measured, by kind of question, and name the pairs measured along a motion."""
     real = {"pairs": (clearance, "measure_pair"), "poseGaps": (clearance, "gap_and_overlap"), "reach": (approach, "reach"),
             "indentation": (compression, "indentation"), "withdrawn": (approach, "withdrawn"), "attachment": (attachment, "at_pose"),
             "mass": (mass, "roll_up")}
+    seen = {**dict.fromkeys(real, 0), "names": []}
 
     def counting(key, function):
         def call(*args, **kw):
             seen[key] += 1
+            if key == "pairs":
+                seen["names"].append((args[1], args[2]))
             return function(*args, **kw)
         return call
 
-    run._built.clear()
-    run._fixed.clear()
     with contextlib.ExitStack() as stack:
         for key, (module, name) in real.items():
             stack.enter_context(mock.patch.object(module, name, counting(key, getattr(module, name))))
         yield seen
 
 
-def recorded(path, folder, jobs=JOBS, **options):
-    return records.record(path, jobs, folder, workers=1, **options)
-
-
 class EveryKind(unittest.TestCase):
-    def test_each_kind_is_recorded_with_its_rules_and_then_carried_untouched(self):
-        """Catches a kind of job with no file, no rules or no used block, or a current job measured again or rewritten."""
-        path = source()
+    def test_a_record_holds_the_question_the_answer_and_the_library_version_and_nothing_else(self):
+        """Catches a record that keeps a date, or keeps figures only good for telling later whether something changed."""
         with tempfile.TemporaryDirectory() as out:
-            first = recorded(path, out)
-            self.assertEqual([entry["id"] for entry in first], IDS)
-            self.assertEqual({entry["action"] for entry in first}, {"measured"})
-            found = files(out)
-            self.assertEqual(sorted(found), sorted(IDS))
-            for name, job in zip(IDS, JOBS):
-                held = found[name]
-                self.assertEqual((held["schema"], held["id"], held["job"]["kind"]), (records.SCHEMA, name, job["kind"]))
-                self.assertIsInstance(held["inputs"]["rules"], dict, name)
-                self.assertIsInstance(held["inputs"]["solids"], dict, name)
-                self.assertIn("used", held, name)
-                self.assertIn("checked", held, name)
-            self.assertEqual(found["indentation.press.ball.bracket"]["inputs"]["rules"]["maxDepthMm"], 4.0)
-            self.assertEqual(sorted(found["reach.press.ball.bracket"]["inputs"]["solids"]), ["ball", "bracket"])
-            self.assertIn(["bracket", "post"], found["clearance.motion.lift-off.displaced.post"]["result"]["closer"])
+            entries = recorded(source(), JOBS, out)
+            found = job_files(out)
+        self.assertEqual([entry["id"] for entry in entries], IDS)
+        self.assertEqual(sorted(found), sorted(IDS))
+        for name, job, entry in zip(IDS, JOBS, entries):
+            held = found[name]
+            self.assertEqual(set(held) - {"counts"}, {"schema", "generator", "id", "job", "result"}, name)
+            self.assertEqual("counts" in held, job["kind"] == "clearance", name)
+            self.assertEqual((held["schema"], held["id"], held["job"]["kind"]), (records.SCHEMA, name, job["kind"]))
+            self.assertEqual(set(held["generator"]), {"library", "version", "commit"})
+            self.assertEqual((entry["record"], entry["file"]), (held, f"{records.FOLDER}/{name}.json"))
+        self.assertEqual(found["indentation.press.ball.bracket"]["job"]["maxDepthMm"], 4.0)
+        self.assertIn(["bracket", "post"], found["clearance.motion.lift-off.displaced.post"]["result"]["closer"])
+
+    def test_a_second_identical_run_measures_everything_again_and_writes_the_same_bytes(self):
+        """Catches a run that skips a job because its file is there, or the same figures writing a different file."""
+        design = source()
+        with tempfile.TemporaryDirectory() as out:
+            with watched() as first:
+                recorded(design, JOBS, out)
             before = raw(out)
-            with watched() as seen:
-                again = recorded(path, out)
-            self.assertEqual({entry["action"] for entry in again}, {"carried"})
-            self.assertEqual(set(seen.values()), {0})
+            with watched() as second:
+                recorded(design, JOBS, out)
             self.assertEqual(raw(out), before)
+        self.assertEqual(first, second)
+        self.assertTrue(all(second.values()), second)
 
-    def test_a_squeeze_limit_change_measures_only_the_squeeze_job(self):
-        """Catches a rule of one job making every job stale, or the changed rule not measuring that job again."""
-        path = source()
+    def test_two_askings_of_one_bench_both_measure(self):
+        """Catches a bench that answers a second asking from what it remembers of the first."""
+        counts = []
+        with tempfile.TemporaryDirectory() as out, run.Bench(source(), 1) as bench:
+            for _ in range(2):
+                with watched() as seen:
+                    records.record(bench, JOBS, out)
+                counts.append(seen)
+        self.assertEqual(counts[0], counts[1])
+
+    def test_files_edited_or_deleted_change_no_answer(self):
+        """Catches an answer taken from an earlier file: lying, broken, in another format or gone, each is written afresh."""
+        design = source(move_loose)
         with tempfile.TemporaryDirectory() as out:
-            recorded(path, out)
+            recorded(design, JOBS, out)
             before = raw(out)
-            tighter = [dict(job, maxDepthMm=3.5) if job["kind"] == "indentation" else job for job in JOBS]
-            with watched() as seen:
-                entries = recorded(path, out, tighter)
-            after = raw(out)
-            held = files(out)["indentation.press.ball.bracket"]
-        self.assertEqual([e["id"] for e in entries if e["action"] == "measured"], ["indentation.press.ball.bracket"])
-        self.assertEqual({key: n for key, n in seen.items() if n}, {"indentation": 1})
-        self.assertEqual({name for name in after if after[name] != before[name]}, {"indentation.press.ball.bracket.json"})
-        self.assertEqual((held["inputs"]["rules"]["maxDepthMm"], held["job"]["maxDepthMm"]), (3.5, 3.5))
+            folder = Path(out) / records.FOLDER
+            for path in folder.glob("clearance.*.json"):
+                lying = json.loads(path.read_text(encoding="utf-8"))
+                lying["result"].update(closer=[], pairs=[])
+                path.write_text(json.dumps(lying), encoding="utf-8")
+            (folder / "mass.pose.lifted.json").write_text('{"schema": "another", "result": {}}', encoding="utf-8")
+            (folder / "attachment.pose.home.json").write_text("not json", encoding="utf-8")
+            (folder / "withdrawal.lift-off.json").unlink()
+            recorded(design, JOBS, out)
+            self.assertEqual(raw(out), before)
+            self.assertIn(["bracket", "loose"], job_files(out)["clearance.motion.lift-off"]["result"]["closer"])
 
-    def test_a_moved_solid_measures_only_the_jobs_that_use_it(self):
-        """Catches a job whose solids did not change measured again, or one whose solid moved carried."""
+    def test_control_a_moved_solid_gives_another_answer(self):
+        """Control: shows the comparison of files above can fail, by measuring a design whose block really moved."""
         with tempfile.TemporaryDirectory() as out:
-            recorded(source(), out)
-            entries = recorded(source(move_loose), out)
-        measured = sorted(e["id"] for e in entries if e["action"] == "measured")
-        self.assertEqual(measured, ["attachment.pose.home", "clearance.motion.lift-off", "clearance.motion.press", "clearance.pose.home",
-                                    "withdrawal.lift-off"])     # the loose block weighs nothing, is not in the reach or squeeze, and is absent from the control
+            recorded(source(), JOBS, out)
+            before = raw(out)
+            recorded(source(move_loose), JOBS, out)
+            self.assertNotEqual(raw(out), before)
 
 
 class StoredRows(unittest.TestCase):
     def test_no_file_holds_a_row_for_a_far_apart_pair(self):
         """Catches the records keeping a row for every pair that was measured: the bulk the receipts carried."""
         with tempfile.TemporaryDirectory() as out, tempfile.TemporaryDirectory() as arm:
-            recorded(source(), out)
-            recorded(load_data(copy.deepcopy(ARM)).path, arm, [SWING])
-            found = [held for held in [*files(out).values(), *files(arm).values()] if held["job"]["kind"] == "clearance"]
+            recorded(source(), JOBS, out)
+            recorded(load_data(copy.deepcopy(ARM)), [SWING], arm)
+            found = [held for held in [*job_files(out).values(), *job_files(arm).values()] if held["job"]["kind"] == "clearance"]
         for held in found:
-            near, gap = held["inputs"]["rules"].get("nearMm", 0.0), held["result"]["minGapMm"]
+            near, gap = held["job"].get("nearMm", 0.0), held["result"]["minGapMm"]
             for row in held["result"]["pairs"]:
                 self.assertTrue(row["closerThanMinGap"] or not row["proven"] or row["lowerBoundMm"] < gap + near, (held["id"], row))
         swing = found[-1]
@@ -159,8 +160,8 @@ class StoredRows(unittest.TestCase):
     def test_control_a_wider_near_band_keeps_the_passing_rows(self):
         """Control: shows passing rows do reach a file when the caller asks for them, so the check above can fail."""
         with tempfile.TemporaryDirectory() as out:
-            recorded(load_data(copy.deepcopy(ARM)).path, out, [dict(SWING, nearMm=10.0)])
-            held = files(out)["clearance.motion.swing"]
+            recorded(load_data(copy.deepcopy(ARM)), [dict(SWING, nearMm=10.0)], out)
+            held = job_files(out)["clearance.motion.swing"]
         self.assertEqual([row["pair"] for row in held["result"]["pairs"]], [["arm", "post"]])      # 4.9 mm away; the others are proven at least 11 mm away
         self.assertFalse(held["result"]["pairs"][0]["closerThanMinGap"])
         self.assertEqual(held["result"]["closest"]["pair"], ["arm", "post"])
@@ -173,9 +174,9 @@ class Stopped(unittest.TestCase):
             code = main(["measure", *map(str, args), "--min-gap", "3", "--touch-gap", "1", "--workers", "1"])
         return code, text.getvalue().splitlines()
 
-    def test_a_stopped_run_keeps_the_jobs_it_finished_and_the_next_carry_measures_the_rest(self):
-        """Catches a stopped run losing finished work, leaving a half-written file, or a carry that measures it all again."""
-        path, stop_after = source(), 4
+    def test_a_stopped_run_keeps_the_jobs_it_finished_and_the_next_measures_all_of_them(self):
+        """Catches a stopped run losing finished work or leaving a half-written file, or the next run skipping what it finds."""
+        path, stop_after = source().path, 4
         real, written = records.write_record, []
 
         def stopping(target, record):
@@ -191,59 +192,61 @@ class Stopped(unittest.TestCase):
             self.assertEqual(len(kept), stop_after)                 # nothing else: no partial or temporary file
             self.assertTrue(all(json.loads(text) for text in kept.values()))
             with watched() as seen:
-                code, lines = self.run_measure(path, "--out", out, "--carry")
-            total = len(files(out))
-        self.assertEqual(code, 0)
-        self.assertEqual(total, 11)          # two motions; clearance, attachment and mass as drawn and at two poses
-        self.assertIn(f"Wrote {total - stop_after} job records to {Path(out) / records.FOLDER}; carried {stop_after} that were current.", lines)
-        self.assertEqual((seen["attachment"], seen["mass"]), (2, 3))     # the attachment as drawn was among the four kept
+                code, lines = self.run_measure(path, "--out", out)
+            total = len(job_files(out))
+        self.assertEqual((code, total), (0, 11))          # two motions; clearance, attachment and mass as drawn and at two poses
+        self.assertEqual(lines[-1], f"Wrote 11 job records to {Path(out) / records.FOLDER}.")
+        self.assertEqual((seen["attachment"], seen["mass"]), (3, 3))
 
-    def test_measuring_fresh_equals_carrying_after_a_one_solid_move(self):
-        """Catches carried results that differ from a fresh measurement of the design as it is now, job by job."""
-        moved = source(move_loose)
-        with tempfile.TemporaryDirectory() as carried, tempfile.TemporaryDirectory() as fresh:
-            recorded(source(), carried)
-            recorded(moved, carried)
-            recorded(moved, fresh, carry=False)
-            self.assertEqual(results(carried), results(fresh))
-            self.assertIn(["bracket", "loose"], files(fresh)["clearance.motion.lift-off"]["result"]["closer"])
+    def test_a_caller_stops_a_run_by_raising_in_its_report(self):
+        """Catches a caller that fails fast on the first bad job still waiting for every other job, or losing the one it saw."""
+        class Enough(Exception):
+            pass
 
-    def test_control_a_record_that_lies_about_a_moved_solid_gives_a_different_answer(self):
-        """Control: shows the comparison with a fresh measurement does catch a pair carried when it had changed."""
-        moved = source(move_loose)
-        with tempfile.TemporaryDirectory() as carried, tempfile.TemporaryDirectory() as fresh:
-            recorded(source(), carried)
-            recorded(moved, fresh, carry=False)
-            target = Path(carried) / records.FOLDER / "clearance.motion.lift-off.json"
-            lying = json.loads(target.read_text(encoding="utf-8"))
-            lying["inputs"]["solids"]["loose"] = files(fresh)["clearance.motion.lift-off"]["inputs"]["solids"]["loose"]
-            target.write_text(json.dumps(lying), encoding="utf-8")
-            recorded(moved, carried)
-            self.assertNotEqual(results(carried)["clearance.motion.lift-off"], results(fresh)["clearance.motion.lift-off"])
+        def stop(entry):
+            if entry["record"]["result"]["closer"]:
+                raise Enough(entry["id"])
+
+        with tempfile.TemporaryDirectory() as out, watched() as seen:
+            with self.assertRaisesRegex(Enough, "clearance.motion.press"):
+                recorded(source(lambda d: d.update(contacts=[])), JOBS, out, report=stop)      # nothing excuses the press
+            self.assertEqual(sorted(job_files(out)), ["clearance.motion.press"])
+        self.assertEqual((seen["attachment"], seen["mass"], seen["reach"]), (0, 0, 0))
 
 
 class Requests(unittest.TestCase):
     def test_workers_give_the_same_files(self):
         """Catches files that change with the worker count, or a job written before all its shares came back."""
-        path = source()
-        old = run.PAIRS_PER_SHARE
+        design, old = source(), run.PAIRS_PER_SHARE
         with tempfile.TemporaryDirectory() as alone, tempfile.TemporaryDirectory() as shared:
-            recorded(path, alone)
+            recorded(design, JOBS, alone)
             try:
                 run.PAIRS_PER_SHARE = 1
-                records.record(path, JOBS, shared, workers=2)
+                recorded(design, JOBS, shared, workers=2)
             finally:
                 run.PAIRS_PER_SHARE = old
-            self.assertEqual(results(alone), results(shared))
+            self.assertEqual(raw(alone), raw(shared))
+
+    def test_one_job_writes_one_file_and_leaves_the_rest(self):
+        """Catches asking for one job measuring others, or removing the files of jobs not asked for."""
+        design = source()
+        with tempfile.TemporaryDirectory() as out:
+            recorded(design, JOBS, out)
+            before = raw(out)
+            with watched() as seen:
+                recorded(design, [dict(JOBS[5], maxDepthMm=3.5)], out)
+            after = raw(out)
+        self.assertEqual({key: n for key, n in seen.items() if n}, {"indentation": 1})
+        self.assertEqual({name for name in before if after[name] != before[name]}, {"indentation.press.ball.bracket.json"})
 
     def test_ids_are_named_or_given_and_never_shared(self):
         """Catches two jobs writing one file, a given id ignored, or a job that names nothing real accepted."""
-        path = source()
+        design = source()
         twice = [JOBS[0], dict(JOBS[0], minGapMm=1.0)]
         with tempfile.TemporaryDirectory() as out:
             with self.assertRaisesRegex(DesignError, r'jobs 1 and 2 have the same id "clearance.motion.press"'):
-                recorded(path, out, twice)
-            entries = recorded(path, out, [twice[0], dict(twice[1], id="press-tight")])
+                recorded(design, twice, out)
+            entries = recorded(design, [twice[0], dict(twice[1], id="press-tight")], out)
             self.assertEqual([e["id"] for e in entries], ["clearance.motion.press", "press-tight"])
             for bad, message in (({"kind": "sideways", "motion": "press"}, 'job 1: there is no job kind "sideways"'),
                                  ({"kind": "clearance", "motion": "pres"}, 'job 1: there is no motion named "pres"'),
@@ -251,28 +254,15 @@ class Requests(unittest.TestCase):
                                  ({"kind": "mass", "pose": None, "depth": 3}, 'job 1: a mass job has no field "depth"'),
                                  ({"kind": "mass", "id": "Mass Here"}, "job 1: an id is lower-case letters, digits")):
                 with self.assertRaisesRegex(DesignError, message):
-                    recorded(path, out, [bad])
+                    recorded(design, [bad], out)
 
-    def test_a_file_in_another_format_is_measured_over(self):
-        """Catches a carry that crashes on, or trusts, a file at a job's place that is not a job record of this format."""
-        with tempfile.TemporaryDirectory() as out:
-            target = Path(out) / records.FOLDER / "mass.pose.lifted.json"
-            target.parent.mkdir()
-            target.write_text('{"schema": "frc-design-kernel/measurement-job@0", "result": {}}', encoding="utf-8")
-            entry, = recorded(source(), out, [JOBS[8]])
-            self.assertEqual((entry["action"], files(out)["mass.pose.lifted"]["schema"]), ("measured", records.SCHEMA))
-
-    def test_check_says_which_requested_jobs_are_current_stale_or_missing(self):
-        """Catches a judging tool told a record is current when its own rule changed, or when no record exists."""
-        path = source()
-        with tempfile.TemporaryDirectory() as out:
-            recorded(path, out, JOBS[:6])
-            asked = [*JOBS[:5], dict(JOBS[5], maxDepthMm=3.0), JOBS[6]]
-            rows = {row["record"]: row for row in records.check(path, asked, out)}
-        self.assertEqual({name: row["state"] for name, row in rows.items()},
-                         {**dict.fromkeys(IDS[:5], "current"), IDS[5]: "stale", IDS[6]: "missing"})
-        self.assertEqual(rows[IDS[5]]["changes"], ["the job's maxDepthMm changed: 4.0 to 3.0"])
-        self.assertEqual(rows[IDS[6]]["file"], f"{records.FOLDER}/{IDS[6]}.json")
+    def test_a_bad_job_stops_the_run_before_anything_is_measured(self):
+        """Catches a run that measures for minutes before it finds the last job names a solid that is not there."""
+        bad = {"kind": "reach", "motion": "press", "pair": ["ball", "pots"], "withinMm": 1.0}
+        with tempfile.TemporaryDirectory() as out, watched() as seen:
+            with self.assertRaisesRegex(DesignError, 'job "reach.press.ball.pots": names the solid "pots", which is not in the design'):
+                recorded(source(), [*JOBS, bad], out)
+        self.assertFalse(any(seen.values()), seen)
 
 
 if __name__ == "__main__":
