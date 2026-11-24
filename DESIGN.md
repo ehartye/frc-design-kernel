@@ -1105,8 +1105,9 @@ it. It does not say whether a piece fits anything.
 **The input** is a design source's own `pieces` block: `{"pieces": {name: {"shape": {...}, ...}}}`. Only `shape` is
 read. `massKg`, `note` and any other field are ignored, so a block copied from a design source, or written by another
 tool, is read as it is. Each shape is checked against the schema's shape definition, then its `"=..."` texts are
-worked out with no parameters (an expression that names a parameter is an error for that shape), then it is built
-as one solid. A `custom` shape is refused, because it needs a design folder and its code (section 6).
+worked out with no parameters, then it is built as one solid. An expression that names a parameter is an error for
+that shape (`the expression "=tall" uses "tall", but piece-geometry has no parameters. Fix: Write the number
+itself`). A `custom` shape is refused, because it needs a design folder and its code (section 6).
 
 **The record** is always written, even when some shapes fail:
 
@@ -1131,6 +1132,7 @@ as one solid. A `custom` shape is refused, because it needs a design folder and 
 | `identity` | The built solid's kind, volume and bounds. A tool that keeps a record compares these with a fresh run to tell whether the shape changed. It is figures, never a fingerprint of the file, so rewriting the file or a note changes nothing. |
 | `boundsMm`, `volumeMm3`, `centreMm` | The box fitted to the true surfaces, as `[[low x, y, z], [high x, y, z]]`; the volume; the centre of volume. Positions to 0.0001 mm, volume to 0.001 mm³. |
 | `symmetry` | `sphere`, `body of revolution` with its axis, `prismatic` or `general`, as in screen facts (12.6a). |
+| `axis` (in `symmetry` and `bore`) | A unit direction, written one way: its first component that is not zero (larger than 10⁻⁹) is positive. A pipe drawn from its top end down and one drawn from its bottom up give the same record. |
 | `hullMm`, `hullToleranceMm` | The corners of a convex hull that holds the whole solid, and how far it was grown (below). |
 | `bore` | A hole straight through, by the one rule below, or `null`. |
 
@@ -1139,7 +1141,9 @@ record: there is no design source to compare it with.
 
 **Exit codes.** 0 when every shape was measured. 1 when any shape failed: the file is still written, and each failed
 shape gets one line on stderr, `Error: where: problem. Fix: fix`. 1 also when the file is missing, is not JSON or has
-no `pieces` block; then nothing is written. 2 for a usage error, such as no `--out`.
+no `pieces` block, or when `--out` cannot be written (a folder, or a place with no write access); then nothing is
+written. 2 for a usage error: no `--out`, or a `--linear-mm` or `--angular-rad` that is not a finite number greater
+than 0 (`hull()` itself refuses such a value with a DesignError).
 
 **The hull holds the true solid** (`kernel/hull.py`: `hull(shape, linear_mm=0.2, angular_rad=0.3)`, and
 `planes(points)` for the faces of the hull of any points).
@@ -1147,14 +1151,17 @@ no `pieces` block; then nothing is written. 2 for a usage error, such as no `--o
 - The solid is meshed into triangles at the linear deflection `--linear-mm` and the angular deflection
   `--angular-rad`. The mesh's corners lie on the true surface, but its flat triangles cut inside a round one, so the
   hull of the corners alone sits a little inside the solid: up to 0.15 mm inside a ball 120 mm across.
-- So each face of that hull, and each face of the box fitted to the true surfaces, is pushed outward by t. The
-  corners where the pushed faces meet are reported, each coordinate rounded away from the middle to 0.001 mm.
-- t is the larger of `--linear-mm` and 4/3 of the largest gap between the middle of a triangle edge and the true
-  surface, plus 0.002 mm for the rounding and the arithmetic, rounded up to 0.001 mm. Over a small triangle the gap
-  is close to a quadratic (a curve shaped like a parabola) that is zero at the triangle's corners, and such a curve
-  rises at most 4/3 of its largest edge-middle value. The gap has to be measured, because the mesher can overshoot
-  its deflection on a round face meshed as a grid. On a ball 50 mm across at 0.2 mm the gap reaches 0.40 mm: a
-  hull grown by 0.2 mm alone leaves 0.05 mm of the ball outside. There t is 0.542 mm.
+- So each face of that hull, each face of the box fitted to the true surfaces, and the trimming planes described
+  below are pushed outward by t. The corners where the pushed planes meet are reported, each coordinate rounded away
+  from the middle to 0.001 mm.
+- t is 4/3 of the largest gap between the middle of a triangle edge and the true surface, plus 0.002 mm for the
+  rounding and the arithmetic, rounded up to 0.001 mm. Over a small triangle the gap is close to a quadratic (a curve
+  shaped like a parabola) that is zero at the triangle's corners, and such a curve rises at most 4/3 of its largest
+  edge-middle value. A solid with any round face takes at least `--linear-mm`, the deflection the mesher is asked
+  to keep to. The gap has to be measured as well, because the mesher can overshoot its deflection on a round face
+  meshed as a grid. On a ball 50 mm across at 0.2 mm the gap reaches 0.40 mm: a hull grown by 0.2 mm alone leaves
+  0.05 mm of the ball outside. There t is 0.542 mm. A solid with only flat faces is meshed exactly, so its gap is 0
+  and t is 0.002 mm.
 - Each edge middle is projected onto its face's surface. Near the face's edge, the surface's nearest point can lie
   past that edge, where it is not part of the solid: at a frustum's narrow rim, or a ball with a slice cut off. The
   projection then finds no point, or only one on the far side of the surface. Such a middle is measured to the
@@ -1163,26 +1170,36 @@ no `pieces` block; then nothing is written. 2 for a usage error, such as no `--o
   exact and near-flat clusters of points cannot tangle it. Points that all lie on one line or in one plane enclose
   no volume and are refused.
 
-**What "within the tolerance" means.** t is the most the hull stands clear of a flat face of the solid, and the most
-its extent along x, y or z exceeds the solid's on each side. Where pushed faces meet at a slant over a round surface,
-a corner can stand a little more than t clear: by a factor of one over the cosine of half the angle between the two
-faces. On a box, each hull corner is within t of the box's corner along every axis, which is t × √3 in a straight
-line.
+**Thin rims are trimmed.** Where two faces of the ungrown hull meet at a small angle, as at the rim of a flat cone
+or a lens, pushing both out moves the line where they meet far outward: by t over the sine of half the angle between
+them. A cone 200 mm across and 2 mm high would reach 20 mm past its rim at t = 0.2 mm. So at every edge and corner
+of the ungrown hull where the faces turn by more than 15 degrees, trimming planes are added whose directions fill the
+turn, none more than 15 degrees from the next or from a face. Each plane touches that corner and is pushed out by t
+like the faces. That cone now reaches 0.207 mm past its rim.
+
+**What "within the tolerance" means.** The guarantee: the hull holds the whole solid, and no point of it lies more
+than t / cos 15° (1.036 t) plus 0.002 mm outside the hull of the mesh's corners. That hull lies inside the solid's own
+convex hull, so for a convex solid no hull corner is farther than that from the solid; for a solid with a hollow or
+a notch, the bound is to its convex hull. At t = 0.202 mm the bound is 0.211 mm. The hull also stands at most t
+clear of a flat face of the solid, and its extent along x, y or z exceeds the solid's by exactly t on each side. On
+a box, each hull corner is within t of the box's corner along every axis.
 
 **The bore, by one rule.** A shape that classifies as a body of revolution has a bore straight through it when its
 axis line does not meet the solid. The line is drawn through the centre of volume, which lies on the axis of every
 body of revolution, and runs well past the bounding box. The diameter is twice the line's smallest distance from the
 solid. The centre is the centre of volume, the point of the axis nearest it. This covers a ring (2 × (major radius −
 minor radius)), a round tube (outer diameter − 2 × wall) and a disc with a hole cut through it. A solid bar, a cone,
-a ball, a box and a cup closed at one end give `null`.
+a ball, a box and a cup closed at one end give `null`. Only a hole on the axis of a body of revolution is reported:
+a disc with a hole drilled off its centre is not a body of revolution (`general`), and its bore is `null`.
 
 **Limits.**
 
 - Where a slanted cut meets a round face, a chord along that edge may be measured to the uncut surface, which is a
   little less than the edge curve's own bulge. The mesher keeps each edge's chords within `--linear-mm` of the edge,
   and t is never below that, so the hull still holds. A test with a ball cut on a slant checks this.
-- The record is large: a ball 120 mm across has about 3,000 hull corners, and one 240 mm across about 5,000.
-  Pushing the faces out turns each corner of the mesh's hull into a small cluster of corners.
+- The record is large: a ball 120 mm across has about 3,000 hull corners, one 240 mm across about 5,000, and a disc
+  200 mm across about 2,300. Pushing the faces out turns each corner of the mesh's hull into a small cluster of
+  corners, and the trimming planes add more along every sharp edge.
 - One solid per shape, and no mass, inertia or orientation. Whether a piece can be delivered is for the tool that
   reads the record.
 

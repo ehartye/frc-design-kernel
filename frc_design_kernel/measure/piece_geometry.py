@@ -7,8 +7,10 @@ that fails is reported with its error and the rest are still measured. Plain num
 Per shape: its identity (kind, volume and bounds of the built solid, to tell a stale record), bounds, volume, centre,
 symmetry class, a convex hull that contains it (kernel/hull.py) and its through-bore by one rule: a body of
 revolution whose axis line misses the solid has a bore along that axis, as wide as twice the axis's distance from
-the solid, centred where the axis passes nearest the solid's centre.
+the solid, centred where the axis passes nearest the solid's centre. Every axis is written pointing one way: its first
+component that is not zero is positive, so the same piece drawn from either end gives the same record.
 """
+import ast
 import json
 import math
 from pathlib import Path
@@ -22,12 +24,14 @@ from ..kernel import hull, props
 from ..kernel.between import distance
 from ..source import schema
 from ..source.expand import work_out
+from ..source.expressions import CONSTANTS, FUNCTIONS, is_expression
 from ..source.load import not_a_number
 from ..version import generator
 from . import symmetry
 
 SCHEMA = "frc-design-kernel/piece-geometry@1"
 MISSES_MM = 1e-6        # an axis line this far from the solid, or farther, does not meet it
+ZERO = 1e-9             # an axis component this small counts as zero when choosing which way the axis points
 PLACES = 4
 
 
@@ -56,8 +60,33 @@ def built(piece, where):
         raise DesignError(where, 'has no "shape"', 'Add "shape", written as in a design source')
     root, place = schema.load_schema(), schema.step(where, "shape")
     schema.check(piece["shape"], root["$defs"]["shape"], root, place)
+    no_parameters(piece["shape"], place)
     entry = work_out(piece["shape"], {}, place)
     return entry, build_shape(entry, place, no_custom)
+
+
+def no_parameters(value, where):
+    """Refuse an "=..." text that names a parameter: a pieces file has none to give it."""
+    if is_expression(value):
+        try:
+            tree = ast.parse(value[1:].strip(), mode="eval")
+        except SyntaxError:
+            return              # worked out next, which reports the bad arithmetic
+        names = sorted({node.id for node in ast.walk(tree) if isinstance(node, ast.Name)} - set(FUNCTIONS) - set(CONSTANTS))
+        if names:
+            raise DesignError(where, f'the expression "{value}" uses "{names[0]}", but piece-geometry has no parameters', "Write the number itself")
+    elif isinstance(value, list):
+        for i, item in enumerate(value):
+            no_parameters(item, schema.step(where, i))
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            no_parameters(item, schema.step(where, key))
+
+
+def one_way(axis):
+    """The axis turned, if need be, so its first component that is not zero is positive."""
+    first = next((v for v in axis if abs(v) > ZERO), 1.0)
+    return [v + 0.0 if first > 0 else -v + 0.0 for v in axis]
 
 
 def tidy(values):
@@ -85,6 +114,8 @@ def facts(entry, shape, linear_mm, angular_rad):
     bounds, volume, centre = props.bounds(shape), props.volume(shape), props.centre(shape)
     box = [tidy(bounds[:3]), tidy(bounds[3:])]
     found = symmetry.classify(shape, entry["kind"])
+    if "axis" in found:
+        found = {**found, "axis": one_way(found["axis"])}
     grown = hull.hull(shape, linear_mm, angular_rad)
     return {"ok": True, "identity": {"kind": entry["kind"], "volumeMm3": round(volume, 3), "boundsMm": box},
             "boundsMm": box, "volumeMm3": round(volume, 3), "centreMm": tidy(centre), "symmetry": found,

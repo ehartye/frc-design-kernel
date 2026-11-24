@@ -1,6 +1,7 @@
 """The command line. Each command prints plain one-line messages saying what it did."""
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -208,7 +209,11 @@ def piece_geometry(args):
     from .measure import piece_geometry as geometry    # the CAD kernel is needed only from here on
     record = geometry.measure(geometry.read(args.source), args.linear_mm, args.angular_rad)
     out = Path(args.out)
-    write(out.parent, out.name, record)
+    try:
+        write(out.parent, out.name, record)
+    except OSError as problem:
+        raise DesignError(str(out), f"the record cannot be written there ({problem.strerror or problem})",
+                          "Give --out as a file path in a folder you can write to") from None
     failed = 0
     for name, found in record["shapes"].items():
         if not found["ok"]:
@@ -220,6 +225,17 @@ def piece_geometry(args):
               f'grown {found["hullToleranceMm"]:g} mm' + (f'; a through-bore {bore["diameterMm"]:g} mm across.' if bore else "."))
     print(f'Measured {len(record["shapes"]) - failed} of {count(len(record["shapes"]), "shape")}. Wrote {out}.')
     return 1 if failed else 0
+
+
+def above_zero(text):
+    """A finite number greater than 0, for the meshing flags; anything else is a usage error."""
+    try:
+        value = float(text)
+    except ValueError:
+        value = math.nan
+    if not (math.isfinite(value) and value > 0):
+        raise argparse.ArgumentTypeError(f"must be a finite number greater than 0, not {text}")
+    return value
 
 
 def main(argv=None):
@@ -276,8 +292,8 @@ def main(argv=None):
     geometry = commands.add_parser("piece-geometry", help="measure each game piece's shape on its own: bounds, symmetry, hull and bore")
     geometry.add_argument("source", help='a JSON file holding a "pieces" block, as in a design source')
     geometry.add_argument("--out", required=True, help="the JSON file to write the record to")
-    geometry.add_argument("--linear-mm", type=float, default=0.2, help="the mesh's linear deflection for the hull, in mm (default 0.2)")
-    geometry.add_argument("--angular-rad", type=float, default=0.3, help="the mesh's angular deflection for the hull, in radians (default 0.3)")
+    geometry.add_argument("--linear-mm", type=above_zero, default=0.2, help="the mesh's linear deflection for the hull, in mm (default 0.2)")
+    geometry.add_argument("--angular-rad", type=above_zero, default=0.3, help="the mesh's angular deflection for the hull, in radians (default 0.3)")
     geometry.set_defaults(run=piece_geometry)
     args = parser.parse_args(argv)
     if args.command == "try" and not (args.out or args.estimate):

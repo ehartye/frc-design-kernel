@@ -3,24 +3,30 @@
     hull(shape, linear_mm=0.2, angular_rad=0.3) -> {"vertices": [[x, y, z], ...], "toleranceMm": t}
     planes(points) -> [([nx, ny, nz], offset), ...]
 
-hull meshes the shape (linear_mm is the mesher's linear deflection, angular_rad its angular deflection) and takes the
-convex hull of the mesh's corners. Those corners lie on the true surface, but the flat triangles between them cut
-inside a round one, so that hull sits a little inside the solid. Each of its faces, and each face of the box fitted
-to the solid's true surfaces, is therefore pushed outward by t, and the corners where the pushed faces meet are
-reported, each coordinate rounded away from the middle to 0.001 mm. The grown hull contains the true solid.
-toleranceMm is t, the outward push used: the most the hull stands clear of a flat face of the solid, and the most its
-extent along x, y or z exceeds the solid's on each side. Where pushed faces meet at a slant over a round surface, a
-corner can stand a little more than t clear of the solid.
+hull meshes the shape (linear_mm is the mesher's linear deflection, angular_rad its angular deflection; both must be
+finite and above 0) and takes the convex hull of the mesh's corners. Those corners lie on the true surface, but the
+flat triangles between them cut inside a round one, so that hull sits a little inside the solid. Its faces, the faces
+of the box fitted to the solid's true surfaces, and trimming planes at its sharp edges and corners are therefore each
+pushed outward by t. The corners where the pushed planes meet are reported, each coordinate rounded away from the
+middle to 0.001 mm.
+
+What is guaranteed. The grown hull holds the true solid. No point of it lies more than t / cos 15 degrees (1.036 t)
+plus 0.002 mm outside the hull of the mesh's corners, which lies inside the solid's own convex hull; so for a convex
+solid, no hull corner is farther than that from the solid. Pushing faces alone would not give this: where two faces
+meet at a small angle, as at a thin rim, their pushed planes meet far outside (20 mm past a cone 200 mm across and
+2 mm high, at t = 0.2 mm). So at every edge and corner of the ungrown hull where the faces turn by more than 15
+degrees, trimming planes are added whose directions fill the turn, each no more than 15 degrees from the next, every
+one touching that corner and pushed out by t like the faces. Along each axis the hull reaches exactly t past the
+solid's fitted box.
 
 How t is bounded. Every point of the true surface lies within some distance s of the mesh, and the mesh lies inside
-the ungrown hull, so pushing every face out by s holds the whole solid. s is taken as the larger of:
-- linear_mm, the deflection the mesher is asked to keep to;
-- 4/3 of the most the true surface strays from any triangle edge, measured as the gap from the middle of each edge
-  to the true surface of its face. Over a small triangle the gap is close to a quadratic (a curve like a parabola),
-  which is zero at the corners; such a quadratic can rise at most 4/3 of its largest edge-middle value anywhere over
-  the triangle. This catches the
-  mesher overshooting linear_mm, which it can do on round faces meshed as a grid.
-t is s plus 0.002 mm, which covers rounding each corner outward and the arithmetic, then rounded up to 0.001 mm.
+the ungrown hull, so pushing every plane out by s holds the whole solid. s is 4/3 of the most the true surface strays
+from any triangle edge, measured as the gap from the middle of each edge to the true surface of its face. Over a
+small triangle the gap is close to a quadratic (a curve like a parabola), which is zero at the corners; such a
+quadratic can rise at most 4/3 of its largest edge-middle value anywhere over the triangle. A solid with any round
+face takes at least linear_mm, the deflection the mesher is asked to keep to; the measurement catches the mesher
+overshooting it, which it can do on round faces meshed as a grid. A solid with only flat faces is meshed exactly, so
+s is 0. t is s plus 0.002 mm, which covers rounding each corner outward and the arithmetic, rounded up to 0.001 mm.
 
 planes gives the faces of the convex hull of any points, as a unit outward normal and an offset: a point x is inside
 or on the hull when normal . x <= offset for every face. Faces are triangles, so one flat side can be several faces
@@ -47,6 +53,7 @@ ALLOWANCE_MM = 0.002    # rounding a corner outward moves it at most 0.001 * sqr
 QUADRATIC_PEAK = 4 / 3  # a quadratic that is zero at a triangle's corners peaks at most 4/3 of its largest edge-middle value
 GRID_BITS = 40          # points are snapped to a grid 2**-40 of their size, so every inside-or-outside test is exact
 FLAT_SHARE = 1e-9       # points this close to a line or plane, as a share of their size, enclose no volume
+TURN_RAD = math.radians(15)     # every outward direction at a hull corner is this close to a face's or a trimming plane's
 
 
 def _sub(a, b):
@@ -159,7 +166,12 @@ def _grow(face, hull, edges, points):
 
 
 def planes(points):
-    """The faces of the convex hull of points, as (unit outward normal, offset), found by quickhull.
+    """The faces of the convex hull of points, as (unit outward normal, offset), found by quickhull."""
+    return [(list(normal), offset) for _, normal, offset in _facets(points)]
+
+
+def _facets(points):
+    """The faces of the convex hull of points, as (its three corners, unit outward normal, offset).
 
     The points are first snapped to a grid 2**-40 of their size (under a millionth of a millimetre on any robot part),
     so every test of a point against a face is exact and near-flat clusters cannot tangle the hull."""
@@ -178,7 +190,58 @@ def planes(points):
     for face in hull:
         if face.alive:
             length = math.sqrt(_dot(face.normal, face.normal))
-            found.append(([n / length for n in face.normal], face.offset / length * step))
+            corners = tuple(tuple(c * step for c in grid[i]) for i in face.corners)
+            found.append((corners, tuple(n / length for n in face.normal), face.offset / length * step))
+    return found
+
+
+def _unit(v):
+    size = math.sqrt(_dot(v, v))
+    return (v[0] / size, v[1] / size, v[2] / size)
+
+
+def _turn(a, b):
+    """The angle between two unit directions, in radians."""
+    return math.acos(max(-1.0, min(1.0, _dot(a, b))))
+
+
+def _filled(centre, a, b):
+    """Directions inside the spherical triangle centre, a, b, so that every direction in it is within TURN_RAD of one of
+    them or of its corners: its longest side is halved until no side is longer than sqrt(3) TURN_RAD."""
+    found, todo = [], [(centre, a, b)]
+    while todo:
+        corner = todo.pop()
+        p, q, r = max(((corner[i], corner[(i + 1) % 3], corner[(i + 2) % 3]) for i in range(3)), key=lambda s: _turn(s[0], s[1]))
+        if _turn(p, q) <= math.sqrt(3) * TURN_RAD:
+            continue
+        middle = _unit(tuple(x + y for x, y in zip(p, q)))
+        found.append(middle)
+        todo += [(p, middle, r), (middle, q, r)]
+    return found
+
+
+def _bevels(facets):
+    """Trimming planes (unit normal, offset) at the hull's sharp edges and corners, each touching its corner.
+
+    The outward directions at a corner are those between the normals of the faces that meet there. Where they turn by
+    more than TURN_RAD, directions are added to fill the turn (around the corner, from the middle direction out to each
+    pair of neighbouring normals), and each becomes a plane through the corner."""
+    around = {}
+    for corners, normal, _ in facets:
+        for corner in corners:
+            around.setdefault(corner, []).append((normal, corners))
+    found = []
+    for corner, rows in around.items():
+        normals = sorted({normal for normal, _ in rows})
+        centre = _unit(tuple(sum(n[k] for n in normals) for k in range(3)))
+        if all(_turn(centre, n) <= TURN_RAD / 2 for n in normals):
+            continue                    # every direction here is within TURN_RAD of each face normal
+        across = _unit(_cross(centre, (1, 0, 0) if abs(centre[0]) < 0.9 else (0, 1, 0)))
+        up = _cross(centre, across)
+        ring = sorted(normals, key=lambda n: math.atan2(_dot(n, up), _dot(n, across)))
+        directions = [centre] + [d for a, b in zip(ring, ring[1:] + ring[:1]) for d in _filled(centre, a, b)]
+        near = {c for _, corners in rows for c in corners}
+        found += [(list(d), max(_dot(d, c) for c in near)) for d in directions]
     return found
 
 
@@ -217,11 +280,13 @@ def _face_stray(face, triangulation, nodes):
 
 
 def _meshed(shape, linear_mm, angular_rad):
-    """The mesh's corners, and the most the true surface strays from a triangle edge. The shape is not altered."""
+    """The mesh's corners, the most the true surface strays from a triangle edge, and whether every face is flat.
+    The shape is not altered."""
     copy = BRepBuilderAPI_Copy(shape, True, False).Shape()
     BRepMesh_IncrementalMesh(copy, linear_mm, False, angular_rad)
-    corners, stray = set(), 0.0
+    corners, stray, flat = set(), 0.0, True
     for face in faces(copy):
+        flat = flat and BRepAdaptor_Surface(face).GetType() == GeomAbs_Plane
         location = TopLoc_Location()
         triangulation = BRep_Tool.Triangulation_s(face, location)
         if triangulation is None:
@@ -230,12 +295,12 @@ def _meshed(shape, linear_mm, angular_rad):
         nodes = [triangulation.Node(i).Transformed(move).Coord() for i in range(1, triangulation.NbNodes() + 1)]
         corners.update(nodes)
         stray = max(stray, _face_stray(face, triangulation, nodes))
-    return sorted(corners), stray
+    return sorted(corners), stray, flat
 
 
 def _box_faces(bounds):
-    """The six faces of the box fitted to the true surfaces. Pushed out with the rest, they trim the corners where
-    pushed faces meet at a slant and would otherwise reach a little more than push past the solid."""
+    """The six faces of the box fitted to the true surfaces. Pushed out with the rest, they hold the hull's extent along
+    each axis to exactly push past the solid's."""
     low, high = bounds[:3], bounds[3:]
     axes = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
     return [(list(axis), high[k]) for k, axis in enumerate(axes)] + [([-a for a in axis], -low[k]) for k, axis in enumerate(axes)]
@@ -260,13 +325,22 @@ def _rounded_out(corners, middle):
     return [list(c) for c in sorted(rounded)]
 
 
+def _meshing(name, value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        raise DesignError("", f"{name} must be a finite number greater than 0, not {value!r}", "Give the mesher a deflection above 0")
+
+
 def hull(shape, linear_mm=0.2, angular_rad=0.3):
     """{"vertices": [[x, y, z], ...], "toleranceMm": t}: a convex hull that contains the true shape, grown by t."""
-    corners, stray = _meshed(shape, linear_mm, angular_rad)
+    _meshing("linear_mm", linear_mm)
+    _meshing("angular_rad", angular_rad)
+    corners, stray, flat = _meshed(shape, linear_mm, angular_rad)
     if not corners:
         _refuse("the shape has no surface to mesh")
-    faces_found = planes(corners) + _box_faces(props.bounds(shape))
+    facets = _facets(corners)
+    faces_found = [(normal, offset) for _, normal, offset in facets] + _box_faces(props.bounds(shape)) + _bevels(facets)
     middle = [sum(c[k] for c in corners) / len(corners) for k in range(3)]
-    push = math.ceil((max(linear_mm, QUADRATIC_PEAK * stray) + ALLOWANCE_MM) / ROUND_MM) * ROUND_MM
+    floor = 0.0 if flat else linear_mm
+    push = math.ceil((max(floor, QUADRATIC_PEAK * stray) + ALLOWANCE_MM) / ROUND_MM) * ROUND_MM
     push = round(push, 3)
     return {"vertices": _rounded_out(_pushed(faces_found, push, middle), middle), "toleranceMm": push}

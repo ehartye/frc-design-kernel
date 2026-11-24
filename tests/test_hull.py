@@ -1,4 +1,5 @@
-"""The conservative convex hull: it contains the true solid, grown by no more than the tolerance it reports."""
+"""The conservative convex hull: it contains the true solid, and no point of it lies farther than t / cos 15 degrees
+(plus 0.002 mm of rounding) outside the solid's own convex hull, where t is the tolerance it reports."""
 import itertools
 import math
 import random
@@ -9,9 +10,11 @@ from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
 from frc_design_kernel import DesignError
 from frc_design_kernel.builder.shape import solid
 from frc_design_kernel.kernel import hull, mesh, shapes
+from frc_design_kernel.kernel.between import distance, vertex
 
 BOX = lambda low, high: {"kind": "box", "fromMm": low, "toMm": high}
 ROUNDING_MM = 0.001
+OVERSHOOT = 1 / math.cos(math.radians(15))      # the most any hull point stands outside the solid's hull, per mm of t
 
 
 def made(entry):
@@ -88,11 +91,12 @@ class Planes(unittest.TestCase):
 
 class Grown(unittest.TestCase):
     def test_a_box_hull_holds_its_corners_and_is_within_the_tolerance_of_them(self):
-        """Catches a box hull that loses a corner, or grows by more than the tolerance it reports."""
+        """Catches a box hull that loses a corner, grows by more than the tolerance it reports, or grows a solid with only
+        flat faces by the mesher's deflection, which only a round face needs."""
         low, high = [-15, 5, 2], [25, 35, 22]
         found = hull.hull(made(BOX(low, high)))
         tolerance, vertices = found["toleranceMm"], found["vertices"]
-        self.assertGreaterEqual(tolerance, 0.2)
+        self.assertLessEqual(tolerance, 0.002)
         faces = hull.planes(vertices)
         corners = [list(c) for c in itertools.product(*zip(low, high))]
         for corner in corners:
@@ -197,6 +201,57 @@ class Trimmed(unittest.TestCase):
         tolerance, worst = self.held({"kind": "intersection", "of": [{"kind": "sphere", "centerMm": [0, 0, 0], "radiusMm": r}, slanted]}, kept)
         self.assertLessEqual(worst, 0)
         self.assertLess(tolerance, 1)
+
+
+class ThinRims(unittest.TestCase):
+    """A sharp rim, where two faces meet at a small angle: pushing both faces out moves their meeting line far out."""
+    D = 1 / math.sqrt(3)
+    FLAT_CONE = {"kind": "cone", "fromMm": [0, 0, 0], "toMm": [0, 0, 2], "radiusFromMm": 100, "radiusToMm": 0}
+    LENS = {"kind": "intersection", "of": [{"kind": "sphere", "centerMm": [500 * D, 500 * D, 500 * D], "radiusMm": 505},
+                                           {"kind": "sphere", "centerMm": [-500 * D, -500 * D, -500 * D], "radiusMm": 505}]}
+
+    def rims(self):
+        """(name, entry, true rim points) for a flat cone along z and a thin lens on a slant."""
+        lens_rim = on_circle([0, 0, 0], [1, 1, 1], math.sqrt(505 ** 2 - 500 ** 2))
+        return (("flat cone", self.FLAT_CONE, on_circle([0, 0, 0], [0, 0, 1], 100) + [[0, 0, 2]]), ("lens", self.LENS, lens_rim))
+
+    def worst_corner(self, shape):
+        """(t, the reported faces, the farthest any reported hull corner lies from the solid)."""
+        found = hull.hull(shape)
+        return found["toleranceMm"], hull.planes(found["vertices"]), max(distance(vertex(v), shape) for v in found["vertices"])
+
+    def test_every_hull_corner_at_a_thin_rim_stays_within_the_bound(self):
+        """Catches a hull corner left far out past a sharp rim (20 mm past a flat cone at t = 0.2 mm), or a hull
+        trimmed so far that it no longer holds the rim."""
+        for name, entry, rim in self.rims():
+            with self.subTest(name):
+                tolerance, faces, worst = self.worst_corner(made(entry))
+                self.assertLessEqual(worst, tolerance * OVERSHOOT + 0.002 + 1e-6)
+                self.assertLessEqual(worst_excess(rim, faces), 0)
+
+    def test_control_without_the_trim_a_thin_rim_overshoots(self):
+        """Control: catches a bound check that cannot fail, by showing that the faces pushed out alone overshoot."""
+        from unittest import mock
+        for name, entry, _ in self.rims():
+            with self.subTest(name), mock.patch.object(hull, "_bevels", lambda facets: []):
+                tolerance, _, worst = self.worst_corner(made(entry))
+                self.assertGreater(worst, 5 * tolerance)
+
+
+class Meshing(unittest.TestCase):
+    def test_meshing_values_must_be_finite_and_above_zero(self):
+        """Catches a zero, negative, infinite or not-a-number deflection reaching the mesher, which crashes or hangs."""
+        shape = made(BOX([0, 0, 0], [10, 10, 10]))
+        for key in ("linear_mm", "angular_rad"):
+            for value in (0, -1, math.inf, math.nan):
+                with self.subTest(key=key, value=value), self.assertRaises(DesignError) as caught:
+                    hull.hull(shape, **{key: value})
+                self.assertIn(key, caught.exception.problem)
+
+    def test_control_a_round_face_keeps_the_meshers_deflection_as_a_floor(self):
+        """Control: catches the flat-face rule dropping the floor for a solid that has a round face."""
+        found = hull.hull(made({"kind": "cylinder", "fromMm": [0, 0, 0], "toMm": [0, 0, 40], "radiusMm": 30}), linear_mm=0.5)
+        self.assertGreaterEqual(found["toleranceMm"], 0.5)
 
 
 if __name__ == "__main__":

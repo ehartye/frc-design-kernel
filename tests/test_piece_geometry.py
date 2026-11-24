@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from frc_design_kernel import DesignError
 from frc_design_kernel.cli import main
 
 DATA = Path(__file__).resolve().parent / "data" / "piece_shapes.json"
@@ -66,10 +67,11 @@ class Record(unittest.TestCase):
         near(self, self.shapes["ring"]["centreMm"], [10, -5, 30])
 
     def test_each_hull_spans_at_least_the_shapes_bounds(self):
-        """Catches a hull that is missing, has no tolerance, or falls inside the solid it should contain."""
+        """Catches a hull that is missing, has no tolerance, or falls inside the solid it should contain. A solid with only
+        flat faces (the crate) is grown only for rounding; the rest by at least the mesher's deflection."""
         for name, found in self.shapes.items():
             with self.subTest(name):
-                self.assertGreaterEqual(found["hullToleranceMm"], 0.2)
+                self.assertGreaterEqual(found["hullToleranceMm"], 0.002 if name == "crate" else 0.2)
                 low, high = found["boundsMm"]
                 for axis in range(3):
                     self.assertLessEqual(min(v[axis] for v in found["hullMm"]), low[axis])
@@ -101,6 +103,16 @@ class Record(unittest.TestCase):
         for name in ("bar", "ball", "crate", "cube", "cone", "cup"):
             with self.subTest(name):
                 self.assertIsNone(self.shapes[name]["bore"])
+
+    def test_every_axis_is_written_one_way(self):
+        """Catches an axis whose sign follows the order a shape was drawn in (a pipe drawn upward recorded as pointing
+        down), so the same piece drawn two ways gives two records."""
+        for name in ("ring", "bar", "pipe", "disc", "cone"):
+            axes = [self.shapes[name]["symmetry"]["axis"]] + ([self.shapes[name]["bore"]["axis"]] if self.shapes[name]["bore"] else [])
+            for axis in axes:
+                with self.subTest(name):
+                    self.assertGreater(next(v for v in axis if abs(v) > 1e-9), 0)
+        self.assertEqual(self.shapes["pipe"]["bore"]["axis"], [0.0, 0.0, 1.0])
 
     def test_the_meshing_flags_are_used_and_recorded(self):
         """Catches --linear-mm or --angular-rad being ignored, so the record claims meshing it did not use."""
@@ -148,6 +160,9 @@ class Failures(unittest.TestCase):
         self.assertTrue(shapes["made"]["error"]["fix"])
         self.assertIn("radiusMm", shapes["unsized"]["error"]["problem"] + shapes["unsized"]["error"]["where"])
         self.assertIn("size", shapes["needs a parameter"]["error"]["problem"])
+        parameter = DesignError(**shapes["needs a parameter"]["error"])
+        self.assertEqual(str(parameter).count("Fix:"), 1)
+        self.assertIn("has no parameters", parameter.problem)
 
     def test_a_missing_file_or_bad_json_exits_1_with_one_error_line(self):
         """Catches an unreadable pieces file crashing with a traceback instead of a plain error."""
@@ -175,6 +190,29 @@ class Failures(unittest.TestCase):
         with self.assertRaises(SystemExit) as caught, contextlib.redirect_stderr(io.StringIO()):
             main(["piece-geometry", str(DATA)])
         self.assertEqual(caught.exception.code, 2)
+
+    def test_a_meshing_value_that_is_not_finite_and_above_zero_is_a_usage_error(self):
+        """Catches a zero, negative, infinite or not-a-number --linear-mm or --angular-rad reaching the mesher, which
+        crashes with a traceback or hangs, instead of exiting 2 with a plain line."""
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder) / "g.json"
+            for flag in ("--linear-mm", "--angular-rad"):
+                for value in ("0", "-1", "inf", "nan"):
+                    err = io.StringIO()
+                    with self.subTest(flag=flag, value=value), self.assertRaises(SystemExit) as caught, contextlib.redirect_stderr(err):
+                        main(["piece-geometry", str(DATA), "--out", str(out), f"{flag}={value}"])
+                    self.assertEqual(caught.exception.code, 2)
+                    self.assertIn("finite number greater than 0", err.getvalue())
+                    self.assertNotIn("Traceback", err.getvalue())
+            self.assertFalse(out.exists())
+
+    def test_an_out_path_that_cannot_be_written_exits_1_with_one_error_line(self):
+        """Catches --out naming a folder, or anywhere else that cannot be written, ending in a traceback."""
+        with tempfile.TemporaryDirectory() as folder:
+            code, _, stderr = run(DATA, "--out", folder)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(stderr.splitlines()), 1)
+        self.assertTrue(stderr.startswith("Error: "))
 
 
 if __name__ == "__main__":
