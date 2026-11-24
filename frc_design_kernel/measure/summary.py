@@ -1,51 +1,18 @@
-"""Everything the measure layer can say about a design, gathered into one plain record with the library stamp.
+"""What the measure command asks of a whole design, and what each kind of job draws on besides solid shapes.
 
-Each part of the record lists what it used (solids, the motion or pose, groups, declared contacts, mounts), with
-enough of each thing's identity for the status command to tell later whether it has changed. Given an earlier
-record, only what changed is measured again and the rest is carried from it (see carry); each part says which.
+A job's solids are known by their identities (see carry). Everything else a job's answer depends on is listed in
+its "used" block, in plain words and numbers, so the status command can say what changed: the declared contacts,
+the mounts, which solids are fixtures, and the masses.
 """
-from ..builder import identity
 from ..errors import DesignError
-from ..version import generator
-from . import attachment, carry, clearance, mass, run
+from ..source.sourced import span
+from . import carry
 from .search import DEFAULT_DEPTH
-
-SCHEMA = "frc-design-kernel/measurements@3"
 
 
 def contacts_for(data, motion=None):
     """The contact pairs the design source declares for a motion (or the ones declared for every motion, when None)."""
     return [row["pair"] for row in data.get("contacts", []) if "during" not in row or motion in row["during"]]
-
-
-def groups_used(data):
-    return {name: {"carriedBy": group.get("carriedBy")} for name, group in data["groups"].items()}
-
-
-def solids_used(assembly, names):
-    """The identities of the named solids, each worked out once per assembly however many records list it."""
-    every = carry.once(assembly, "identity", lambda built: identity.solids(built, built.solids))
-    return {name: dict(every[name], boundsMm=list(every[name]["boundsMm"])) for name in sorted(names)}
-
-
-def used_by_motion(assembly, motion, absent=()):
-    """What a clearance along a motion draws on: every solid present, the motion, the poses it names, the groups, declared contacts."""
-    data = assembly.data
-    entry = data["motions"][motion]
-    named = [*entry.get("through", []), *[entry[key] for key in ("from", "to") if key in entry]]
-    return {"solids": solids_used(assembly, [n for n in assembly.solids if n not in set(absent)]),
-            "motion": {key: value for key, value in entry.items() if key != "note"},
-            "poses": {pose: data["poses"][pose] for pose in named}, "groups": groups_used(data),
-            "contacts": sorted(sorted(pair) for pair in contacts_for(data, motion))}
-
-
-def used_by_pose(assembly, pose):
-    """What the measures at a pose draw on: every solid, the pose, the groups, mounts, lump masses and declared contacts."""
-    data = assembly.data
-    return {"solids": solids_used(assembly, assembly.solids), "poses": {pose: data["poses"][pose]} if pose else {},
-            "groups": {name: {"carriedBy": group.get("carriedBy"), "massKg": group.get("massKg")} for name, group in data["groups"].items()},
-            "mounts": [{key: value for key, value in mount.items() if key != "note"} for mount in data["mounts"]],
-            "contacts": sorted(sorted(pair) for pair in contacts_for(data)), "extraMass": data["extraMass"]}
 
 
 def chosen(table, names, what):
@@ -62,59 +29,54 @@ def known_solids(assembly, focus):
     return None if focus is None else sorted(set(focus))
 
 
-def at_pose(assembly, pose, settings, focus, earlier):
-    """Clearance, attachment and mass at one pose, each carried from the earlier row (when given) where nothing it uses changed."""
-    min_gap, touch_gap, floor_z, ignore = settings
-    declared = contacts_for(assembly.data)
-    was = earlier or {}
-    found = clearance.at_pose(assembly, pose, min_gap, declared, focus=focus, earlier=(was.get("clearance") or {}) if earlier is not None else None)
-    inputs = carry.pose_inputs(assembly, found["inputs"]["solids"], declared, touch_gap, floor_z, ignore)
-    held = was.get("inputs") or {}
-    out = {"pose": pose, "clearance": found, "inputs": inputs, "checked": {}}
-    for key, measure in (("attachment", lambda: attachment.at_pose(assembly, pose, touch_gap, floor_z, ignore, contacts=declared,
-                                                                  earlier=was.get("attachment") if earlier is not None else None)),
-                         ("mass", lambda: mass.roll_up(assembly, pose))):
-        same = earlier is not None and key in was and held.get(key) == inputs[key]
-        out[key], out["checked"][key] = (was[key], "carried") if same else (measure(), "measured")
-    out["used"] = used_by_pose(assembly, pose)
-    return out
+def design_jobs(data, min_gap=0.0, touch_gap=0.0, floor_z=0.0, ignore=(), depth=DEFAULT_DEPTH, near=0.0, motions=None, poses=None):
+    """The jobs the measure command records: clearance along each motion, and clearance, attachment and mass at each pose.
 
-
-def measure_design(source, min_gap=0.0, touch_gap=0.0, floor_z=0.0, ignore=(), workers=None, depth=DEFAULT_DEPTH, motions=None, poses=None,
-                   earlier=None, focus=None):
-    """Measure a design source: clearance along motions, and clearance, attachment and mass at poses.
-
-    min_gap is the gap every pair is tested against. touch_gap is how near two surfaces count as touching. ignore
-    names solids left out of the attachment record. motions and poses name a subset to measure (None is all of
-    them; the as-drawn pose is measured only when poses is None). The numbers are the caller's; the record states
-    them and judges nothing. earlier is an earlier record to carry from: only the pairs whose inputs changed are
-    measured, and attachment and mass at a pose only when something they use changed. focus names solids whose
-    pairs are measured again even so; without earlier, only their pairs are measured and the record says so.
+    motions and poses name a subset (None is all of them; the as-drawn pose is measured only when poses is None).
     """
-    assembly = run.assembly_for(source)
-    data = assembly.data
-    names = chosen(data["motions"], motions, "motion")
-    focus = known_solids(assembly, focus)
-    old = {} if earlier is None else {"motions": earlier.get("motions") or {}, "poses": {row["pose"]: row for row in earlier.get("poses") or []}}
-    jobs = [{"motion": name, "minGapMm": min_gap, "contacts": contacts_for(data, name), "depth": depth, "focus": focus,
-             **({"earlier": old["motions"].get(name) or {}} if earlier is not None else {})} for name in names]
-    found = dict(zip(names, run.clearances(source, jobs, workers, assembly)))
-    for name in names:
-        found[name]["used"] = used_by_motion(assembly, name)
-    settings = (min_gap, touch_gap, floor_z, ignore)
-    rows = [at_pose(assembly, pose, settings, focus, None if earlier is None else old["poses"].get(pose) or {})
-            for pose in ([None] if poses is None else []) + chosen(data["poses"], poses, "pose")]
-    return {"schema": SCHEMA, "generator": generator(),
-            "design": {"name": data["name"], "source": assembly.design.path.name, "sourceSha256": assembly.design.sha256},
-            "settings": {"minGapMm": float(min_gap), "touchGapMm": float(touch_gap), "floorZMm": float(floor_z), "ignored": sorted(ignore),
-                         "depthLimit": depth},
-            "motions": found, "poses": rows}
+    jobs = [{"kind": "clearance", "motion": name, "minGapMm": min_gap, "depth": depth, "nearMm": near} for name in chosen(data["motions"], motions, "motion")]
+    for pose in ([None] if poses is None else []) + chosen(data["poses"], poses, "pose"):
+        jobs += [{"kind": "clearance", "pose": pose, "minGapMm": min_gap},
+                 {"kind": "attachment", "pose": pose, "touchGapMm": touch_gap, "floorZMm": floor_z, "ignore": sorted(ignore)},
+                 {"kind": "mass", "pose": pose}]
+    return jobs
 
 
-def merged(old, new):
-    """A measurement record with the freshly measured motions and poses put into an older record, the rest kept."""
-    out = dict(new)
-    out["motions"] = {**old.get("motions", {}), **new["motions"]}
-    fresh = {row["pose"] for row in new["poses"]}
-    out["poses"] = [row for row in old.get("poses", []) if row["pose"] not in fresh] + new["poses"]
-    return out
+def resolved_contacts(data, job, present):
+    """The pairs a job leaves out as meant to touch: the source's declared ones ("declared") or the job's own list,
+    each with both solids present, as sorted pairs."""
+    listed = job["contacts"]
+    if listed == "declared":
+        listed = contacts_for(data, job.get("motion"))
+    return sorted({tuple(sorted(pair)) for pair in listed if pair[0] in present and pair[1] in present})
+
+
+def used_by_attachment(assembly, job, present):
+    """What an attachment draws on besides shapes: declared contacts, mounts, which solids are fixtures, and the groups."""
+    data, built = assembly.data, assembly.solids
+    return {"contacts": [list(pair) for pair in resolved_contacts(data, job, present)],
+            "mounts": [{key: value for key, value in mount.items() if key != "note"} for mount in data["mounts"]],
+            "fixtures": sorted(name for name in present if built[name].fixture),
+            "groups": carry.digest({name: built[name].group for name in sorted(present)})}
+
+
+def weighed(assembly, present):
+    """The robot solids whose shape a mass roll-up uses: those with a mass, and every member of a group with a lump mass
+    or with extra mass (which sits at the centre of its group's volume)."""
+    data, built = assembly.data, assembly.solids
+    spread = {name for name, group in data["groups"].items() if "massKg" in group} | {entry["group"] for entry in data["extraMass"]}
+    return sorted(name for name in present if not built[name].fixture and (built[name].mass_kg is not None or built[name].group in spread))
+
+
+def used_by_mass(assembly, present):
+    """What a mass roll-up draws on besides shapes: each solid's mass and range, each group's lump mass, the weight with no
+    solid, the solids with none, and which group each solid is in."""
+    data, built = assembly.data, assembly.solids
+    robot = [name for name in sorted(present) if not built[name].fixture]
+    weighs = [name for name in robot if built[name].mass_kg is not None]
+    return {"masses": {name: built[name].mass_kg for name in weighs},
+            "massRanges": {name: list(built[name].mass_range_kg) for name in weighs},
+            "groupMasses": {name: list(span(group["massKg"])) for name, group in data["groups"].items() if "massKg" in group},
+            "extraMass": data["extraMass"],
+            "unweighed": [name for name in robot if built[name].mass_kg is None and "massKg" not in data["groups"][built[name].group]],
+            "groups": carry.digest({name: built[name].group for name in robot})}

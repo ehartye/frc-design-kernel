@@ -1,16 +1,17 @@
-"""Sharing clearance work between worker processes. Nothing here measures; it only hands out pairs and gathers rows.
+"""Sharing measuring work between worker processes. Nothing here measures; it only hands out work and gathers it.
 
-Each worker loads and builds the design once, then measures the shares it is given. A share is every n-th pair of
-one motion, so the rows come back in the same order whichever worker did which share, and the result is the same
-for any worker count. A job given an earlier result is planned here first (see carry): only the pairs whose inputs
-changed are handed out, a job with nothing changed is not handed out at all, and the carried rows are put back here.
+Each worker loads and builds the design once, then answers the tasks it is given. A clearance along a motion is cut
+into shares, each every n-th pair of the motion, so the rows come back in the same order whichever worker did which
+share, and the result is the same for any worker count; any other job is one task. A job given an earlier result is
+planned first (see carry): only the pairs whose inputs changed are handed out, a job with nothing changed is not
+handed out at all, and the carried rows are put back afterwards. Tasks come back as each one finishes.
 """
 import math
 import os
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 
 from ..source.load import load
-from . import carry, clearance, scene as scenes
+from . import carry, clearance, jobs as kinds, scene as scenes
 from .search import DEFAULT_DEPTH
 
 PAIRS_PER_SHARE = 500    # a motion with fewer pairs than this is one piece of work
@@ -46,19 +47,41 @@ def inputs_of(assembly, job):
 
 
 def work(task):
-    """Measure one share of one job. Runs in a worker process (or in the caller's, with one worker)."""
+    """Answer one task: one share of a clearance along a motion, or one whole job of another kind.
+
+    Runs in a worker process (or in the caller's, with one worker)."""
     source, job, share = task
-    motion, min_gap, contacts, absent, depth, include_still, displace = job_fields(job)
     assembly = assembly_for(source, job.get("parameters"))
+    if share is None:
+        return kinds.perform(assembly, job)
+    motion, min_gap, contacts, absent, depth, include_still, displace = job_fields(job)
     scene = scenes.for_motion(assembly, motion, absent, displace)
     chosen = job["plan"]
     focus = set(chosen["focus"]) if chosen["focus"] is not None else None
-    carried = {tuple(pair) for pair in chosen["withRows"]} if chosen["carrying"] else None
     part = clearance.share_of(scene, min_gap, clearance.declared(contacts, scene.names), depth, share, include_still, _fixed, focus,
-                              {tuple(pair) for pair in chosen["also"]}, carried)
+                              {tuple(pair) for pair in chosen["also"]}, chosen["carrying"])
     if share[0] == 0 and not job["inputsKnown"]:
         part["inputs"] = inputs_of(assembly, job)
     return part
+
+
+def completed(tasks, workers):
+    """Yield (task index, answer) for each task as it finishes: in order with one worker, else as the workers finish them.
+
+    If the caller stops early, tasks not yet started are dropped and the workers are not waited for."""
+    if workers == 1 or len(tasks) <= 1:
+        for index, task in enumerate(tasks):
+            yield index, work(task)
+        return
+    pool, waiting = ProcessPoolExecutor(max_workers=min(workers, len(tasks))), {}
+    try:
+        waiting = {pool.submit(work, task): index for index, task in enumerate(tasks)}
+        while waiting:
+            done, _ = wait(waiting, return_when=FIRST_COMPLETED)
+            for future in sorted(done, key=waiting.get):
+                yield waiting.pop(future), future.result()
+    finally:
+        pool.shutdown(wait=not waiting, cancel_futures=True)
 
 
 def shares_for(solids, workers):
@@ -100,11 +123,9 @@ def clearances(source, jobs, workers=None, assembly=None):
         count = 0 if chosen.counts is not None else shares_for(len(present), workers)
         spans.append((len(tasks), count))
         tasks += [(str(source), sent, (first, count)) for first in range(count)]
-    if workers == 1 or len(tasks) <= 1:
-        parts = [work(task) for task in tasks]
-    else:
-        with ProcessPoolExecutor(max_workers=workers) as pool:
-            parts = list(pool.map(work, tasks))
+    parts = [None] * len(tasks)
+    for index, part in completed(tasks, workers):
+        parts[index] = part
     results = []
     for job, (start, count), (chosen, inputs, present) in zip(jobs, spans, plans):
         motion, min_gap, contacts, absent, depth, include_still, displace = job_fields(job)

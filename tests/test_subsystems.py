@@ -16,7 +16,7 @@ from pathlib import Path
 from frc_design_kernel.builder.assembly import build
 from frc_design_kernel.cli import main
 from frc_design_kernel.errors import DesignError
-from frc_design_kernel.measure import carry, summary
+from frc_design_kernel.measure import jobs as jobs_kinds, records, summary
 from frc_design_kernel.source import schema
 from frc_design_kernel.source.load import load
 from frc_design_kernel.status import status
@@ -91,16 +91,10 @@ def solid_entry(files, file, name):
 
 
 def identities(assembly):
-    """Every job identity the library keys its records to: clearance along each motion and at each pose, attachment and mass."""
-    data = assembly.data
-    found = {f"along {name}": carry.along(assembly, name) for name in data["motions"]}
-    for pose in [None, *data["poses"]]:
-        solids = carry.at_pose(assembly, pose)
-        found[f"at {pose}"] = solids
-        found[f"pose inputs {pose}"] = carry.pose_inputs(assembly, solids, summary.contacts_for(data), 1.0, 0.0, ())
-        found[f"used at {pose}"] = summary.used_by_pose(assembly, pose)
-    found.update({f"used along {name}": summary.used_by_motion(assembly, name) for name in data["motions"]})
-    return found
+    """Every job identity the library keys its records to: the inputs and used block of each job the measure command
+    records (clearance along each motion and at each pose, attachment and mass)."""
+    jobs = summary.design_jobs(assembly.data, 1.0, 1.0)
+    return {name: jobs_kinds.drawn_on(assembly, job) for name, job in records.requested(assembly.data, jobs)}
 
 
 class Merge(unittest.TestCase):

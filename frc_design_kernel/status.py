@@ -1,19 +1,21 @@
 """Compare the records in a folder with the design source as it is now: which are current, which are stale, and why.
 
-Every measurement and trial record lists what it used, with enough of each thing's identity to tell whether it has
-changed. This module rebuilds those lists from the current source and states the differences as plain facts. It
-does not say whether anything should be run again.
+Every measurement job record and trial record lists what it used, with enough of each thing's identity to tell
+whether it has changed. This module rebuilds those lists from the current source and states the differences as plain
+facts. It does not say whether anything should be run again, and it reads no file bytes to decide: a record is
+current when what its answer depends on is unchanged.
 """
 import json
+import time
 from pathlib import Path
 
 from .builder import identity
 from .builder.assembly import build
-from .measure import summary
+from .measure import records
 from .source.load import load
 from .trials import inputs, ready
 
-MEASUREMENTS, TRIALS = "measurements.json", "trials.json"
+TRIALS = "trials.json"
 
 
 def paths_that_differ(old, new, at=""):
@@ -42,20 +44,6 @@ def row(name, changes):
     return {"record": name, "state": "stale" if changes else "current", "changes": changes}
 
 
-def measurement_rows(record, assembly):
-    rows = []
-    for name, found in record.get("motions", {}).items():
-        gone = name not in assembly.data["motions"]
-        rows.append(row(f'clearance along "{name}"', ["the motion is no longer in the source"] if gone
-                        else compare_used(found.get("used", {}), summary.used_by_motion(assembly, name, found.get("absent", ())))))
-    for found in record.get("poses", []):
-        pose = found["pose"]
-        label = f'measures at the pose "{pose}"' if pose else "measures as drawn"
-        gone = pose is not None and pose not in assembly.data["poses"]
-        rows.append(row(label, ["the pose is no longer in the source"] if gone else compare_used(found.get("used", {}), summary.used_by_pose(assembly, pose))))
-    return rows
-
-
 def trial_rows(record, design, assembly):
     from .trials.campaign import what_it_used
     rows = []
@@ -79,12 +67,15 @@ def trial_rows(record, design, assembly):
 
 
 def status(source, folder):
-    """{"records": [{"record", "state": "current" | "stale", "changes": [...]}], "readyFor3d": {...}} for a source and a folder of records."""
+    """{"records": [{"record", "state": "current" | "stale", "changes": [...]}], "readyFor3d": {...}, "seconds"} for a source
+    and a folder of records: every job record under measurements/ and every trial in trials.json. "seconds" is how long
+    the whole comparison took, the build included."""
+    began = time.perf_counter()
     design = load(source)
     assembly = build(design)
-    folder, rows = Path(folder), []
-    if (folder / MEASUREMENTS).is_file():
-        rows += measurement_rows(json.loads((folder / MEASUREMENTS).read_text(encoding="utf-8")), assembly)
+    folder = Path(folder)
+    rows = records.stored(assembly, folder)
     if (folder / TRIALS).is_file():
         rows += trial_rows(json.loads((folder / TRIALS).read_text(encoding="utf-8")), design, assembly)
-    return {"design": design.data["name"], "records": rows, "readyFor3d": ready.report(assembly)}
+    found = {"design": design.data["name"], "records": rows, "readyFor3d": ready.report(assembly)}
+    return dict(found, seconds=time.perf_counter() - began)

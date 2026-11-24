@@ -120,8 +120,10 @@ frc_design_kernel/
     screen.py        screen facts: is an interaction the same in every section?
     symmetry.py      what kind of shape a solid is, read from its faces
     compression.py   how deep a solid presses into a ball or ring
-    run.py           sharing work between worker processes
-    summary.py       everything about one design as one record
+    run.py           sharing work between worker processes, handed back as each piece finishes
+    jobs.py          the kinds of measuring job: fields, file names, what each draws on, how each is answered
+    records.py       one file per job, written as it finishes; carried while current
+    summary.py       the jobs the measure command asks, and what each kind of job uses besides shapes
   trials/            the try layer. Reads an Assembly and trial data; writes results. See section 13.
     inputs.py        a trial's case and its physical inputs with their sources
     assumptions.py   what the planar engine cannot see, with stable ids
@@ -436,7 +438,7 @@ a builder used to do now lives.
 | Fit moves to a recorded trace | not offered here. This will belong with the try layer, which owns traces |
 | Pick a variant with an `if` | not offered. A variant is its own source file |
 | Check clearances, starting size or reach, and stop the build | not here, ever. The measure layer will report numbers; tools that judge decide |
-| Write budgets, records, review pages | not here, ever (section 2) |
+| Write budgets, receipts, review pages | not here, ever (section 2) |
 
 ### 4.9 Subsystem files
 
@@ -772,63 +774,147 @@ gauge), a `base` solid, and declared `contacts`. Without a `base`, the largest c
 
 ### 12.3 Workers
 
-`measure/run.py` shares clearance work between worker processes and does no measuring itself. A motion's pairs are
-dealt out in shares; rows come back in pair order, so the result is the same for any worker count (tested). The
-caller chooses the count. The default is half the machine's cores.
+`measure/run.py` shares measuring work between worker processes and does no measuring itself. A clearance along a
+motion is dealt out in shares of its pairs; rows come back in pair order, so the result is the same for any worker
+count (tested). Every other job is one task. Tasks come back as each one finishes, so a job is stored as soon as its
+last task is in. The caller chooses the count. The default is half the machine's cores.
 
-### 12.4 The record and the command
+### 12.4 The records: one file per job
+
+Every measurement is a **job**: one question about a design, given as plain data. A tool that judges a design asks
+for the jobs it needs, and the library keeps each answer as its own file:
+
+```python
+from frc_design_kernel.measure import records
+records.record("design.json", [
+    {"kind": "clearance", "motion": "lift", "minGapMm": 1.0, "includeStill": True},
+    {"kind": "reach", "motion": "lift", "pair": ["hook", "bar"], "withinMm": 2.0, "window": [0.9, 1.0]},
+    {"kind": "indentation", "motion": "squeeze", "piece": "ball", "contact": "roller", "maxDepthMm": 4.0},
+], "out", workers=4)
+```
+
+writes `out/measurements/clearance.motion.lift.json`, `out/measurements/reach.lift.hook.bar.json` and
+`out/measurements/indentation.squeeze.ball.roller.json`. The kinds, with their fields and defaults:
+
+| Kind | Asks | Fields (default) |
+|---|---|---|
+| `clearance` along a `motion` | How close each pair comes over the stroke (12.1) | `minGapMm` (0), `depth` (9), `includeStill` (false), `nearMm` (0), `contacts` (`"declared"`), `absent` ([]), `displace` ({}) |
+| `clearance` at a `pose` (`null` is as drawn) | The pairs closer than the gap there | `minGapMm` (0), `contacts` (`"declared"`), `absent` ([]) |
+| `reach` along a `motion` | Do two solids come within a distance in a window (12.2) | `pair`, `withinMm`, `window` ([0, 1]), `absent` ([]), `depth` (9) |
+| `indentation` along a `motion` | How deep a solid presses into a ball or ring (12.2) | `piece`, `contact`, `maxDepthMm`, `absent` ([]), `depth` (9) |
+| `withdrawal` along a `motion` | How far the moved solids end from the rest (12.2) | `absent` ([]) |
+| `attachment` at a `pose` | What touches what, what is loose, mounts, fixtures off the floor (12.2) | `touchGapMm` (0), `floorZMm` (0), `ignore` ([]), `base` (null), `contacts` (`"declared"`), `absent` ([]), `pairs` (true) |
+| `mass` at a `pose` | Mass and centre of mass (12.2) | `absent` ([]) |
+
+`contacts` is `"declared"` (the source's declared contacts for that motion, or those declared for every motion at a
+pose, each with both solids present) or a list of pairs. A job with `displace` is a control (12.6b); it names its
+own `contacts`, usually `[]`. A field the kind does not have, a missing one, or a motion, pose or solid that is not
+in the design is refused, naming the job by its place in the list.
+
+**File names.** A job's id is its file name: the kind, then what it is about, each name in lower case with anything
+else turned into a dash: `clearance.motion.lift`, `clearance.pose.raised`, `clearance.drawn`,
+`clearance.motion.lift.displaced.post`, `reach.lift.hook.bar`, `indentation.squeeze.ball.roller`,
+`withdrawal.pin-out`, `attachment.pose.raised`, `mass.drawn`. A job may give its own `"id"` (lower-case letters,
+digits, dots, dashes and underscores). Two jobs with the same id in one list are refused; give one of them an id.
+
+**One job file:**
+
+```json
+{"schema": "frc-design-kernel/measurement-job@1",
+ "generator": {"library": "frc-design-kernel", "version": "...", "commit": "..."},
+ "id": "indentation.squeeze.ball.roller",
+ "job": {"kind": "indentation", "motion": "squeeze", "piece": "ball", "contact": "roller", "maxDepthMm": 4.0,
+         "absent": [], "depth": 9},
+ "inputs": {"rules": {"maxDepthMm": 4.0, "depthLimit": 9},
+            "solids": {"ball": "3f9c0d2a71b84e65", "roller": "a07e5b1c9d2f3846"}},
+ "used": {},
+ "checked": {"measured": "whole"},
+ "result": {"motion": "squeeze", "piece": "ball", "contact": "roller", "deepestMm": 2.0, "t": 1.0, "...": "..."}}
+```
+
+- `job` is the question with every field filled in.
+- `inputs.rules` are the caller's numbers the answer depends on; `inputs.solids` the identity (12.4a) of every solid
+  the answer depends on: every solid present for a clearance, a withdrawal or an attachment (the ignored ones left
+  out), the two named solids for a reach or an indentation, and for a mass the solids whose shape the roll-up uses
+  (those with a mass, and every member of a group with a lump mass or with extra mass, which sits at the centre of
+  its group's volume).
+- `used` holds the other design facts the answer depends on: a clearance's declared `contacts`; an attachment's
+  `contacts`, `mounts` (notes left out), `fixtures` and a digest of which group each solid is in; a mass's `masses`,
+  `massRanges`, `groupMasses` (each as value, low, high), `extraMass` (notes left out of the comparison),
+  `unweighed` and the same group digest. A change to a range alone, or to any weight with no solid, makes it stale.
+- `checked` says what this run did: for a clearance, the pairs measured and carried (12.4a); for an attachment, its
+  touching pairs and mounts measured and carried; for the others `{"measured": "whole"}`.
+- A clearance also has `counts`: every pair, under exactly one of `declaredContacts`, `bothStill`, `farApart`,
+  `fixedFarApart`, `measured` and `notInFocus`.
+- `result` is the measure's own answer (12.1, 12.2), without the parts above.
+
+**What a clearance file keeps.** Only the rows of pairs that needed more than the broad phase to settle: a pair
+closer than the gap, a pair not settled, and a pair whose proven floor (`lowerBoundMm`) is under the gap plus
+`nearMm`. A pair proven farther than that is counted under `measured`, not stored. `closest` is the closest kept row,
+or `null` when none is kept. With the default `nearMm` of 0 a file holds the failures and their witnesses only; a
+tool that wants near misses on a page asks for a band. On a carry a pair with no stored row is counted again by the
+broad phase, which is cheap, so a carried file still equals a fresh one. On an invented design of 228 solids, 74
+motions and 8 poses, the 106 jobs a judging tool asks for take 1.3 MB, most of it the solid identities.
+
+**Written as each job finishes.** A job's file is written whole the moment its job is done: into a temporary file
+beside it, then moved into place. A run is partial when a job asked for has no file; there is no flag and no file
+rewritten as a whole. A stopped or failed run keeps every job it finished.
+
+**Carried while current.** `record()` reads each job's file first. A job is **current** when its file's `job`,
+`inputs` and `used` are what the design gives now, and it was measured whole (not under a focus alone). A current
+job is carried: not measured and not written again, so its file's bytes do not change. Any other job is measured,
+carrying from its earlier file what it can (12.4a), and its file is replaced. `carry=False` measures every job
+afresh. `records.check(source, jobs, folder)` says, without measuring, which of the jobs asked are current, stale
+(with what changed) or missing. Files of jobs that are not asked for are left alone.
+
+`record()` returns one entry per job, in job order: `{"id", "kind", "action": "carried" | "measured", "file",
+"record"}`, and calls `report(entry)`, when given, as each job is carried or finished.
+
+**The command.**
 
 ```
 python -m frc_design_kernel measure SOURCE --out DIR [--min-gap MM] [--touch-gap MM] [--floor-z MM]
-                                                     [--ignore SOLID] [--workers N] [--depth N]
+                                                     [--ignore SOLID] [--workers N] [--depth N] [--near MM]
                                                      [--motion NAME] [--pose NAME] [--extremes]
                                                      [--carry] [--focus SOLID]
 ```
 
-writes `DIR/measurements.json`:
-
-```json
-{"schema": "frc-design-kernel/measurements@3",
- "generator": {"library": "frc-design-kernel", "version": "...", "commit": "..."},
- "design": {"name": "...", "source": "design.json", "sourceSha256": "..."},
- "settings": {"minGapMm": 1.0, "touchGapMm": 3.0, "floorZMm": 0.0, "ignored": [], "depthLimit": 9},
- "motions": {"lift": {"motion": "lift", "counts": {}, "proven": true, "closer": [], "unresolved": [], "closest": {},
-                      "pairs": [], "inputs": {}, "checked": {}, "used": {}}},
- "poses": [{"pose": null, "clearance": {"inputs": {}, "checked": {}}, "attachment": {"inputs": {}, "checked": {}},
-            "mass": {}, "inputs": {"attachment": "...", "mass": "..."}, "checked": {"attachment": "measured", "mass": "measured"},
-            "used": {}}]}
-```
-
-The command prints one line per motion and per pose. It prints numbers and counts, not verdicts.
+records a clearance job along every motion, and a clearance, an attachment and a mass job as drawn and at every
+pose (only those named with `--motion` and `--pose`), into `DIR/measurements/`. It prints one line per job as it
+finishes, with numbers and counts, not verdicts, and then how many it wrote and how many were carried. `--extremes`
+also writes `DIR/adjustments.json` (section 4.5c).
 
 ### 12.4a Measuring again only what changed
 
 A pair's clearance depends only on its two solids, where each stands along the motion (or at the pose), and the
 rules it was measured under. So every clearance result (`clearance.along`, `clearance.at_pose`, each
-`run.clearances` job) records its `inputs`:
+`run.clearances` job, each clearance job file) records its `inputs`:
 
 ```json
-"inputs": {"rules": {"minGapMm": 1.0, "depthLimit": 9, "includeStill": true},
+"inputs": {"rules": {"minGapMm": 1.0, "depthLimit": 9, "includeStill": true, "nearMm": 0.0},
            "solids": {"arm": "3f9c0d2a71b84e65", "post": "a07e5b1c9d2f3846"}}
 ```
 
-Each solid's identity is a short digest of figures the build already produces: its volume, the centre of its volume,
-its second moments of volume about that centre and its bounding box as drawn; its group's whole placement along
-that motion or at that pose (carriers included); and any `displace` shift. A solid absent from the case has no
-entry. At a pose the rules are the gap alone. No file bytes, names, notes, status words or versions enter it, so a
-renamed design, a renamed solid or an edited note changes no identity. The one limit: two different shapes with the
-same volume, centre, second moments and box would be taken for the same solid.
+(`nearMm` is a rule of a job file only.) Each solid's identity is a short digest of figures the build already
+produces: its volume, the centre of its volume, its second moments of volume about that centre and its bounding box
+as drawn; its group's whole placement along that motion or at that pose (carriers included); and any `displace`
+shift. A solid absent from the case has no entry. At a pose the rules are the gap alone. No file bytes, names,
+notes, status words or versions enter it, so a renamed design, a renamed solid or an edited note changes no
+identity. The one limit: two different shapes with the same volume, centre, second moments and box would be taken
+for the same solid.
 
-Given an earlier result of the same question (`earlier=`, or the job field `"earlier"`), only these are measured:
+Given an earlier result of the same question (`earlier=`, the job field `"earlier"`, or the job's file), only these
+are measured:
 
 - every pair with a solid whose identity changed, a new solid, or a solid named in `focus`;
 - every pair whose declared contact changed (`measuredPairs`).
 
 Every other pair is carried: its earlier row, if it had one, under its current names, and its place in `counts`
-worked out as a full measurement would put it (contact, both still, fixed and far, far), so the merged result equals
-a full measurement of the design as it is now. A renamed solid is found by its identity alone and its rows are
-carried under the new name. A result with nothing to measure is not handed to a worker at all. Every pair is
-measured when the rules differ, when the earlier result records no inputs, or when it was only part measured.
+worked out as a full measurement would put it (contact, both still, or by the broad phase: far, fixed and far, or
+measured), so the merged result equals a full measurement of the design as it is now. A renamed solid is found by
+its identity alone and its rows are carried under the new name. A result with nothing to measure is not handed to a
+worker at all. Every pair is measured when the rules differ, when the earlier result records no inputs, or when it
+was only part measured.
 
 Each result says what it did in `checked`:
 
@@ -838,24 +924,20 @@ Each result says what it did in `checked`:
 ```
 
 `measuredSolids` is `null` when every pair was measured. `pairsMeasured` counts the pairs looked at now, including
-those that boxes proved far apart (`counts.measured` is only the pairs that got a row). `focus` without an earlier
-result measures only the focus solids' pairs and leaves the rest out (`pairsNotMeasured`); such a result is never
-carried from.
+those that boxes proved far apart (`counts.measured` is only the pairs that needed more than the boxes). `focus`
+without an earlier result measures only the focus solids' pairs and leaves the rest out (`pairsNotMeasured`); such
+a result is never carried from.
 
-At a pose, attachment and mass are carried whole when the pose row's `inputs` digests are unchanged: for attachment
-the solids' identities at that pose with their names, groups and fixture flags, declared contacts, mounts (notes
-left out), the touching gap, the floor and the ignored solids; for mass the same identities with each solid's mass
-and each group's lump mass. Those two records name solids and groups, so their digests hold the names: a rename
-measures them again (cheaply, below), though no clearance pair. When something at the pose moved, `attachment.at_pose`
-still carries from its earlier result: the touching gaps and mount distances of pairs of unchanged solids are
-copied, only pairs and mounts with a changed solid are measured, and the sets, loose solids and fixtures are worked
-out again from them. Its own `checked` gives `pairsMeasured`, `pairsCarried`, `mountsMeasured` and `mountsCarried`
-(`null` when nothing could be carried, such as across a new touching gap). The pose row's `checked` says
-`"attachment"` and `"mass"`: `carried` or `measured`.
+Attachment, mass, reach, indentation and withdrawal jobs are carried whole when current. A stale attachment still
+carries from its earlier file: the touching gaps and mount distances of pairs of unchanged solids are copied, only
+pairs and mounts with a changed solid are measured, and the sets, loose solids and fixtures are worked out again
+from them. Its `checked` gives `pairsMeasured`, `pairsCarried`, `mountsMeasured` and `mountsCarried`, or
+`{"measured": "whole"}` when nothing could be carried (such as across a new touching gap). The others are measured
+whole when stale.
 
-`measure --carry` carries from the `measurements.json` already in `--out` (it refuses when there is none);
-`--focus SOLID` measures that solid's pairs again as well, or, without `--carry`, only those. Both print a line per
-motion and per pose saying how many pairs were measured and how many carried.
+`measure --carry` carries from the job files already in `DIR/measurements/` (it refuses when there is no such
+folder); `--focus SOLID` measures that solid's pairs again as well, or, without `--carry`, only those. Both print,
+for each clearance measured, how many pairs were measured and how many carried.
 
 On a design of about 230 solids, 74 motions and 75 poses, the decision costs well under a second beyond the build
 (about 3 s); one solid moved measures its pairs along all 74 motions in about 12 s with four workers, and its pairs,
@@ -1087,24 +1169,31 @@ The intended way of working is in stages: arrange and measure, then planar trial
 settled layout. When a later stage finds a problem, the author changes the design source and comes back up, running
 again only what the change touched. To make that possible:
 
-- Every measurement and every trial record carries a `used` block: the solids it drew on, each with its group,
-  kind, volume, bounding box as drawn and mass; the motion's operations and the poses it names; the groups and who
-  carries whom; mounts and declared contacts; the parameters a trial's numbers were worked out from, with their
-  values.
-- `python -m frc_design_kernel status SOURCE DIR` rebuilds those blocks from the source as it is now and prints,
-  per record, `current` or `stale` and what changed: `solid "belt bed" changed (boundsMm, volumeMm3)`,
-  `parameter "squeeze" changed: 20 to 15`, `the trial definition changed at materials.tread.friction.value`.
-  Plain facts. It does not say whether to run anything again.
+- Every measurement job record carries its `inputs` (its rules and the identity of each solid its answer depends
+  on) and a `used` block (the other design facts it depends on: contacts, mounts, fixtures, masses), section 12.4.
+  Every trial record carries a `used` block: the solids it drew on, each with its group, kind, volume, bounding box
+  as drawn and mass; the motions and the pose it follows; the parameters its numbers were worked out from, with
+  their values.
+- `python -m frc_design_kernel status SOURCE DIR` works those out again from the source as it is now, for every job
+  file under `DIR/measurements/` and every trial in `DIR/trials.json`, and prints, per record, `current` or
+  `stale` and what changed: `solid "belt bed" changed`, `massRanges "gate" changed: [0.2, 0.2] to [0.3, 0.3]`, `the motion
+  "lift" is no longer in the source`, `parameter "squeeze" changed: 20 to 15`, `the trial definition changed at
+  materials.tread.friction.value`. Plain facts. It does not say whether to run anything again, and it decides from
+  what each record's answer depends on, never from file bytes. It ends with how long it took, the build included:
+  0.4 s on the 228-solid design of section 12.4, and about 2 s expected on a design whose build reads a large STEP
+  file. `status()` returns the same as `seconds`.
 - A design's name and every `note` are outside all identities. Renaming a design or editing a note makes nothing
   stale.
-- A targeted rerun is one command: `measure --motion NAME` or `--pose NAME`, and `try --trial NAME`. Each puts its
-  result into the existing record and keeps the rest.
-- `measure --carry` goes further: inside every motion and pose it measures only the pairs whose solids, placements,
-  rules or declared contacts changed, carries the rest, and says which (section 12.4a). It decides from figures the
-  build already produces, so the decision takes seconds and a rename or a note measures nothing.
+- A targeted rerun is one command: `measure --motion NAME` or `--pose NAME`, and `try --trial NAME`. Each writes
+  only its own records and keeps the rest.
+- `measure --carry` goes further: a current job is not measured at all, and inside every stale clearance it
+  measures only the pairs whose solids, placements, rules or declared contacts changed, carries the rest, and says
+  which (section 12.4a). It decides from figures the build already produces, so the decision takes seconds and a
+  rename or a note measures nothing.
 
-A clearance along a motion, and the measures at a pose, use every solid present: any of them may be the obstacle or
-the weight. A trial uses only the solids its plane cut.
+A clearance along a motion, a withdrawal and an attachment use every solid present: any of them may be the obstacle
+or the support. A reach or an indentation uses its two named solids, and a mass the solids it weighs. A trial uses
+only the solids its plane cut.
 
 `status` also prints the facts a 3D engine would need settled (section 15).
 

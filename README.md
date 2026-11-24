@@ -90,10 +90,11 @@ Then measure it:
 python -m frc_design_kernel measure swing-arm.json --out out
 ```
 
-`measure` writes `out/measurements.json`: for every motion, how close each pair of solids comes over the whole
-stroke; for every pose, what touches what, what is not connected to the base, and the mass with its centre. The
-closeness is proven, not sampled at fixed steps: the library knows how fast each solid can move, so it knows what
-cannot happen between two samples.
+`measure` writes one file per measuring job into `out/measurements/`, each the moment its job finishes: for every
+motion, how close each pair of solids comes over the whole stroke; for every pose, what touches what, what is not
+connected to the base, and the mass with its centre. The closeness is proven, not sampled at fixed steps: the
+library knows how fast each solid can move, so it knows what cannot happen between two samples. A stopped run keeps
+the jobs it finished, and `measure --carry` measures only the rest.
 
 Trials are data in the same file. Run them with:
 

@@ -1,6 +1,6 @@
 """Measuring again only what changed: pairs whose solids, placements, motion or rules changed; the rest carried.
 
-Every test compares a carried record with a full measurement of the same design, so a pair carried when it should
+Every test compares carried job files with a fresh measurement of the same design, so a pair carried when it should
 have been measured shows up as a difference.
 """
 import contextlib
@@ -14,13 +14,15 @@ from pathlib import Path
 from unittest import mock
 
 from frc_design_kernel.cli import main
-from frc_design_kernel.measure import attachment, clearance, mass, run, scene as scenes, summary
+from frc_design_kernel.measure import attachment, clearance, mass, records, run, scene as scenes, summary
 
 from .helpers import load_data
 from .test_measure import STACK
+from .test_records import files, raw, results
 
 SOLIDS = 8              # five robot solids and three fixtures in STACK
 NEAR_BRACKET = {"kind": "box", "fromMm": [62, 40, 150], "toMm": [72, 50, 160]}    # 2 mm from the bracket's lift path and the ball
+MOTIONS = ("clearance.motion.press", "clearance.motion.lift-off")
 
 
 def source(change=None):
@@ -34,21 +36,11 @@ def move_loose(data):
     next(s for s in data["solids"] if s["name"] == "loose")["shape"] = NEAR_BRACKET
 
 
-def measured(path, earlier=None, focus=None, **settings):
-    return summary.measure_design(path, settings.pop("min_gap", 3.0), 1.0, workers=1, earlier=earlier, focus=focus, **settings)
-
-
-def without_checked(value):
-    """A record with every "checked" block taken out: what is left must equal a full measurement."""
-    if isinstance(value, dict):
-        return {k: without_checked(v) for k, v in value.items() if k != "checked"}
-    if isinstance(value, list):
-        return [without_checked(v) for v in value]
-    return value
-
-
-def comparable(record):
-    return without_checked({"motions": record["motions"], "poses": record["poses"]})
+def measured(path, folder, carry=True, focus=None, min_gap=3.0, touch_gap=1.0):
+    """Record every job the measure command asks of a design, into folder; {job id: what was done}."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    jobs = summary.design_jobs(data, min_gap, touch_gap)
+    return {e["id"]: e["action"] for e in records.record(path, jobs, folder, workers=1, carry=carry, focus=focus)}
 
 
 @contextlib.contextmanager
@@ -85,175 +77,191 @@ def watched():
         yield seen
 
 
-class OneSolidMoved(unittest.TestCase):
+class Folders:
+    """A carried folder and a fresh one, both removed after the test."""
+
+    def setUp(self):
+        self.held = [tempfile.TemporaryDirectory() for _ in range(2)]
+        self.carried, self.fresh = (folder.name for folder in self.held)
+
+    def tearDown(self):
+        for folder in self.held:
+            folder.cleanup()
+
+
+class OneSolidMoved(Folders, unittest.TestCase):
     def test_a_moved_solid_measures_exactly_its_pairs_and_the_merge_is_the_full_result(self):
         """Catches a carry that measures pairs which did not change, misses one that did, or merges to a different answer."""
-        before = measured(source())
+        measured(source(), self.carried)
         moved = source(move_loose)
-        full = measured(moved)
+        measured(moved, self.fresh, carry=False)
         with watched() as seen:
-            carried = measured(moved, earlier=before)
-        self.assertEqual(comparable(carried), comparable(full))
+            measured(moved, self.carried)
+        self.assertEqual(results(self.carried), results(self.fresh))
         self.assertTrue(seen["pairs"] and all("loose" in pair for pair in seen["pairs"]), seen["pairs"])
-        for name, found in carried["motions"].items():
-            checked = found["checked"]
+        found = files(self.carried)
+        for name in MOTIONS:
+            checked = found[name]["checked"]
             self.assertEqual(checked["measuredSolids"], ["loose"], name)
             self.assertEqual((checked["pairsMeasured"], checked["pairsCarried"], checked["pairsNotMeasured"]),
                              (SOLIDS - 1, math.comb(SOLIDS, 2) - (SOLIDS - 1), 0), name)
-        self.assertIn(["bracket", "loose"], full["motions"]["lift off"]["closer"])     # the move matters: the merge must find it
-
-    def test_control_a_carry_told_the_moved_solid_is_unchanged_gives_a_different_answer(self):
-        """Control: shows the comparison with a full measurement does catch a pair carried when it changed."""
-        before = measured(source())
-        moved = source(move_loose)
-        lying = copy.deepcopy(before)
-        now = measured(moved)
-        for name, found in lying["motions"].items():
-            found["inputs"]["solids"]["loose"] = now["motions"][name]["inputs"]["solids"]["loose"]
-        carried = measured(moved, earlier=lying)
-        self.assertNotEqual(comparable(carried)["motions"], comparable(now)["motions"])
-        self.assertEqual(carried["motions"]["lift off"]["checked"]["pairsMeasured"], 0)
+        self.assertIn(["bracket", "loose"], found["clearance.motion.lift-off"]["result"]["closer"])     # the move matters: the merge must find it
 
     def test_a_motion_edit_measures_only_the_pairs_of_the_solids_it_moves(self):
         """Catches a change to one motion's stroke rerunning other motions, or solids that motion does not move."""
-        before = measured(source())
+        measured(source(), self.carried)
         edited = source(lambda d: d["motions"]["press"]["moves"].update(piece=[{"kind": "translation", "travelMm": [0, 0, -30]}]))
-        carried = measured(edited, earlier=before)
-        self.assertEqual(comparable(carried), comparable(measured(edited)))
-        self.assertEqual(carried["motions"]["press"]["checked"]["measuredSolids"], ["ball"])
-        self.assertEqual(carried["motions"]["lift off"]["checked"]["pairsMeasured"], 0)
+        done = measured(edited, self.carried)
+        measured(edited, self.fresh, carry=False)
+        self.assertEqual(results(self.carried), results(self.fresh))
+        self.assertEqual(files(self.carried)["clearance.motion.press"]["checked"]["measuredSolids"], ["ball"])
+        self.assertEqual(done["clearance.motion.lift-off"], "carried")
 
     def test_a_newly_declared_contact_measures_that_pair_alone(self):
         """Catches a change of declared contacts being missed (the pair carried) or rerunning every pair of both solids."""
-        before = measured(source())
+        measured(source(), self.carried)
         edited = source(lambda d: d["contacts"].append({"pair": ["bracket", "post"], "during": ["lift off"]}))
-        carried = measured(edited, earlier=before)
-        self.assertEqual(comparable(carried), comparable(measured(edited)))
-        checked = carried["motions"]["lift off"]["checked"]
+        measured(edited, self.carried)
+        measured(edited, self.fresh, carry=False)
+        self.assertEqual(results(self.carried), results(self.fresh))
+        checked = files(self.carried)["clearance.motion.lift-off"]["checked"]
         self.assertEqual((checked["measuredSolids"], checked["measuredPairs"], checked["pairsMeasured"]), ([], [["bracket", "post"]], 1))
 
     def test_changed_rules_measure_every_pair(self):
         """Catches pairs carried across a change of the gap asked, which every pair is tested against."""
         path = source()
-        carried = measured(path, earlier=measured(path), min_gap=5.0)
-        self.assertEqual(comparable(carried), comparable(measured(path, min_gap=5.0)))
-        for found in carried["motions"].values():
-            self.assertEqual((found["checked"]["measuredSolids"], found["checked"]["pairsCarried"]), (None, 0))
+        measured(path, self.carried)
+        measured(path, self.carried, min_gap=5.0)
+        measured(path, self.fresh, carry=False, min_gap=5.0)
+        self.assertEqual(results(self.carried), results(self.fresh))
+        for name in MOTIONS:
+            checked = files(self.carried)[name]["checked"]
+            self.assertEqual((checked["measuredSolids"], checked["pairsCarried"]), (None, 0))
 
 
-class NothingChanged(unittest.TestCase):
-    def test_a_design_rename_and_a_note_edit_measure_nothing(self):
-        """Catches names or notes entering a pair's identity, or a carry that still builds and searches every motion."""
-        before = measured(source())
+class NothingChanged(Folders, unittest.TestCase):
+    def test_a_design_rename_and_a_note_edit_measure_nothing_and_write_nothing(self):
+        """Catches names or notes entering a job's identity, or a carry that still builds and searches every motion."""
+        measured(source(), self.carried)
+        before = raw(self.carried)
 
         def relabel(data):
             data["name"] = "Stack, renamed"
             data["mounts"][0]["note"] = "Three screws now."
             data["contacts"][0]["note"] = "Edited."
-        edited = source(relabel)
         with watched() as seen:
-            carried = measured(edited, earlier=before)
-        self.assertEqual(comparable(carried), comparable(measured(edited)))
+            done = measured(source(relabel), self.carried)
+        self.assertEqual(set(done.values()), {"carried"})
         self.assertEqual((seen["pairs"], seen["poseGaps"], seen["attachment"], seen["mass"], seen["motionScenes"]), ([], 0, [], [], 0))
-        for found in carried["motions"].values():
-            self.assertEqual((found["checked"]["pairsMeasured"], found["checked"]["pairsCarried"]), (0, math.comb(SOLIDS, 2)))
+        self.assertEqual(raw(self.carried), before)
 
     def test_a_renamed_solid_measures_no_pair_and_is_carried_under_its_new_name(self):
         """Catches a solid's name entering its identity, or carried rows that keep the old name."""
-        before = measured(source(move_loose))
+        measured(source(move_loose), self.carried)
 
         def rename(data):
             next(s for s in data["solids"] if s["name"] == "loose")["name"] = "stray"
         edited = source(lambda d: (move_loose(d), rename(d)))
         with watched() as seen:
-            carried = measured(edited, earlier=before)
-        self.assertEqual(comparable(carried), comparable(measured(edited)))
+            measured(edited, self.carried)
+        measured(edited, self.fresh, carry=False)
+        self.assertEqual(results(self.carried), results(self.fresh))
         self.assertEqual((seen["pairs"], seen["motionScenes"]), ([], 0))
-        self.assertIn(["bracket", "stray"], carried["motions"]["lift off"]["closer"])
-        self.assertEqual(carried["motions"]["lift off"]["checked"]["renamed"], {"stray": "loose"})
+        lift = files(self.carried)["clearance.motion.lift-off"]
+        self.assertIn(["bracket", "stray"], lift["result"]["closer"])
+        self.assertEqual(lift["checked"]["renamed"], {"stray": "loose"})
 
     def test_control_a_moved_solid_is_measured(self):
         """Control: shows the same watch does see measuring when one solid really moved by a millimetre."""
-        before = measured(source())
+        measured(source(), self.carried)
         edited = source(lambda d: next(s for s in d["solids"] if s["name"] == "loose")["shape"].update(fromMm=[301, 0, 50], toMm=[311, 10, 60]))
         with watched() as seen:
-            carried = measured(edited, earlier=before)
-        self.assertTrue(seen["attachment"] and seen["mass"])
+            done = measured(edited, self.carried)
+        self.assertEqual(sorted(seen["attachment"], key=str), [None, "home", "lifted"])
+        self.assertEqual(seen["mass"], [])              # the loose block has no mass, so no roll-up uses its shape
         self.assertEqual(seen["motionScenes"], 2)
-        self.assertEqual({row["clearance"]["checked"]["measuredSolids"][0] for row in carried["poses"]}, {"loose"})
+        self.assertEqual({files(self.carried)[name]["checked"]["measuredSolids"][0] for name in done if name.startswith("clearance.")}, {"loose"})
 
 
-class PoseCarry(unittest.TestCase):
+class PoseCarry(Folders, unittest.TestCase):
     def test_attachment_and_mass_at_an_untouched_pose_are_carried(self):
         """Catches attachment and mass measured again at a pose where nothing moved, or carried at one where something did."""
-        before = measured(source())
+        measured(source(), self.carried)
+
         def lower(data):
             data["poses"]["lifted"] = {"bracket": [{"kind": "translation", "travelMm": [0, 0, 90]}]}
             data["motions"]["lift off"]["moves"]["bracket"] = [{"kind": "translation", "travelMm": [0, 0, 90]}]
         edited = source(lower)
         with watched() as seen:
-            carried = measured(edited, earlier=before)
-        self.assertEqual(comparable(carried), comparable(measured(edited)))
+            done = measured(edited, self.carried)
+        measured(edited, self.fresh, carry=False)
+        self.assertEqual(results(self.carried), results(self.fresh))
         self.assertEqual((seen["attachment"], seen["mass"]), (["lifted"], ["lifted"]))
-        checked = {row["pose"]: row["checked"] for row in carried["poses"]}
-        self.assertEqual(checked[None], {"attachment": "carried", "mass": "carried"})
-        self.assertEqual(checked["home"], {"attachment": "carried", "mass": "carried"})
-        self.assertEqual(checked["lifted"], {"attachment": "measured", "mass": "measured"})
+        self.assertEqual(sorted(name for name, action in done.items() if action == "measured"),
+                         ["attachment.pose.lifted", "clearance.motion.lift-off", "clearance.pose.lifted", "mass.pose.lifted"])
 
     def test_control_a_mass_edit_measures_mass_but_not_attachment(self):
         """Control: shows mass is measured again when only a mass changed, and attachment, which no mass enters, is not."""
-        before = measured(source())
+        measured(source(), self.carried)
+        before = files(self.carried)["mass.drawn"]["result"]
         edited = source(lambda d: d["solids"][0].update(massKg=1.5))
         with watched() as seen:
-            carried = measured(edited, earlier=before)
-        self.assertEqual(comparable(carried), comparable(measured(edited)))
+            measured(edited, self.carried)
+        measured(edited, self.fresh, carry=False)
+        self.assertEqual(results(self.carried), results(self.fresh))
         self.assertEqual((seen["attachment"], len(seen["mass"]), seen["pairs"]), ([], 3, []))
-        self.assertNotEqual(carried["poses"][0]["mass"], before["poses"][0]["mass"])
+        self.assertNotEqual(files(self.carried)["mass.drawn"]["result"], before)
 
 
-class AttachmentCarry(unittest.TestCase):
+class AttachmentCarry(Folders, unittest.TestCase):
     def test_touching_gaps_and_mounts_of_unchanged_solids_are_carried(self):
         """Catches an attachment that measures every touching pair and mount again after one solid moved, or merges to a different answer."""
-        before = measured(source())
+        measured(source(), self.carried)
         moved = source(move_loose)
-        carried = measured(moved, earlier=before)
-        self.assertEqual(comparable(carried), comparable(measured(moved)))
-        for row in carried["poses"]:
-            checked = row["attachment"]["checked"]
-            self.assertEqual((checked["mountsMeasured"], checked["mountsCarried"]), (0, 1))
-            self.assertGreater(checked["pairsCarried"], 0)
+        measured(moved, self.carried)
+        measured(moved, self.fresh, carry=False)
+        self.assertEqual(results(self.carried), results(self.fresh))
+        for name in ("attachment.drawn", "attachment.pose.home", "attachment.pose.lifted"):
+            checked = files(self.carried)[name]["checked"]
+            self.assertEqual((checked["mountsMeasured"], checked["mountsCarried"]), (0, 1), name)
+            self.assertGreater(checked["pairsCarried"], 0, name)
 
     def test_control_a_carried_gap_is_the_earlier_number_and_a_new_touch_gap_measures_all(self):
         """Control: shows touching gaps really are carried (a wrong earlier gap shows through) and are not across a new touch gap."""
-        before = measured(source())
-        lying = copy.deepcopy(before)
-        for row in lying["poses"]:
-            for pair in row["attachment"]["touching"]:
+        measured(source(), self.carried)
+        for path in (Path(self.carried) / records.FOLDER).glob("attachment.*.json"):
+            lying = json.loads(path.read_text(encoding="utf-8"))
+            for pair in lying["result"]["touching"]:
                 pair["gapMm"] = 0.5
-        carried = measured(source(move_loose), earlier=lying)
-        self.assertEqual({pair["gapMm"] for row in carried["poses"] for pair in row["attachment"]["touching"]}, {0.5})
-        again = summary.measure_design(source(move_loose), 3.0, 2.0, workers=1, earlier=before)
-        self.assertEqual({row["attachment"]["checked"] is None for row in again["poses"]}, {True})
+            path.write_text(json.dumps(lying), encoding="utf-8")
+        measured(source(move_loose), self.carried)
+        found = files(self.carried)
+        self.assertEqual({pair["gapMm"] for name in found if name.startswith("attachment.") for pair in found[name]["result"]["touching"]}, {0.5})
+        measured(source(move_loose), self.carried, touch_gap=2.0)
+        found = files(self.carried)
+        self.assertEqual({json.dumps(found[name]["checked"]) for name in found if name.startswith("attachment.")}, {'{"measured": "whole"}'})
 
 
-class Focus(unittest.TestCase):
+class Focus(Folders, unittest.TestCase):
     def test_a_focus_without_an_earlier_record_says_what_it_left_out_and_is_never_carried_from(self):
         """Catches a part-measured motion passed off as whole, or carried from later as if every pair had been measured."""
         path = source()
-        part = measured(path, focus=["ball"])
-        checked = part["motions"]["press"]["checked"]
+        measured(path, self.carried, carry=False, focus=["ball"])
+        checked = files(self.carried)["clearance.motion.press"]["checked"]
         self.assertEqual((checked["measuredSolids"], checked["pairsMeasured"], checked["pairsNotMeasured"]),
                          (["ball"], SOLIDS - 1, math.comb(SOLIDS, 2) - (SOLIDS - 1)))
-        again = measured(path, earlier=part)
-        self.assertEqual(comparable(again), comparable(measured(path)))
-        self.assertEqual(again["motions"]["press"]["checked"]["measuredSolids"], None)
+        done = measured(path, self.carried)
+        measured(path, self.fresh, carry=False)
+        self.assertEqual(results(self.carried), results(self.fresh))
+        self.assertEqual(done["clearance.motion.press"], "measured")
+        self.assertEqual(files(self.carried)["clearance.motion.press"]["checked"]["measuredSolids"], None)
 
     def test_shared_between_workers_a_carry_is_the_same(self):
         """Catches a carry that changes with the worker count, or rows lost when carried and fresh rows are put together."""
         path = source(move_loose)
-        before = measured(source())
-        jobs = [{"motion": name, "minGapMm": 3.0, "contacts": summary.contacts_for(STACK, name), "earlier": before["motions"][name]}
-                for name in STACK["motions"]]
+        plain = [{"motion": name, "minGapMm": 3.0, "contacts": summary.contacts_for(STACK, name)} for name in STACK["motions"]]
+        before = run.clearances(source(), plain, workers=1)
+        jobs = [dict(job, earlier=found) for job, found in zip(plain, before)]
         alone = run.clearances(path, jobs, workers=1)
         old = run.PAIRS_PER_SHARE
         try:
@@ -268,27 +276,27 @@ class Command(unittest.TestCase):
     def run_measure(self, *args):
         text, errors = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(text), contextlib.redirect_stderr(errors):
-            code = main(["measure", *map(str, args), "--min-gap", "3", "--workers", "1"])
+            code = main(["measure", *map(str, args), "--min-gap", "3", "--touch-gap", "1", "--workers", "1"])
         return code, text.getvalue().splitlines(), errors.getvalue()
 
-    def test_carry_reads_the_record_in_the_folder_and_says_what_it_measured(self):
-        """Catches --carry ignoring the earlier record, not saying what it carried, or writing a different record."""
-        with tempfile.TemporaryDirectory() as out:
+    def test_carry_reads_the_records_in_the_folder_and_says_what_it_measured(self):
+        """Catches --carry ignoring the earlier records, not saying what it carried, or writing a different record."""
+        with tempfile.TemporaryDirectory() as out, tempfile.TemporaryDirectory() as fresh:
             self.assertEqual(self.run_measure(source(), "--out", out)[0], 0)
             code, lines, _ = self.run_measure(source(move_loose), "--out", out, "--carry")
-            record = json.loads((Path(out) / "measurements.json").read_text(encoding="utf-8"))
-        self.assertEqual(code, 0)
-        self.assertEqual(record["schema"], "frc-design-kernel/measurements@3")
-        self.assertIn('Motion "lift off": measured 7 of 28 pairs again (those with loose), carried 21.', lines)
-        self.assertIn('As drawn: attachment measured again, mass measured again.', lines)
-        self.assertEqual(comparable(record), comparable(summary.measure_design(source(move_loose), 3.0, workers=1)))
+            self.assertEqual(self.run_measure(source(move_loose), "--out", fresh)[0], 0)
+            self.assertEqual(results(out), results(fresh))
+            schema = files(out)["clearance.motion.lift-off"]["schema"]
+        self.assertEqual((code, schema), (0, records.SCHEMA))
+        self.assertIn("clearance.motion.lift-off: measured 7 of 28 pairs again (those with loose), carried 21.", lines)
+        self.assertIn("mass.drawn: carried; its record is current.", lines)
 
-    def test_carry_needs_an_earlier_record_and_focus_a_known_solid(self):
+    def test_carry_needs_earlier_records_and_focus_a_known_solid(self):
         """Catches --carry quietly measuring everything when there is nothing to carry from, or a focus on a solid that is not there."""
         with tempfile.TemporaryDirectory() as out:
             code, _, error = self.run_measure(source(), "--out", out, "--carry")
             self.assertEqual(code, 1)
-            self.assertIn("--carry needs an earlier measurements.json", error)
+            self.assertIn(f"--carry needs earlier job records in {Path(out) / records.FOLDER}", error)
             code, _, error = self.run_measure(source(), "--out", out, "--focus", "lose")
             self.assertEqual(code, 1)
             self.assertIn('there is no solid named "lose"', error)
