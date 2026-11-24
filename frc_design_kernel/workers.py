@@ -144,8 +144,5 @@ class Crew:
     def _end(self):
         """End the worker processes now, whatever they are doing."""
         pool, self.pool = self.pool, None
-        processes = list((pool._processes or {}).values())      # before Python 3.14 there is no public way to end a running worker
-        pool.shutdown(wait=False, cancel_futures=True)
-        for process in processes:
-            process.terminate()
+        pool.terminate_workers()
         self.folder.cleanup()

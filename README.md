@@ -34,7 +34,7 @@ measurement is allowed, and is announced.
 pip install git+https://github.com/ehartye/frc-design-kernel
 ```
 
-Needs Python 3.11 or newer. The only dependency is `cadquery-ocp`, the CAD kernel.
+Needs Python 3.14 or newer. The only dependency is `cadquery-ocp`, the CAD kernel.
 
 Trials can also be run in 3D by MuJoCo, an optional extra that is only loaded when a trial names it:
 
