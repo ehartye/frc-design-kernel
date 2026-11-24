@@ -86,6 +86,18 @@
               "restitution": {"value": 0.2, "assumed": [0.1, 0.4]},
               "friction": {"value": 0.4, "assumed": [0.2, 0.6]}}
   },
+  "motors": {
+    "bench gearmotor": {"note": "The motor inside the gearmotor, before its gearbox. Invented figures.",
+                        "ktNmPerA": {"value": 0.012, "assumed": [0.011, 0.013]},
+                        "ohm": {"value": 0.6, "assumed": [0.5, 0.7]},
+                        "keVsPerRad": {"value": 0.012, "assumed": [0.011, 0.013]}}
+  },
+  "drives": {
+    "hoist": {"note": "The spool winds a cord that pulls the carriage up the posts.",
+              "motor": "bench gearmotor", "motorSolid": "gearmotor body", "gear": 30,
+              "efficiency": {"value": 0.8, "assumed": [0.7, 0.9]}, "supplyLimitA": 20,
+              "joint": {"group": "carriage", "kind": "slide", "axis": [0, 0, 1], "perOutputTurn": "=2 * pi * 15", "travel": [0, "=lift"]}}
+  },
   "contacts": [
     {"pair": ["crate", "tine {side}"], "each": [{"side": "left"}, {"side": "right"}],
      "note": "The crate rests on the tines until it is handed off."},
@@ -100,13 +112,14 @@
     }
   },
   "motions": {
-    "lift": {"from": "lowered", "to": "raised",
-             "moves": {"carriage": [{"kind": "translation", "travelMm": [0, 0, "=lift"]}]}},
-    "hand off": {"from": "raised", "to": "set down",
-                 "note": "The crate is carried off the tines along one arc.",
+    "lift": {"from": "lowered", "to": "raised", "drive": {"hoist": {"to": "=lift"}},
+             "durationS": {"value": 1.5, "assumed": [1.0, 2.5]}},
+    "hand off": {"from": {"after": "lift"}, "to": "set down", "by": "hand",
+                 "note": "The crate is lifted off the tines by hand along one arc.",
                  "moves": {"load": [{"kind": "path", "curve": "arc",
                                      "throughMm": [[0, 0, 350], [130, 0, 400], [260, 0, 350]]}]}},
-    "whole cycle": {"through": ["lowered", "raised", "set down"]}
+    "whole cycle": {"through": ["lowered", "raised", "set down"], "by": "hand",
+                    "note": "The whole cycle as one smooth sweep, for a quick look."}
   },
   "adjustments": {
     "fork height": {"input": "parameters.fork_z", "kind": "mechanical", "range": [85, 105], "step": 5,

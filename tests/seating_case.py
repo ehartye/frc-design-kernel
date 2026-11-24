@@ -86,7 +86,8 @@ def design():
     solids = [{"name": "floor", "group": "ground", "shape": BOX([-500, -800, -20], [2000, 800, 0])}]
     solids += [{"name": name, "group": "carriage", "shape": shape} for name, shape, _ in CARRIAGE]
     solids.append({"name": "flap", "group": "carriage", "shape": BOX([L - 151.5, -40, 50], [L - 148.5, 40, 95])})
-    side = lambda k, axis: {"motor": "small", "gear": 10, "radiusMm": 20, "statorLimitA": 3.2, "movingKg": MEASURED(0.2),
+    solids += [{"name": f"side motor {k}", "group": "chassis", "shape": BOX([-400, y, 200], [-360, y + 40, 240])} for k, y in (("left", 600), ("right", -640))]
+    side = lambda k, axis: {"motor": "small", "motorSolid": f"side motor {k}", "gear": 10, "radiusMm": 20, "statorLimitA": 3.2, "movingKg": MEASURED(0.2),
                             "efficiency": MEASURED(1.0), "turns": [{"solid": f"side belt {k}", "axis": axis}]}
     return {
         "schema": "frc-design-kernel/design@1", "name": "Seating pickup", "units": {"length": "mm", "mass": "kg"}, "parameters": {},
@@ -95,7 +96,7 @@ def design():
                                 "place": [{"kind": "rotation", "originMm": [0, 0, 0], "axis": [0, 1, 0], "travelDeg": PITCH},
                                           {"kind": "translation", "travelMm": [x0, 0, z0]}]}},
         "solids": solids, "poses": {"start": {}},
-        "motions": {"drive on": {"from": "start", "moves": {"chassis": [{"kind": "translation", "travelMm": [300, 0, 0]}]}}},
+        "motions": {"drive on": {"by": "hand", "from": "start", "moves": {"chassis": [{"kind": "translation", "travelMm": [300, 0, 0]}]}}},
         "pieces": {"ring": {"shape": {"kind": "torus", "centerMm": [0, 0, 0], "axis": [0, 0, 1], "majorRadiusMm": MAJOR, "minorRadiusMm": MINOR},
                             "massKg": MEASURED(0.2)}},
         "materials": {"frame": {"stiffnessNPerM": MEASURED(4000.0), "dampingRatio": MEASURED(0.95), "friction": MEASURED(0.75)},

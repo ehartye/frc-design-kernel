@@ -3,7 +3,7 @@
 An invented mechanism, used by the tests. It is not a real robot.
 
 Two posts stand on a base plate. A carriage slides up the posts and carries two fork tines. A crate rides on the
-tines. A gearmotor and a spool sit on the base.
+tines. A gearmotor and a spool sit on the base; the spool winds a cord that raises the carriage.
 
 | Shown here | Where |
 |---|---|
@@ -20,7 +20,9 @@ tines. A gearmotor and a spool sit on the base.
 | A physics trial with stated assumptions, a control and a listed bracket | `bar stays on the tines` |
 | A mechanical adjustment and an interaction for the screen facts | `fork height`, `bar on the tines` |
 | Poses | `lowered`, `raised`, `set down` |
-| A motion by operations, checked against its end pose | `lift` |
+| A motor placed as a solid, driving a slide joint through its gearing | `hoist` (on `gearmotor body`, under `motors` and `drives`) |
+| A motion as a motor command, checked against its end pose | `lift` |
+| A motion that starts where another ends, with its cause stated | `hand off` (after `lift`, by hand) |
 | A curved move as one operation | `hand off` (an arc) |
 | A motion through several poses | `whole cycle` |
 

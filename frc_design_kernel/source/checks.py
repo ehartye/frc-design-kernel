@@ -1,19 +1,13 @@
 """Checks across a plain design: names exist, nothing is counted twice, nothing loops. Each raises a DesignError."""
-import difflib
 import re
 
-from ..errors import DesignError
+from ..errors import DesignError, unknown
 from ..motion import ops as motion_ops
+from . import motions
 from .schema import step
-from .sourced import span
+from .sourced import check_sourced, span
 
 FIXTURE_GROUP = "fixtures"
-
-
-def unknown(where, what, name, known):
-    close = difflib.get_close_matches(str(name), list(known), 1)
-    hint = f'Did you mean "{close[0]}"? ' if close else ""
-    return DesignError(where, f'names the {what} "{name}", which does not exist', f"{hint}Known: {', '.join(sorted(known)) or 'none'}")
 
 
 def custom_uses(shape):
@@ -161,43 +155,24 @@ def check_poses_and_motions(design):
         check_group_ops(pose, f'poses "{name}"', groups)
     for name, motion in design["motions"].items():
         where = f'motions "{name}"'
-        if ("moves" in motion) == ("through" in motion):
-            raise DesignError(where, 'needs exactly one of "moves" or "through"', 'Use "from" and "moves" for operations, or "through" for a list of poses')
-        if "through" in motion and ("from" in motion or "to" in motion):
-            raise DesignError(where, 'has "through" together with "from" or "to"', 'A "through" motion starts at its first pose and ends at its last; remove "from" and "to"')
-        for pose in [*motion.get("through", []), *[motion[k] for k in ("from", "to") if k in motion]]:
+        motions.check_motion(design, name, motion)
+        named = [motion.get("from"), motion.get("to")]
+        for pose in [*motion.get("through", []), *(pose for pose in named if isinstance(pose, str))]:
             if pose not in poses:
                 raise unknown(where, "pose", pose, poses)
         check_group_ops(motion.get("moves", {}), f"{where} moves", groups)
+    motions.check_chains(design)
 
 
 SOURCED_TABLES = ("pieces", "materials", "motors", "drives")
 
 
-def check_sourced(value, where):
-    """A physical input that states its source must state exactly one, and an assumed range must hold its value."""
-    if isinstance(value, dict) and "value" in value:
-        if ("measured" in value) == ("assumed" in value):
-            raise DesignError(where, 'needs exactly one of "measured" or "assumed"', 'Say where it was measured, or give the range it is believed to lie in')
-        if "assumed" in value and not value["assumed"][0] <= value["value"] <= value["assumed"][1]:
-            raise DesignError(where, f'its value {value["value"]:g} is outside its assumed range {value["assumed"]}', "Give the range as [low, high] around the value")
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            check_sourced(item, f"{where}.{key}")
-    elif isinstance(value, list):
-        for i, item in enumerate(value):
-            check_sourced(item, f"{where}[{i}]")
-
-
 def check_tables(design, solids):
     for table in SOURCED_TABLES:
         check_sourced(design[table], table)
+    motions.check_drives(design)
     for name, drive in design["drives"].items():
         where = f'drives "{name}"'
-        if "motor" in drive and drive["motor"] not in design["motors"]:
-            raise unknown(where, "motor", drive["motor"], design["motors"])
-        if "motor" in drive and ("movingKg" in drive) == ("inertiaKgM2" in drive):
-            raise DesignError(where, 'a motor drive needs exactly one of "movingKg" or "inertiaKgM2"', "Say what the motor has to speed up")
         for turn in drive.get("turns", []):
             if turn["solid"] not in solids:
                 raise unknown(where, "solid", turn["solid"], solids)
@@ -255,9 +230,11 @@ def check_trials(design, solids):
         for adjustment in trial.get("adjustments", []):
             if adjustment not in design["adjustments"]:
                 raise unknown(where, "adjustment", adjustment, design["adjustments"])
-        for drive in trial.get("commands", {}):
+        for drive in [*trial.get("commands", {}), *(s["drive"] for s in trial["surfaces"] if "drive" in s)]:
             if drive not in design["drives"]:
                 raise unknown(f"{where} commands", "drive", drive, design["drives"])
+            if "radiusMm" not in design["drives"][drive]:
+                raise DesignError(where, f'uses the drive "{drive}", which has no "radiusMm" for a surface to run at', 'Give the drive the radius of the surface it runs')
         if "pose" in trial and trial["pose"] not in design["poses"]:
             raise unknown(where, "pose", trial["pose"], design["poses"])
         start = trial["piece"]["start"]

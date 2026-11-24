@@ -45,9 +45,9 @@ def design():
                    "bar": {"shape": {"kind": "cylinder", "fromMm": [0, -100, 0], "toMm": [0, 100, 0], "radiusMm": 20}, "massKg": {"value": 0.5, "assumed": [0.4, 0.6]}},
                    "crate": {"shape": BOX([-50, -50, -50], [50, 50, 50]), "massKg": {"value": 1.0, "assumed": [0.8, 1.2]}}},
         "poses": {"home": {}},
-        "motions": {"swing in plane": {"from": "home", "moves": {"arm": [TURN([0, 1, 0])]}},
-                    "swing out of plane": {"from": "home", "moves": {"tilt": [TURN([1, 0, 0])]}},
-                    "press": {"from": "home", "moves": {"piece": [{"kind": "translation", "travelMm": [0, 0, -6]}]}}},
+        "motions": {"swing in plane": {"by": "hand", "from": "home", "moves": {"arm": [TURN([0, 1, 0])]}},
+                    "swing out of plane": {"by": "hand", "from": "home", "moves": {"tilt": [TURN([1, 0, 0])]}},
+                    "press": {"by": "piece", "from": "home", "moves": {"piece": [{"kind": "translation", "travelMm": [0, 0, -6]}]}}},
         "adjustments": {"channel gap": {"input": "parameters.gap", "kind": "mechanical", "range": [1, 8], "note": "Slotted wall mounts."}},
         "interactions": {
             "over the rollers": {"piece": "ball", "plane": {"normal": "y", "atMm": 0}, "solids": ["tapered roller", "straight roller", "pad"],
@@ -106,7 +106,7 @@ class ScreenFacts(unittest.TestCase):
         """Catches a turning path passing as planar when its turn tips the body out of the plane; control: a square turn, either way round and of any axis length, is not listed."""
         def listed(axis):
             path = {"kind": "path", "curve": "straight", "throughMm": [[0, 0, 0], [100, 0, 0]], "turnDeg": [0, 30], "turnAxis": axis}
-            design = load_data(edited(lambda d: d["motions"].update(follow={"moves": {"slide": [path]}})))
+            design = load_data(edited(lambda d: d["motions"].update(follow={"by": "hand", "moves": {"slide": [path]}})))
             return [row["why"] for row in screen.out_of_plane(design.data, ["follow"], "y")]
         self.assertEqual(listed([0, 0, 1]), ["turns about an axis that is not square to the plane"])
         self.assertEqual((listed([0, 1, 0]), listed([0, -2, 0])), ([], []))     # either way round, any length

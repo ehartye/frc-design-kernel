@@ -34,7 +34,9 @@ def earlier(folder, name):
 
 
 def validate(args):
+    from .builder import placement      # placements need no CAD kernel
     design = load(args.source)
+    placement.check_motions(design.data)
     print(f'OK "{design.data["name"]}": {summary(design)}. Nothing was built.')
 
 

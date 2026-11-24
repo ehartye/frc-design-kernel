@@ -32,6 +32,8 @@ DESIGN = {
     "trials": {},
 }
 ASSUMES = [{"id": "dry-surfaces", "text": "The surfaces are dry and clean."}]
+# A motor block off to one side, off every trial's plane, for a motor drive to name as its motorSolid.
+MOTOR_SOLID = {"name": "motor", "group": "bench", "shape": BOX([-100, 200, 0], [-60, 260, 40])}
 
 
 def on_slope(along_mm, radius_mm, slope_deg, rise_mm):
@@ -66,6 +68,11 @@ def tilting_trial(**extra):
     trial["piece"]["start"] = {"atMm": [f"=300 * {c} + 19.95 * {s}", f"=rise - 300 * {s} + 19.95 * {c}"]}
     trial["events"][0]["when"]["above"] = f"=400 * {c} + 20 * {s}"
     return trial
+
+
+def with_motor():
+    """The bench's solids and the motor block."""
+    return [*copy.deepcopy(DESIGN["solids"]), copy.deepcopy(MOTOR_SOLID)]
 
 
 def bench(trials, **extra):

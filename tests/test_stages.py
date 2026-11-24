@@ -125,7 +125,7 @@ class Sampled(unittest.TestCase):
                 "groups": {"base": {"role": "structure"}, "arm": {"role": "mechanism", "carriedBy": "base"}, "tip": {"role": "mechanism", "carriedBy": "arm"}},
                 "solids": [{"name": "a", "group": g, "shape": {"kind": "box", "fromMm": [0, 0, 0], "toMm": [1, 1, 1]}} for g in ("base",)],
                 "poses": {"down": {}, "up": {"arm": [TURN], "tip": [SLIDE]}},
-                "motions": {"raise": {"through": ["down", "up"]}, "carry": {"from": "down", "moves": {"arm": [ARC]}}}}
+                "motions": {"raise": {"by": "hand", "through": ["down", "up"]}, "carry": {"by": "hand", "from": "down", "moves": {"arm": [ARC]}}}}
         design = load_data(data).data
         for motion in ("raise", "carry"):
             rows = placement.sampled(design, motion, 4)

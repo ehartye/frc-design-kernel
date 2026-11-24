@@ -40,8 +40,8 @@ def source():
     data["groups"]["gate"] = {"role": "mechanism"}
     data["solids"].append({"name": "gate", "group": "gate", "massKg": 0.2, "shape": {"kind": "box", "fromMm": [2500, -50, 0], "toMm": [2520, 50, 200]}})
     data["poses"] = {"shut": {}, "open": {"gate": [dict(TURN)]}}
-    data["motions"] = {"swing": {"from": "shut", "moves": {"gate": [dict(TURN)]}}, "sweep": {"through": ["shut", "open"]},
-                       "shove": {"from": "shut", "moves": {"gate": [{"kind": "translation", "travelMm": [10, 0, 0]}]}}}
+    data["motions"] = {"swing": {"by": "hand", "from": "shut", "moves": {"gate": [dict(TURN)]}}, "sweep": {"by": "hand", "through": ["shut", "open"]},
+                       "shove": {"by": "hand", "from": "shut", "moves": {"gate": [{"kind": "translation", "travelMm": [10, 0, 0]}]}}}
     return data
 
 

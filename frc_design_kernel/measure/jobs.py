@@ -12,6 +12,7 @@ row there and a branch in drawn_on, perform and finish.
 import hashlib
 import re
 
+from ..builder import placement
 from ..errors import DesignError
 from . import approach, attachment, carry, clearance, compression, mass, summary
 from .search import DEFAULT_DEPTH
@@ -119,10 +120,10 @@ def drawn_on(assembly, job):
         solids = carry.along(assembly, job["motion"], job["absent"], job.get("displace") or None)
     else:
         solids = carry.at_pose(assembly, job["pose"], job["absent"])
-    used = {}
+    used = placement.described(data, job["motion"]) if "motion" in job else {}
     if kind == "clearance" and "motion" in job:
         rules = dict(clearance.rules(job["minGapMm"], job["depth"], job["includeStill"]), nearMm=job["nearMm"])
-        used = {"contacts": [list(pair) for pair in summary.resolved_contacts(data, job, set(names))]}
+        used["contacts"] = [list(pair) for pair in summary.resolved_contacts(data, job, set(names))]
     elif kind == "clearance":
         rules = {"minGapMm": job["minGapMm"]}
         used = {"contacts": [list(pair) for pair in summary.resolved_contacts(data, job, set(names))]}

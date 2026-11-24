@@ -19,7 +19,7 @@ def carried(engine, frame):
                                                                {"kind": "translation", "travelMm": [100, 0, -500]}]}
     design["solids"].append({"name": "tray", "group": "tray", "shape": {"kind": "box", "fromMm": [-300, -50, -20], "toMm": [300, 50, 0]}})
     design["poses"] = {"loaded": {}}
-    design["motions"] = {"carry": {"from": "loaded", "moves": {"tray": [{"kind": "translation", "travelMm": [200, 0, 0]}]}}}
+    design["motions"] = {"carry": {"by": "hand", "from": "loaded", "moves": {"tray": [{"kind": "translation", "travelMm": [200, 0, 0]}]}}}
     trial = {"engine": engine, "assumes": ASSUMES, "plane": {"normal": "y", "atMm": 0}, "stepS": 1e-4, "durationS": 0.7, "traceS": 0.01, "events": [],
              "pass": {"outcomes": ["timeout"]}, "piece": {"use": "block", "start": {"atMm": [100, -480]}},
              "movers": {"carry": {"motion": "carry", "group": "tray", **SLIDE}},

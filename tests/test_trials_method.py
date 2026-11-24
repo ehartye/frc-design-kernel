@@ -16,7 +16,7 @@ from frc_design_kernel.trials import campaign, fit, record
 from frc_design_kernel.trials.plan import Bracket
 
 from .helpers import load_data
-from .trial_cases import MEASURED, PANEL, bench, hold_trial
+from .trial_cases import MEASURED, PANEL, bench, hold_trial, with_motor
 
 WIND = "def force(signals, parameters):\n    return (parameters['pushN'], 0.0, 0.0)\n"
 JUDGE = "import math\n\n\ndef judge(run, parameters):\n    return run['outcome'] == 'held' and math.isfinite(run['measures']['push'])\n"
@@ -229,16 +229,16 @@ class HandOff(unittest.TestCase):
     def test_a_drive_can_start_at_the_speed_the_earlier_trial_left_it_at(self):
         """Catches a wheel that restarts from rest in every shot of a batch: its speed must carry when the trial asks."""
         motor = {"small": {"ktNmPerA": MEASURED(0.02), "ohm": MEASURED(0.1), "keVsPerRad": MEASURED(0.02)}}
-        drive = {"wheel": {"motor": "small", "gear": 2.0, "radiusMm": 25, "inertiaKgM2": MEASURED(2e-4), "statorLimitA": 40}}
+        drive = {"wheel": {"motor": "small", "motorSolid": "motor", "gear": 2.0, "radiusMm": 25, "inertiaKgM2": MEASURED(2e-4), "statorLimitA": 40}}
         first = hold_trial(commands={"wheel": {"mode": "voltage", "busV": 12.0}})
         second = hold_trial(commands={"wheel": {"mode": "voltage", "busV": None}})      # power off: it keeps whatever speed it starts with
         second["piece"]["start"] = {"after": "first", "carryDrives": True}
-        found, _ = campaign_for({"first": first, "second": second}, materials=GRIPPY, motors=motor, drives=drive)
+        found, _ = campaign_for({"first": first, "second": second}, materials=GRIPPY, motors=motor, drives=drive, solids=with_motor())
         left_at = found["trials"]["first"]["nominal"]["end"]["drives"]["wheel"]
         self.assertGreater(left_at, 5.0)
         self.assertAlmostEqual(found["trials"]["second"]["nominal"]["end"]["drives"]["wheel"], left_at, places=9)
         second["piece"]["start"] = {"after": "first"}
-        fresh, _ = campaign_for({"first": first, "second": second}, materials=GRIPPY, motors=motor, drives=drive)
+        fresh, _ = campaign_for({"first": first, "second": second}, materials=GRIPPY, motors=motor, drives=drive, solids=with_motor())
         self.assertEqual(fresh["trials"]["second"]["nominal"]["end"]["drives"]["wheel"], 0.0)
 
 

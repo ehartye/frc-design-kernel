@@ -38,7 +38,7 @@ STACK = {
     "mounts": [{"group": "bracket", "on": "post", "atMm": [50, 50, 111], "note": "Two screws, not drawn."}],
     "contacts": [{"pair": ["ball", "bracket"], "during": ["press"], "note": "The ball is squeezed onto the bracket."}],
     "poses": {"home": {}, "lifted": {"bracket": UP(100)}},
-    "motions": {"press": {"from": "home", "moves": {"piece": UP(-23)}}, "lift off": {"from": "home", "to": "lifted", "moves": {"bracket": UP(100)}}},
+    "motions": {"press": {"by": "piece", "from": "home", "moves": {"piece": UP(-23)}}, "lift off": {"by": "hand", "from": "home", "to": "lifted", "moves": {"bracket": UP(100)}}},
 }
 
 

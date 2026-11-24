@@ -9,11 +9,11 @@ from frc_design_kernel.kernel.section import outlines, signed_area
 from frc_design_kernel.trials import inputs, planar, scene
 
 from .helpers import load_data
-from .trial_cases import G, MEASURED, PANEL, bench, hold_trial, on_slope
+from .trial_cases import G, MEASURED, PANEL, bench, hold_trial, on_slope, with_motor
 
 STOP_LOW = [{"name": "landed", "when": {"signal": "zMm", "below": 0}, "outcome": "landed"}]
 MOTOR = {"ktNmPerA": MEASURED(0.02), "ohm": MEASURED(0.1), "keVsPerRad": MEASURED(0.02)}
-WHEEL = {"motor": "small", "gear": 2.0, "radiusMm": 25, "inertiaKgM2": MEASURED(2e-4), "statorLimitA": 40}
+WHEEL = {"motor": "small", "motorSolid": "motor", "gear": 2.0, "radiusMm": 25, "inertiaKgM2": MEASURED(2e-4), "statorLimitA": 40}
 
 
 def run(trial, parameters=None, **design):
@@ -159,7 +159,7 @@ class Drives(unittest.TestCase):
 
     def spin_up(self, command, **drive):
         return run(base(durationS=1.0, commands={"wheel": command}, measures=self.MEASURES),
-                   motors={"small": MOTOR}, drives={"wheel": {**WHEEL, **drive}})
+                   motors={"small": MOTOR}, drives={"wheel": {**WHEEL, **drive}}, solids=with_motor())
 
     def test_a_motor_on_voltage_reaches_its_free_speed_within_its_current_limit(self):
         """Catches a wrong back-EMF, gear or current limit: an unloaded motor must settle where back-EMF equals the bus."""
@@ -184,7 +184,7 @@ class Drives(unittest.TestCase):
         """Catches controller rules that fire early, late or not at all: the wheel is braked 0.2 s after the half-second mark."""
         command = {"mode": "voltage", "busV": 12.0, "rules": [{"when": {"after": "half", "delayS": 0.2}, "set": {"busV": 0.0}}]}
         found = run(base(durationS=1.0, commands={"wheel": command}, measures=self.MEASURES,
-                         events=[{"name": "half", "when": {"signal": "tS", "above": 0.5}}]), motors={"small": MOTOR}, drives={"wheel": WHEEL})
+                         events=[{"name": "half", "when": {"signal": "tS", "above": 0.5}}]), motors={"small": MOTOR}, drives={"wheel": WHEEL}, solids=with_motor())
         rows = {round(row[0], 2): row[found["trace"]["columns"].index("drive.wheel.speedMps")] for row in found["trace"]["rows"]}
         self.assertGreater(rows[0.69], 7.0)
         self.assertLess(abs(found["measures"]["speed"]), 0.05)
@@ -196,7 +196,7 @@ class Drives(unittest.TestCase):
             drive = {**WHEEL, "movingKg": MEASURED(2.0), "turns": [{"solid": "belt bed", "axis": [0, 1, 0]}]}
             drive.pop("inertiaKgM2")
             found = run(base("block", {"atMm": [0, -480]}, durationS=0.3, commands={"wheel": command}, surfaces=[{"solid": "belt bed", "material": "panel"}],
-                             measures={"low": {"lowest": "drive.wheel.speedMps"}}), motors={"small": MOTOR}, drives={"wheel": drive})
+                             measures={"low": {"lowest": "drive.wheel.speedMps"}}), motors={"small": MOTOR}, drives={"wheel": drive}, solids=with_motor())
             return 2.0 - found["measures"]["low"]
         self.assertAlmostEqual(peak(3) / peak(1), 3.0, delta=0.3)
 
