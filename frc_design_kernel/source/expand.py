@@ -5,7 +5,7 @@ from ..errors import DesignError
 from .expressions import evaluate, is_expression
 from .schema import step
 
-REPEATABLE = ("solids", "fixtures", "mounts", "contacts")
+REPEATABLE = ("solids", "fixtures", "mounts", "contacts", "extraMass")
 PLAIN = ("groups", "poses", "motions", "pieces", "materials", "motors", "drives", "adjustments", "interactions", "trials")
 
 

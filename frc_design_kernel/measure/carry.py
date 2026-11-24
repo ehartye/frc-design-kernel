@@ -20,6 +20,7 @@ from OCP.GProp import GProp_GProps
 
 from ..builder import placement
 from ..kernel import props
+from ..source.sourced import span
 
 COUNTS = ("pairs", "declaredContacts", "bothStill", "farApart", "fixedFarApart", "measured", "notInFocus")
 DIGITS = 12             # significant digits kept of each figure, so the same build always gives the same identity
@@ -223,6 +224,7 @@ def pose_inputs(assembly, solids, contacts, touch_gap, floor_z, ignore):
     data, built = assembly.data, assembly.solids
     attach = digest([{name: [value, built[name].group, built[name].fixture] for name, value in solids.items()},
                      sorted(sorted(pair) for pair in contacts), data["mounts"], float(touch_gap), float(floor_z), sorted(ignore)])
-    weigh = digest([{name: [value, built[name].group, built[name].fixture, built[name].mass_kg] for name, value in solids.items()},
-                    {name: group.get("massKg") for name, group in data["groups"].items()}])
+    weigh = digest([{name: [value, built[name].group, built[name].fixture, built[name].mass_kg, built[name].mass_range_kg] for name, value in solids.items()},
+                    {name: span(group["massKg"]) if "massKg" in group else None for name, group in data["groups"].items()},
+                    [[entry["name"], entry["group"], span(entry["massKg"])] for entry in data["extraMass"]]])
     return {"attachment": attach, "mass": weigh}

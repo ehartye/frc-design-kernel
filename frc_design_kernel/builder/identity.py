@@ -21,7 +21,8 @@ def tidy(value):
 def solid(assembly, name):
     found = assembly.solids[name]
     return {"group": found.group, "kind": found.kind, "volumeMm3": round(props.volume(found.shape), 3),
-            "boundsMm": [round(v, 4) for v in props.bounds(found.shape)], "massKg": found.mass_kg}
+            "boundsMm": [round(v, 4) for v in props.bounds(found.shape)], "massKg": found.mass_kg,
+            "massRangeKg": None if found.mass_range_kg is None else list(found.mass_range_kg)}
 
 
 def solids(assembly, names):
