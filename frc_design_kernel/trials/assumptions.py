@@ -17,7 +17,7 @@ PLANAR = [
 MUJOCO = [
     {"id": "rigid-bodies", "text": "Every body is rigid. All give is in the contact between the piece and a surface."},
     {"id": "listed-pieces", "text": "The trial's piece and any others the trial lists are the only free bodies."},
-    {"id": "convex-shapes", "text": "A tube, a box with boxes cut out, a prism and a pie slice are run as their true convex pieces. Any other hollow, cut or imported solid is used as its convex hull; the record lists which, and says when the piece touched one."},
+    {"id": "convex-shapes", "text": "Every solid is run as convex pieces: from its construction where that allows, otherwise split at its own faces. A bore, a countersink, a wrap or any other inward round face is cut into wedges about its axis and run as flat facets, at most 0.2 mm inside it; the record states by how much. Only a piece with a free-form face or an inward ball is used as its convex hull, which fills it in; the record lists the solids with such a piece, and says when the piece touched one."},
     {"id": "own-contact-law", "text": "MuJoCo finds where shapes overlap and moves the bodies. The forces there are this library's spring, damper and friction law, the same as the planar engine's."},
     {"id": "shared-spring", "text": "Where a piece touches one surface at several points, the surface's spring is shared among the points by depth."},
     {"id": "driven-not-driving", "text": "A moved group follows its motion and a driven surface runs at its drive's speed; contact loads the drive's motor model but cannot push a mechanism off its motion."},

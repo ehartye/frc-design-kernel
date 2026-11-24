@@ -1,9 +1,15 @@
 """A solid with no construction to read is split into exact convex pieces at its own faces."""
 import importlib.util
+import math
 import unittest
+from unittest import mock
+
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeCone
+from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
 
 from frc_design_kernel.builder.shape import make
-from frc_design_kernel.kernel import props, split
+from frc_design_kernel.kernel import booleans, mesh, props, split
+from frc_design_kernel.trials import assumptions
 
 from .test_mujoco import one_run
 from .trial_cases import ASSUMES, bench
@@ -11,12 +17,67 @@ from .trial_cases import ASSUMES, bench
 HAVE = importlib.util.find_spec("mujoco") is not None
 BOX = lambda low, high: {"kind": "box", "fromMm": low, "toMm": high}
 ANGLE = {"kind": "prism", "plane": "xz", "fromMm": 0, "toMm": 50, "outlineMm": [[0, 0], [40, 0], [40, 4], [4, 4], [4, 40], [0, 40]]}
+TUBE = {"kind": "tube", "section": "round", "fromMm": [0, 0, 0], "toMm": [0, 0, 50], "outerDiameterMm": 30, "wallMm": 2}
+CYLINDER = lambda start, end, radius: {"kind": "cylinder", "fromMm": start, "toMm": end, "radiusMm": radius}
+# a roller relieved to a smaller land in its middle, bored through for its shaft
+RELIEVED = {"kind": "difference", "from": CYLINDER([0, 0, 0], [0, 60, 0], 20),
+            "cut": [{"kind": "tube", "section": "round", "fromMm": [0, 20, 0], "toMm": [0, 40, 0], "outerDiameterMm": 44, "wallMm": 6},
+                    CYLINDER([0, -1, 0], [0, 61, 0], 5)]}
+# a block drilled through along z, and across it along x
+CROSSED = {"kind": "difference", "from": BOX([-20, -20, -20], [20, 20, 20]), "cut": [CYLINDER([0, 0, -30], [0, 0, 30], 8), CYLINDER([-30, 0, 0], [30, 0, 0], 6)]}
+# half a belt, wrapped round a pulley of 22 mm radius
+WRAP = {"kind": "difference", "from": {"kind": "tube", "section": "round", "fromMm": [0, 0, 0], "toMm": [0, 20, 0], "outerDiameterMm": 50, "wallMm": 3},
+        "cut": [BOX([-30, -1, -30], [30, 21, 0])]}
 
 
 def pieces(shape):
     solid = make(shape, "test", None)
-    done, rough = split.convex_pieces(solid)
+    done, rough, _ = split.convex_pieces(solid)
     return solid, done, rough
+
+
+def countersunk_plate():
+    """A 10 mm plate with a 4 mm radius bolt hole, countersunk at 45 degrees to 9 mm radius at its top face."""
+    cone = BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0, 0, 5), gp_Dir(0, 0, 1)), 4.0, 10.0, 6.0).Shape()
+    return booleans.difference(make(BOX([-30, -30, 0], [30, 30, 10]), "test", None), [make(CYLINDER([0, 0, -1], [0, 0, 11], 4), "test", None), cone])
+
+
+def radial(vertex, axis):
+    """(distance from the axis, angle about it) of a point, for an axis through the origin along x, y or z."""
+    a, b = [vertex[i] for i in range(3) if i != axis]
+    return math.hypot(a, b), math.atan2(b, a)
+
+
+def on_hole(vertex, hole):
+    """True for a point on a hole given as (axis, smallest radius, largest radius)."""
+    axis, low, high = hole
+    return low - 0.01 <= radial(vertex, axis)[0] <= high + 0.01
+
+
+def hole_error(piece, hole):
+    """The most a flat chord across this piece's share of a hole could sit inside the hole, worked out from the piece's
+    own surface: the angle its points on the hole span, at the hole's largest radius. Independent of what split reports."""
+    angles = sorted(radial(v, hole[0])[1] for v in mesh.triangles(piece, 0.05)["vertices"] if on_hole(v, hole))
+    if not angles:
+        return 0.0
+    gaps = [b - a for a, b in zip(angles, angles[1:])] + [angles[0] + 2 * math.pi - angles[-1]]
+    return hole[2] * (1 - math.cos((2 * math.pi - max(gaps)) / 2))
+
+
+def poke_out(piece, holes):
+    """How far the piece reaches past the plane of any of its own triangles not on a hole: zero for a convex piece."""
+    found = mesh.triangles(piece, 0.05)
+    points, worst = found["vertices"], 0.0
+    for tri in found["triangles"]:
+        a, b, c = (points[i] for i in tri)
+        if any(all(on_hole(p, hole) for p in (a, b, c)) for hole in holes):
+            continue        # on a hole: its chord is what hole_error bounds
+        n = [(b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]), (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]),
+             (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])]
+        size = math.hypot(*n)
+        if size > 1e-9:
+            worst = max(worst, max(sum((p[i] - a[i]) * n[i] for i in range(3)) / size for p in points))
+    return worst
 
 
 class Split(unittest.TestCase):
@@ -28,12 +89,73 @@ class Split(unittest.TestCase):
             self.assertEqual((len(done), rough), (count, []))
             self.assertAlmostEqual(sum(props.volume(p) for p in done), props.volume(solid), delta=1e-6)
 
-    def test_a_bore_is_reported_not_cut(self):
-        """Control: catches a bore being called convex. A tube's bore cannot be made convex by planes, so it stays rough."""
-        _, done, rough = pieces({"kind": "tube", "section": "round", "fromMm": [0, 0, 0], "toMm": [0, 0, 50], "outerDiameterMm": 30, "wallMm": 2})
+    def test_bores_countersinks_wraps_and_relieved_lands_are_wedged_within_the_facet_error(self):
+        """Catches an inward round face left rough (and hulled, filling a bore or a land), a wedge whose flat chord sits
+        further inside its face than FACET_MM, a piece that is still concave elsewhere, or a split that loses material."""
+        cases = (("bore", make(TUBE, "test", None), [(2, 13, 13)]), ("countersink", countersunk_plate(), [(2, 4, 9)]),
+                 ("belt wrap", make(WRAP, "test", None), [(1, 22, 22)]), ("relieved land", make(RELIEVED, "test", None), [(1, 5, 5)]),
+                 ("cross-drilled block", make(CROSSED, "test", None), [(2, 8, 8), (0, 6, 6)]))
+        for name, solid, holes in cases:
+            with self.subTest(name):
+                done, rough, faceted = split.convex_pieces(solid)
+                self.assertEqual(rough, [])
+                self.assertAlmostEqual(sum(props.volume(p) for p in done), props.volume(solid), delta=1e-5 * props.volume(solid))
+                measured = max(hole_error(p, hole) for p in done for hole in holes)
+                self.assertLessEqual(measured, split.FACET_MM + 1e-3)
+                self.assertGreater(measured, 0.0)
+                self.assertAlmostEqual(faceted, measured, delta=0.01)        # the error it states is the error its pieces have
+                self.assertLess(max(poke_out(p, holes) for p in done), 0.01)
+
+    def test_a_looser_facet_error_gives_fewer_wedges_and_says_so(self):
+        """Control: catches a stated facet error that does not follow the wedges actually cut."""
+        solid = make(TUBE, "test", None)
+        fine, _, fine_error = split.convex_pieces(solid)
+        with mock.patch.object(split, "FACET_MM", 2.0):
+            coarse, rough, coarse_error = split.convex_pieces(solid)
+        self.assertEqual(rough, [])
+        self.assertLess(len(coarse), len(fine))
+        self.assertGreater(coarse_error, split.FACET_MM)
+        self.assertLessEqual(coarse_error, 2.0)
+        self.assertGreater(max(hole_error(p, (2, 13, 13)) for p in coarse), split.FACET_MM)
+
+    def test_a_wedge_whose_chord_cuts_other_material_is_cut_again(self):
+        """Catches a wedge called convex while some of it lies in front of an inward face's chord, where the hull would
+        fill more than the sliver. Control: with everything behind the chord, nothing is cut."""
+        face = {"chord": ((0.0, 0.0, 1.0), 0.0)}
+        self.assertEqual(split.across_chord([face], [(0, 0, -5), (1, 0, 2)]), ((0.0, 0.0, 1.0), 0.0))
+        self.assertIsNone(split.across_chord([face], [(0, 0, -5), (1, 0, 0.005)]))
+        self.assertIsNone(split.across_chord([{"chord": None}], [(0, 0, 9)]))
+
+    def test_a_cut_the_splitter_refuses_is_tried_just_off_its_plane(self):
+        """Catches a piece left rough (and hulled) because the kernel's splitter would not take a plane lying exactly on
+        one of an imported part's edges, as it did on a supplier's screw and crossbar. Control: a plane it refuses on
+        every try leaves the piece rough."""
+        solid, real = make(TUBE, "test", None), split.halves
+        refuse_exact = lambda shape, normal, offset: [shape] if offset == 0.0 else real(shape, normal, offset)     # every cut of the tube is through its axis
+        with mock.patch.object(split, "halves", side_effect=refuse_exact):
+            done, rough, faceted = split.convex_pieces(solid)
+        self.assertEqual(rough, [])
+        self.assertLessEqual(faceted, split.FACET_MM)
+        self.assertAlmostEqual(sum(props.volume(p) for p in done), props.volume(solid), delta=1e-5 * props.volume(solid))
+        with mock.patch.object(split, "halves", side_effect=lambda shape, normal, offset: [shape]):
+            done, rough, _ = split.convex_pieces(solid)
         self.assertEqual((done, len(rough)), ([], 1))
-        _, done, rough = pieces({"kind": "cylinder", "fromMm": [0, 0, 0], "toMm": [0, 50, 0], "radiusMm": 12})
-        self.assertEqual((len(done), rough), (1, []))       # a roller bulges outward: it is convex as it is
+
+    def test_only_an_inward_ball_or_a_free_form_face_stays_rough(self):
+        """Control: catches a face that no wedge can make convex being called convex. A dimple (an inward ball) and a
+        ring (a torus face, neither flat, cylindrical, conical nor spherical) stay rough; a plain roller is convex as it is."""
+        _, done, rough = pieces({"kind": "difference", "from": BOX([0, 0, 0], [60, 60, 30]), "cut": [{"kind": "sphere", "centerMm": [30, 30, 30], "radiusMm": 20}]})
+        self.assertEqual((done, len(rough)), ([], 1))
+        _, done, rough = pieces({"kind": "torus", "centerMm": [0, 0, 0], "axis": [0, 0, 1], "majorRadiusMm": 30, "minorRadiusMm": 5})
+        self.assertEqual((done, len(rough)), ([], 1))
+        _, done, rough = pieces(CYLINDER([0, 0, 0], [0, 50, 0], 12))
+        self.assertEqual((len(done), rough), (1, []))
+
+    def test_the_standing_assumption_states_the_facet_error(self):
+        """Catches the record's convex-shapes assumption still saying cut solids are hulled, or naming another error."""
+        text = next(row["text"] for row in assumptions.MUJOCO if row["id"] == "convex-shapes")
+        self.assertIn(f"{split.FACET_MM:g} mm", text)
+        self.assertIn("inward ball", text)
 
 
 @unittest.skipUnless(HAVE, "MuJoCo is not installed (the optional extra)")
@@ -42,7 +164,7 @@ class InTheEngine(unittest.TestCase):
         """Catches an imported or round-cut solid run as its convex hull, which bridges the corner of an angle.
 
         The angle has a bolt hole far from the corner, so its construction gives no breakdown; split at its faces, its
-        legs are exact and only the leg with the hole is hulled, and listed with its share.
+        legs are exact, the hole is wedged into flat facets within the facet error, and nothing is hulled.
         """
         angle = {"kind": "difference", "from": {"kind": "prism", "plane": "xz", "fromMm": -60, "toMm": 60,
                                                  "outlineMm": [[3000, 0], [3200, 0], [3200, 10], [3010, 10], [3010, 200], [3000, 200]]},
@@ -53,8 +175,8 @@ class InTheEngine(unittest.TestCase):
                  "pass": {"outcomes": ["still"]}, "measures": {"x": {"final": "xMm"}, "z": {"final": "zMm"}}}
         found, facts = one_run(trial, solids=bench({})["solids"] + [{"name": "angle", "group": "bench", "shape": angle}])
         self.assertAlmostEqual(found["measures"]["z"], 10 + 5, delta=0.5)      # on the leg, in the corner: the hull's diagonal is far above
-        self.assertEqual(facts["hulled"], ["angle"])
-        self.assertLess(facts["hulledShare"]["angle"], 0.6)          # the leg with the hole, not the whole angle
+        self.assertEqual((facts["hulled"], facts["hulledShare"], found["touchedRough"]), ([], {}, []))
+        self.assertRegex(facts["faceted"]["angle"], r"flat facets, at most 0\.\d\d mm inside them")
 
 
 if __name__ == "__main__":

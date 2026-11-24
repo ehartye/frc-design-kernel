@@ -2,8 +2,12 @@
 
 The same trial definition the planar engine runs is read here. The solids the trial names become fixed bodies at the
 trial's pose: a box, a ball or a full cylinder as that exact primitive, a union as its parts, a convex prism as its
-exact hull. Anything else (a hollow tube, a cut shape, an imported part) is used as its convex hull, and listed. The
-piece is a free body built from its one 3D definition. Nothing here imports MuJoCo; the model is plain text.
+exact hull, a hollow or cut shape as the convex pieces its construction gives, and anything else (a round cut, an
+imported part) as the convex pieces its own faces cut it into (kernel/split.py). A bore or other inward round face
+becomes flat facets, and the record states how far inside it they sit. Only a piece with a free-form face or an inward
+ball is used as its convex hull: its solid is listed, and its geoms are marked so the runner can say when a piece
+touched one. The piece is a free body built from its one 3D definition. Nothing here imports MuJoCo; the model is
+plain text.
 
 A solid that a declared drive turns (a roller, a wheel, a belt) stays a still, frictionless shape; the friction of
 its moving surface is worked out by the planar engine's smooth law and applied to the piece as a force. A group that
@@ -63,7 +67,7 @@ class Model:
 
     def __init__(self):
         self.meshes, self.geoms, self.hulled, self.kinds, self.faceted, self.body, self.driven, self.driven_geoms, self.material_of = [], [], [], {}, {}, "world", None, {}, {}
-        self.rough = {}
+        self.rough, self.rough_geoms = {}, {}
 
     def add(self, solid, surface, shape, placed_at, material):
         """Add the geoms of one shape entry, part by part where it is a union."""
@@ -88,15 +92,19 @@ class Model:
         self.geom(solid, surface, found, material)
 
     def split(self, solid, surface, built, placed_at, material):
-        """A solid with no construction to read, as the convex pieces its own faces cut it into. A piece that a bore
-        or a free-form face keeps from being convex is hulled, and the solid is listed with the share of it so taken."""
-        done, rough = pieces_of(built)
-        for piece in done + rough:
+        """A solid with no construction to read, as the convex pieces its own faces cut it into. An inward round face
+        is wedged into flat facets, and said so. A piece a free-form face or an inward ball keeps from being convex is
+        hulled: the solid is listed with the share of it so taken, and the hulled piece's geom is marked as rough."""
+        done, rough, faceted = pieces_of(built)
+        for piece, is_rough in [(p, False) for p in done] + [(p, True) for p in rough]:
+            if is_rough:
+                self.rough_geoms[f"g{len(self.geoms)}"] = solid
             self.geom(solid, surface, self.mesh([mx.scale(mx.apply(placed_at, v), MM) for v in triangles(piece, 0.2)["vertices"]]), material)
+        if faceted > 0:
+            self.faceted[solid] = f"its inward round faces (bores, countersinks, wraps) as flat facets, at most {faceted:.2f} mm inside them"
         if rough:
-            share = sum(volume(p) for p in rough) / volume(built)
             self.hulled.append(solid)
-            self.rough[solid] = round(share, 4)
+            self.rough[solid] = round(sum(volume(p) for p in rough) / volume(built), 4)
 
     def mesh(self, points):
         name = f"mesh{len(self.meshes)}"
@@ -180,7 +188,7 @@ def build(assembly, name, a_case, handed=None):
     return {"engine": "mujoco", "xml": xml, "surfaceOf": {g: surface for g, surface, _, _ in model.geoms},
             "axes": ["xyz"[i] for i in AXES[plane["normal"]]], "normal": plane["normal"], "levelM": plane["atMm"] * MM, "startVelocity": velocity, "radiusM": radius,
             "massKg": mass, "others": others, "stepS": case["stepS"], "durationS": case["durationS"], "traceS": case.get("traceS", 0.002),
-            "rest": {"speedMps": 0.005, "rimSpeedMps": 0.005, **case.get("rest", {})}, "moving": moving, "driven": model.driven_geoms, "materialOf": model.material_of,
+            "rest": {"speedMps": 0.005, "rimSpeedMps": 0.005, **case.get("rest", {})}, "moving": moving, "driven": model.driven_geoms, "materialOf": model.material_of, "roughGeoms": model.rough_geoms,
             "materials": case["materials"], "between": case.get("betweenPieces"), "options": case.get("planar", {}),
             "events": case.get("events", []), "measures": case.get("measures", {}), "drives": drives,
             "hinges": {flap["flap"]: f"flap:{flap['flap']}" for _, flap in flaps}, "movers": {}, "frames": frames.build(case, assembly.data, where), "air": air.params(case, use, radius, where), "loads": case.get("loads", []), "surfaces": [], "facts": facts}
