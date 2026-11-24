@@ -40,7 +40,7 @@ from OCP.TopLoc import TopLoc_Location
 
 from ..errors import DesignError
 from . import props
-from .between import faces
+from .between import distance, faces, vertex
 
 ROUND_MM = 0.001
 ALLOWANCE_MM = 0.002    # rounding a corner outward moves it at most 0.001 * sqrt(3) mm; the rest covers arithmetic
@@ -182,9 +182,21 @@ def planes(points):
     return found
 
 
+def _to_face(point, face):
+    """The true distance from a point to a bounded face: to its nearest point inside the face's edges."""
+    try:
+        return distance(vertex(point), face)
+    except ValueError:
+        raise DesignError("", "the CAD kernel could not measure how far the mesh lies from a round face",
+                          "Report the shape; try a different linear_mm") from None
+
+
 def _face_stray(face, triangulation, nodes):
-    """The most the true surface of one face strays from a triangle edge: the gap from each edge's middle to the
-    surface, found by projecting it (a flat face never strays)."""
+    """The most the true surface of one face strays from a triangle edge: the gap from each edge's middle to the face.
+
+    Each middle is projected onto the face's surface, which is quick. Near the face's edge the surface's nearest point
+    can lie past it (a frustum's narrow rim, a ball's cut), where it is not part of the solid: the projection then
+    finds no point, or only one on the far side. Such a middle is measured to the bounded face instead."""
     if BRepAdaptor_Surface(face).GetType() == GeomAbs_Plane:
         return 0.0
     projection = GeomAPI_ProjectPointOnSurf()
@@ -199,10 +211,8 @@ def _face_stray(face, triangulation, nodes):
             seen.add(key)
             middle = [(x + y) / 2 for x, y in zip(nodes[p - 1], nodes[q - 1])]
             projection.Perform(gp_Pnt(*middle))
-            if not projection.NbPoints():
-                raise DesignError("", "the CAD kernel could not measure how far the mesh lies from a round face",
-                                  "Report the shape; try a different linear_mm")
-            worst = max(worst, projection.LowerDistance())
+            near = projection.NbPoints() and projection.LowerDistance() <= math.dist(nodes[p - 1], nodes[q - 1])
+            worst = max(worst, projection.LowerDistance() if near else _to_face(middle, face))
     return worst
 
 

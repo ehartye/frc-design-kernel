@@ -143,5 +143,61 @@ class Grown(unittest.TestCase):
         self.assertGreater(excess(beyond, faces), 0)
 
 
+def on_circle(centre, normal, radius, count=720):
+    """count points on a true circle about centre, in the plane square to normal."""
+    size = math.sqrt(sum(n * n for n in normal))
+    n = [v / size for v in normal]
+    other = (1, 0, 0) if abs(n[0]) < 0.9 else (0, 1, 0)
+    u = [n[1] * other[2] - n[2] * other[1], n[2] * other[0] - n[0] * other[2], n[0] * other[1] - n[1] * other[0]]
+    size = math.sqrt(sum(v * v for v in u))
+    u = [v / size for v in u]
+    w = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]]
+    return [[c + radius * (math.cos(2 * math.pi * i / count) * a + math.sin(2 * math.pi * i / count) * b) for c, a, b in zip(centre, u, w)]
+            for i in range(count)]
+
+
+class Trimmed(unittest.TestCase):
+    """Round faces that stop at an edge before their surface does: a frustum's rims, a ball with a slice cut off."""
+    SPHERE_R = 50
+
+    def held(self, entry, points):
+        """(the hull's tolerance, the most any of points lies outside it)."""
+        found = hull.hull(made(entry))
+        return found["toleranceMm"], worst_excess(points, hull.planes(found["vertices"]))
+
+    def test_a_frustum_hull_holds_both_rims(self):
+        """Catches a frustum the hull cannot measure because its narrow rim's chords project past the end of the
+        sloped surface, or a hull that cuts inside either rim."""
+        for low, high in ((100, 20), (20, 100)):
+            with self.subTest(radiusFrom=low, radiusTo=high):
+                rims = on_circle([5, -3, 10], [0, 0, 1], low) + on_circle([5, -3, 90], [0, 0, 1], high)
+                tolerance, worst = self.held({"kind": "cone", "fromMm": [5, -3, 10], "toMm": [5, -3, 90], "radiusFromMm": low, "radiusToMm": high}, rims)
+                self.assertLessEqual(worst, 0)
+                self.assertLess(tolerance, 1)
+
+    def test_a_ball_with_a_flat_slice_cut_off_is_held_without_growing_by_its_size(self):
+        """Catches a gap measured to the far side of a cut ball (the nearest point being past the cut), which grows
+        the hull by most of the ball's width, or a hull that cuts inside the cut's rim."""
+        r, level = self.SPHERE_R, 20
+        kept = [p for p in on_sphere([0, 0, 0], r, 1500) if p[2] <= level] + on_circle([0, 0, level], [0, 0, 1], math.sqrt(r * r - level * level))
+        tolerance, worst = self.held({"kind": "difference", "from": {"kind": "sphere", "centerMm": [0, 0, 0], "radiusMm": r},
+                                      "cut": [BOX([-60, -60, level], [60, 60, 60])]}, kept)
+        self.assertLessEqual(worst, 0)
+        self.assertLess(tolerance, 1)
+
+    def test_a_ball_cut_on_a_slant_is_held_at_its_rim(self):
+        """Catches a rim that the hull cuts inside when the cut does not follow the ball's own parameter lines."""
+        r = self.SPHERE_R
+        normal, level = [-0.25, 0, 1], 25         # the cut plane z = 25 + x / 4
+        size = math.sqrt(sum(n * n for n in normal))
+        rim_centre = [n * level / size / size for n in normal]
+        rim = on_circle(rim_centre, normal, math.sqrt(r * r - (level / size) ** 2))
+        kept = [p for p in on_sphere([0, 0, 0], r, 1500) if p[2] <= 25 + p[0] / 4] + rim
+        slanted = {"kind": "prism", "plane": "xz", "outlineMm": [[-60, -60], [60, -60], [60, 40], [-60, 10]], "fromMm": -60, "toMm": 60}
+        tolerance, worst = self.held({"kind": "intersection", "of": [{"kind": "sphere", "centerMm": [0, 0, 0], "radiusMm": r}, slanted]}, kept)
+        self.assertLessEqual(worst, 0)
+        self.assertLess(tolerance, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
