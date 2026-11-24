@@ -92,7 +92,10 @@ def op_speed(op, points, so_far):
         return op["fallMm"] * (1 + op["quadraticFraction"])
     if kind == "rotation":
         return abs(math.radians(op["travelDeg"])) * (reach(points, op["originMm"]) + so_far)
-    return paths.length(op["curve"], op["throughMm"])
+    speed = paths.length(op["curve"], op["throughMm"])
+    if "turnDeg" in op:     # the turn is about the followed point, which starts at the first listed point
+        speed += paths.turn_rate(op["curve"], op["throughMm"], op["turnDeg"]) * (reach(points, op["throughMm"][0]) + so_far)
+    return speed
 
 
 def through_speed(placements, points, so_far):

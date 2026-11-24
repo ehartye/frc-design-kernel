@@ -16,6 +16,9 @@ SLIDE = {"kind": "translation", "travelMm": [50, -20, 5]}
 DROP = {"kind": "gravity-drop", "fallMm": 80, "quadraticFraction": 0.7}
 ARC = {"kind": "path", "curve": "arc", "throughMm": [[0, 0, 0], [100, 100, 0], [200, 0, 0]]}
 SMOOTH = {"kind": "path", "curve": "smooth", "throughMm": [[0, 0, 0], [50, 40, 0], [120, 30, 20], [160, 90, 20]]}
+TURNING_ARC = {**ARC, "turnDeg": [0, 60, 90], "turnAxis": [0, 0, -1]}
+TURNING_SMOOTH = {**SMOOTH, "turnDeg": [15, -40, 30, 120], "turnAxis": [1, 1, 2]}
+TURNING_LINE = {"kind": "path", "curve": "straight", "throughMm": [[0, 0, 0], [60, 0, 0], [60, 40, 0]], "turnDeg": [0, 0, 180], "turnAxis": [0, 1, 0]}
 POSES = [mx.IDENTITY, ops.at([TURN]), ops.at([TURN, SLIDE]), ops.at([{**TURN, "axis": [0, 0, 1], "travelDeg": 180}])]
 CASES = {
     "turn then slide then drop": [("ops", [TURN, SLIDE, DROP])],
@@ -23,6 +26,10 @@ CASES = {
     "two turns": [("ops", [TURN, {**TURN, "originMm": [-40, 0, 0], "axis": [0, 1, 0], "travelDeg": -150}])],
     "arc path": [("ops", [ARC])],
     "smooth path then turn": [("ops", [SMOOTH, TURN])],
+    "turning arc path": [("ops", [TURNING_ARC])],
+    "turn then turning smooth path": [("ops", [TURN, TURNING_SMOOTH])],
+    "turning straight path that turns only on its second piece": [("ops", [TURNING_LINE])],
+    "turning path on a carrier that turns": [("fixed", ops.at([SLIDE])), ("ops", [TURN]), ("fixed", ops.at([TURN])), ("ops", [SLIDE, TURNING_ARC])],
     "through poses": [("through", POSES)],
     "own turn on a carrier that turns": [("fixed", ops.at([SLIDE])), ("ops", [TURN]), ("fixed", ops.at([TURN])), ("ops", [SLIDE, TURN])],
     "own swing on a carrier that swings": [("through", POSES[:3]), ("fixed", ops.at([DROP])), ("through", POSES[1:])],
@@ -58,6 +65,21 @@ class SpeedLimit(unittest.TestCase):
         """Catches a wrong curve length, the speed limit of every path move."""
         self.assertAlmostEqual(stages.speed_limit([("ops", [ARC])], BOX), math.pi * 100, places=6)
         self.assertAlmostEqual(fastest([("ops", [ARC])]), math.pi * 100, delta=0.01)
+
+    def test_a_turning_path_adds_its_turn_at_the_farthest_corner(self):
+        """Catches a turning path given only its curve length as its limit, which the turn outruns, so the clearance
+        search could skip the instant a corner swings through a neighbour. A quarter arc turned a quarter turn about
+        its own axis is a rigid swing about the centre, so the real speed is known."""
+        quarter = {"kind": "path", "curve": "arc", "throughMm": [[100, 0, 0], [100 * math.sqrt(0.5), 100 * math.sqrt(0.5), 0], [0, 100, 0]],
+                   "turnDeg": [0, 45, 90], "turnAxis": [0, 0, 1]}
+        listed = [("ops", [quarter])]
+        swing = math.pi / 2 * max(math.hypot(p[0], p[1]) for p in stages.corners(BOX))     # distance from the turning axis
+        self.assertAlmostEqual(fastest(listed), swing, delta=0.01 * swing)
+        limit = stages.speed_limit(listed, BOX)
+        self.assertAlmostEqual(limit, math.pi / 2 * (100 + max(math.dist(p, (100, 0, 0)) for p in stages.corners(BOX))), places=6)
+        self.assertGreaterEqual(limit, swing)
+        self.assertLess(stages.speed_limit([("ops", [{k: v for k, v in quarter.items() if not k.startswith("turn")}])], BOX), fastest(listed),
+                        "control: the curve length alone is too small a limit for a turning path, and the sampled speed shows it")
 
     def test_still_bodies_have_no_speed(self):
         """Catches a body that only holds a pose being treated as moving, which would waste the search on it."""

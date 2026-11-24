@@ -84,3 +84,38 @@ def position(curve, points, t):
     if curve == "arc":
         return arc(points, t)
     return by_length(smooth_points(points) if curve == "smooth" else points, t)
+
+
+@functools.lru_cache(maxsize=64)
+def _fractions(curve, points):
+    if curve == "arc":
+        centre, axis, turn = circle_through(*points)
+        start, middle = mx.sub(points[0], centre), mx.sub(points[1], centre)
+        part = math.degrees(math.atan2(mx.dot(mx.cross(start, middle), axis), mx.dot(start, middle))) % 360
+        return (0.0, part / turn, 1.0)
+    chain = smooth_points(points) if curve == "smooth" else points
+    step = SAMPLES_PER_SPAN if curve == "smooth" else 1
+    walked = [0.0]
+    for a, b in zip(chain, chain[1:]):
+        walked.append(walked[-1] + mx.length(mx.sub(b, a)))
+    return tuple(walked[i * step] / walked[-1] for i in range(len(points)))
+
+
+def fractions(curve, points):
+    """The fraction of the curve's length at which it passes each listed point: 0 for the first, 1 for the last."""
+    return _fractions(curve, exact(points))
+
+
+def turn(curve, points, angles, t):
+    """The angle at fraction t of the curve's length, growing evenly by length from each point's angle to the next one's."""
+    at, t = fractions(curve, points), max(0.0, min(1.0, t))
+    for a, b, start, end in zip(at, at[1:], angles, angles[1:]):
+        if t <= b:
+            return start + (end - start) * (t - a) / (b - a)
+    return angles[-1]
+
+
+def turn_rate(curve, points, angles):
+    """The fastest the angle changes, in radians per unit of the length fraction."""
+    at = fractions(curve, points)
+    return max(abs(math.radians(end - start)) / (b - a) for a, b, start, end in zip(at, at[1:], angles, angles[1:]))

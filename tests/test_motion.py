@@ -2,6 +2,7 @@
 import math
 import unittest
 
+from frc_design_kernel import DesignError
 from frc_design_kernel.motion import matrix as mx
 from frc_design_kernel.motion import ops, paths, screw
 
@@ -79,6 +80,77 @@ class Paths(unittest.TestCase):
         """Catches a path that rotates the body; it is a slide only."""
         m = ops.at([{"kind": "path", "curve": "arc", "throughMm": [[100, 0, 0], [0, 100, 0], [-100, 0, 0]]}], 0.7)
         self.assertEqual((m[0], m[5], m[10]), (1.0, 1.0, 1.0))
+
+
+CENTRE = (50.0, 20.0, 10.0)
+
+
+def on_circle(degrees, radius=100.0):
+    """A point on the circle of radius about CENTRE in the plane square to z, degrees counter-clockwise from +x."""
+    a = math.radians(degrees)
+    return [CENTRE[0] + radius * math.cos(a), CENTRE[1] + radius * math.sin(a), CENTRE[2]]
+
+
+class TurningPaths(unittest.TestCase):
+    def test_a_quarter_turn_along_an_arc_is_the_swing_about_its_centre(self):
+        """Catches a turning path whose turn is applied about the wrong point, in the wrong direction or at the wrong
+        rate along the curve: following a quarter arc while turning a quarter turn about the arc's own axis is exactly
+        a rigid swing about the centre. The middle point sits at a third of the arc, so an angle shared out by point
+        count instead of by length would miss."""
+        op = {"kind": "path", "curve": "arc", "throughMm": [on_circle(0), on_circle(30), on_circle(90)],
+              "turnDeg": [10, 40, 100], "turnAxis": [0, 0, 2]}
+        flipped = {**op, "turnDeg": [-10, -40, -100], "turnAxis": [0, 0, -1]}
+        ops.check([op, flipped], "test")
+        for t in (0.0, 0.1, 1 / 3, 0.5, 0.8, 1.0):
+            swing = mx.rotation(CENTRE, (0, 0, 1), 90 * t)
+            self.assertLess(mx.gap(ops.at([op], t), swing), 1e-9, t)
+            self.assertLess(mx.gap(ops.at([flipped], t), swing), 1e-9, t)
+
+    def test_the_body_turns_about_the_followed_point(self):
+        """Catches a turn about the first listed point that stays behind, rather than about the point that follows the curve."""
+        op = {"kind": "path", "curve": "straight", "throughMm": [[0, 0, 0], [100, 0, 0]], "turnDeg": [0, 90], "turnAxis": [0, 0, 1]}
+        near(self, mx.apply(ops.at([op], 1.0), (10, 0, 0)), (100, 10, 0))
+        near(self, mx.apply(ops.at([op], 0.5), (0, 0, 0)), (50, 0, 0))
+        near(self, mx.apply(ops.at([op], 0.5), (10, 0, 0)), (50 + 10 * math.sqrt(0.5), 10 * math.sqrt(0.5), 0))
+
+    def test_the_angle_is_shared_out_by_length(self):
+        """Catches an angle that changes by point count or jumps at a point instead of growing along each piece."""
+        op = {"kind": "path", "curve": "straight", "throughMm": [[0, 0, 0], [30, 0, 0], [30, 10, 0]], "turnDeg": [0, 30, 40], "turnAxis": [0, 0, 1]}
+        for t, angle in ((0.25, 10.0), (0.5, 20.0), (0.75, 30.0), (0.875, 35.0), (1.0, 40.0)):
+            axis, turned = screw.axis_angle(ops.at([op], t))
+            self.assertAlmostEqual(turned, angle, places=9)
+            near(self, axis, (0, 0, 1))
+
+    def test_a_smooth_path_holds_each_points_angle_at_that_point(self):
+        """Catches a smooth curve whose angles are placed at the wrong length fractions."""
+        points = [[0, 0, 0], [50, 40, 0], [120, 30, 0], [160, 90, 0]]
+        op = {"kind": "path", "curve": "smooth", "throughMm": points, "turnDeg": [5, 25, 65, 125], "turnAxis": [0, 0, 1]}
+        grid = [n / 4000 for n in range(4001)]
+        for point, angle in zip(points, op["turnDeg"]):
+            t = min(grid, key=lambda s: mx.length(mx.sub(mx.apply(ops.at([op], s), points[0]), point)))
+            _, turned = screw.axis_angle(ops.at([op], t))
+            self.assertAlmostEqual(turned, angle - 5, delta=0.1)
+
+    def test_a_run_of_points_cut_from_a_turning_path_is_the_same_movement(self):
+        """Catches a turn counted from zero instead of from the first point, which would make a slice of a fitted path
+        (a stage bound to a time window) jump to another heading when it starts."""
+        points = [[0, 0, 0], [40, 0, 0], [40, 30, 0], [0, 30, 0]]
+        whole = {"kind": "path", "curve": "straight", "throughMm": points, "turnDeg": [0, 20, 50, 80], "turnAxis": [0, 0, 1]}
+        piece = {**whole, "throughMm": points[1:3], "turnDeg": [20, 50]}
+        self.assertTrue(mx.is_identity(ops.at([piece], 0.0)))
+        start, end = ops.at([whole], 40 / 110), ops.at([whole], 70 / 110)
+        self.assertLess(mx.gap(mx.compose(ops.at([piece], 1.0), start), end), 1e-9)
+
+    def test_a_turning_path_with_numbers_that_cannot_turn_is_refused(self):
+        """Catches an angle list that does not match the points, a missing or empty axis, or an axis with no angles."""
+        base = {"kind": "path", "curve": "straight", "throughMm": [[0, 0, 0], [10, 0, 0]]}
+        for bad, words in (({"turnDeg": [0, 1, 2], "turnAxis": [0, 0, 1]}, "one angle per point"),
+                           ({"turnDeg": [0, 1]}, "turnAxis"),
+                           ({"turnDeg": [0, 1], "turnAxis": [0, 0, 0]}, r"\[0, 0, 0\]"),
+                           ({"turnAxis": [0, 0, 1]}, "turnDeg")):
+            with self.assertRaisesRegex(DesignError, words):
+                ops.check([{**base, **bad}], "test")
+        ops.check([{**base, "turnDeg": [0, 1], "turnAxis": [0, 0, 1]}], "control")
 
 
 class ThroughPoses(unittest.TestCase):

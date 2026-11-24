@@ -425,11 +425,19 @@ ones:
 | Operation | Meaning at fraction `t` |
 |---|---|
 | `{"kind": "path", "throughMm": [[x, y, z], ...], "curve": "straight" \| "arc" \| "smooth"}` | Slide, without turning, so that a point starting at the first listed point follows the curve. `t` is the fraction of the curve's length covered |
+| the same, with `"turnDeg": [a, ...], "turnAxis": [x, y, z]` | Follow the curve the same way and also turn, about the line through the followed point along `turnAxis` (right-hand rule), by the angle gained since the first point |
 
 - `straight`: straight lines from point to point.
 - `arc`: exactly three points; the circle through them, from the first, past the second, to the third.
 - `smooth`: a smooth curve through every point (a centripetal Catmull-Rom spline: it passes through each point and
   does not overshoot between them).
+
+A turning path gives one angle per listed point in `turnDeg`, and one `turnAxis` for the whole path. Between two
+neighbouring points the angle grows evenly with the length covered: on an arc the middle point sits at its own share
+of the length, and on a smooth curve each point at its knot. The turn is counted from the first point's angle, so the
+path starts with no movement whatever that angle is, and any run of neighbouring points with their angles is itself
+a path that does the same part of the movement. A quarter arc turned a quarter turn about its own axis is exactly a
+swing about the arc's centre.
 
 Together with `through` motions (section 4.7), an author never has to cut a curve into pieces by hand. A tool that
 only knows the three old operations can ask the library for sampled positions instead.
@@ -554,7 +562,8 @@ These were the simpler choice at the time. Any of them may change while the libr
 4. **Solids are drawn in robot coordinates.** `carriedBy` only passes poses and motions down; it does not move where
    a carried group is drawn.
 5. **A `through` motion shares the stroke evenly between poses.** There is no timing control yet.
-6. **A `path` operation slides without turning.** Turning while following a curve needs a `through` motion.
+6. **A `path` operation turns about one fixed direction.** Its angle grows evenly with length between points, so a
+   turn made standing still cannot be written, and a turn whose axis itself swings needs a `through` motion.
 7. **Mounts are records, not constraints.** Nothing yet checks that the two solids meet at the mount point.
 8. **Mass is a single figure**, per solid or per group. Ranges (low and high) are left to the tools that budget.
 9. **Custom shape imports are checked by reading the file.** That stops honest mistakes, not a determined author.
@@ -610,7 +619,8 @@ and "how finely did you split it" has no good answer. The library proves its ans
 1. **A speed limit for every solid.** From the motion's stages the library works out a limit on how fast any point
    of a solid can move, in millimetres per unit of the stroke fraction `t` (`motion/stages.py`). A slide moves at its
    length. A turn moves the farthest corner of the solid's box at the angle times its distance from the pivot. A
-   `path` moves at exactly the curve's length. A `through` motion moves at its fastest screw. A carried solid adds
+   `path` moves at exactly the curve's length; a turning path adds its fastest turn (the largest change of angle over
+   a share of the length) times the farthest corner's distance from the followed point. A `through` motion moves at its fastest screw. A carried solid adds
    its carrier's limit. The limit is never lower than the real speed; a test checks that on every kind of movement.
 2. **Sample and bound.** The gap is measured at `t` = 0 and 1, then at the middle of an interval. Between `lo` and
    `hi` the gap cannot fall more than `speed * (hi - lo) / 2` below the middle sample. If that floor is still above
@@ -850,7 +860,12 @@ elsewhere; the library reports the numbers.
 - `handForward`: the nominal inputs, the range each input held over, the marginal edges, the sensitivity order, the
   control and the assumption ids, for a later engine to pick up (section 15).
 - `runs`: **every run's inputs and outcome**.
-- `fit`: the piece's path as **one `path` operation** within `fitToleranceMm` of every trace sample.
+- `fit`: the piece's path as **one `path` operation** within `fitToleranceMm` of every trace sample. When the trace
+  has the piece's spin, the path also turns: `turnDeg` is the spin summed over the trace (0 at the first sample),
+  `turnAxis` the plane's normal signed the way both engines count spin, and a point is also kept where the angle
+  strays by more than the turn tolerance (5 degrees; a trial field `fitToleranceDeg` is planned). `throughMm`,
+  `turnDeg` and `atS` have one entry per kept point. Only the turn in the plane is fitted, and a turn made standing
+  still shows as `maxTurnDeviationDeg` rather than being written.
 
 The same source gives the same record. `try --trial NAME` runs only that trial (and any it starts after) and puts
 the result into an existing `trials.json`, keeping the rest.
