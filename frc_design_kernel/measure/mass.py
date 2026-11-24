@@ -1,10 +1,13 @@
 """Mass roll-up with centre of mass, per group and for the whole robot, at a pose.
 
 Each solid's mass sits at the centre of its volume. A group with one lump mass has it at the centre of the volume of
-all its solids together. Fixtures are not part of the robot and are left out.
+all its solids together. Fixtures are not part of the robot and are left out. A pose only moves solids rigidly, so
+each solid's volume and centre are taken from the solid as drawn and its centre is moved by its group's placement:
+no shape is moved or measured again for a pose.
 """
-from ..kernel import props
-from . import scene as scenes
+from ..builder import placement
+from ..motion import matrix as mx
+from . import carry, scene as scenes
 
 
 def weighted_centre(items):
@@ -17,10 +20,10 @@ def weighted_centre(items):
 
 def roll_up(assembly, pose=None, absent=()):
     """Mass and centre of mass of each group and of the whole robot at a named pose (None is as drawn)."""
-    scene = scenes.for_pose(assembly, pose, absent)
-    robot = [name for name in scene.names if not assembly.solids[name].fixture]
-    centre = {name: props.centre(scene.start[name]) for name in robot}
-    volume = {name: props.volume(scene.start[name]) for name in robot}
+    figures, places = carry.figures(assembly), placement.at_pose(assembly.data, pose)
+    robot = [name for name in scenes.present(assembly, absent) if not assembly.solids[name].fixture]
+    centre = {name: list(mx.apply(places[assembly.solids[name].group], figures[name][1])) for name in robot}
+    volume = {name: figures[name][0] for name in robot}
     groups, unweighed, whole = {}, [], []
     for group, entry in assembly.data["groups"].items():
         members = [name for name in robot if assembly.solids[name].group == group]

@@ -53,11 +53,37 @@ def build(args):
     print(f'Wrote {", ".join(written)} to {args.out}.')
 
 
+def pairs_line(label, found):
+    """What a clearance measured now and what it carried or left out, as one line."""
+    checked, total = found["checked"], found["counts"]["pairs"]
+    why = [f'those with {", ".join(checked["measuredSolids"])}'] if checked["measuredSolids"] else []
+    if checked["measuredPairs"]:
+        why.append(f'{count(len(checked["measuredPairs"]), "pair")} whose declared contact changed')
+    why = f' ({"; ".join(why)})' if why else ""
+    if checked["pairsNotMeasured"]:
+        return f'{label}: measured {checked["pairsMeasured"]} of {count(total, "pair")}{why}; {checked["pairsNotMeasured"]} not measured.'
+    return f'{label}: measured {checked["pairsMeasured"]} of {count(total, "pair")} again{why}, carried {checked["pairsCarried"]}.'
+
+
+def carry_lines(record):
+    for name, found in record["motions"].items():
+        print(pairs_line(f'Motion "{name}"', found))
+    for row in record["poses"]:
+        label = f'Pose "{row["pose"]}"' if row["pose"] else "As drawn"
+        print(pairs_line(f"{label}, clearance", row["clearance"]))
+        said = {"carried": "carried", "measured": "measured again"}
+        print(f'{label}: attachment {said[row["checked"]["attachment"]]}, mass {said[row["checked"]["mass"]]}.')
+
+
 def measure(args):
     from .measure import summary as measures    # the CAD kernel is needed only from here on
     part = bool(args.motion or args.pose)
+    old = earlier(args.out, "measurements.json")
+    if args.carry and old is None:
+        raise DesignError("", f"--carry needs an earlier measurements.json in {args.out} to carry from", "Measure once without --carry first")
     record = measures.measure_design(args.source, args.min_gap, args.touch_gap, args.floor_z, args.ignore, args.workers, args.depth,
-                                     (args.motion or []) if part else None, (args.pose or []) if part else None)
+                                     (args.motion or []) if part else None, (args.pose or []) if part else None,
+                                     old if args.carry else None, args.focus)
     print(f'Measured "{record["design"]["name"]}" against a gap of {args.min_gap:g} mm, touching within {args.touch_gap:g} mm.')
     for name, found in record["motions"].items():
         nearest = found["closest"]
@@ -77,7 +103,9 @@ def measure(args):
                 closer = sum(len(m["closer"]) for m in row["motions"].values()) + sum(len(p["closer"]) for p in row["poses"])
                 print(f'Adjustment "{name}" at {row["setting"]:g}: moves {count(len(row["moves"]), "solid")}; '
                       f'{count(closer, "pair")} with one of them closer than the gap over the motions and poses measured.')
-    old = earlier(args.out, "measurements.json") if part else None
+    if args.carry or args.focus:
+        carry_lines(record)
+    old = old if part else None
     write(args.out, "measurements.json", measures.merged(old, record) if old else record)
     print(f"Wrote measurements.json to {args.out}" + (", keeping the parts that were not measured again." if old else "."))
 
@@ -176,6 +204,10 @@ def main(argv=None):
     gauge.add_argument("--workers", type=int, help="worker processes (default: half the cores)")
     gauge.add_argument("--depth", type=int, default=9, help="how many times the search may halve the stroke (default 9)")
     gauge.add_argument("--extremes", action="store_true", help="also measure at both ends of every mechanical adjustment, the pairs with a solid it moves")
+    gauge.add_argument("--carry", action="store_true", help="carry from the measurements.json already in --out: measure again only the pairs "
+                       "whose solids, placements or rules changed, and attachment and mass only at poses where something moved")
+    gauge.add_argument("--focus", action="append", metavar="SOLID", help="measure the pairs with this solid in them (again, with --carry; "
+                       "without it, only those, and the record says how many were not measured); may be repeated")
     gauge.set_defaults(run=measure)
     sieve = commands.add_parser("screen", help="report plain facts about each interaction: is it the same in every section?")
     sieve.add_argument("source", help="the design source JSON file")

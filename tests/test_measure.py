@@ -222,7 +222,7 @@ class Command(unittest.TestCase):
                 records.append(json.loads((Path(out) / "measurements.json").read_text(encoding="utf-8")))
         record = records[0]
         self.assertEqual((code, records[1]), (0, record))
-        self.assertEqual((record["schema"], record["generator"]["library"]), ("frc-design-kernel/measurements@2", "frc-design-kernel"))
+        self.assertEqual((record["schema"], record["generator"]["library"]), ("frc-design-kernel/measurements@3", "frc-design-kernel"))
         self.assertEqual(record["settings"], {"minGapMm": 1.0, "touchGapMm": 3.0, "floorZMm": 0.0, "ignored": ["ball"], "depthLimit": 9})
         self.assertEqual(record["motions"]["press"]["declaredContacts"], [["ball", "bracket"]])
         self.assertEqual([row["pose"] for row in record["poses"]], [None, "home", "lifted"])
