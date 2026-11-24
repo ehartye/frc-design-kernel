@@ -35,7 +35,11 @@ underscores. An ID is used once in the folder.
 | `says` | The whole meaning in our own words: every condition, exception and measuring method. Numbers come from the fields: `{height}` is this record's, `{bale.mass}` another's |
 | `code` | The manual's rule code, or a list. Codes change each season, so programs never use them |
 | `src` | Where it is written: `"manual 3.2"`, or a list. The first word is an ID in `game.json` |
-| `unknown` | A list: what a reader would look for and no source gives, and where sources disagree |
+| `unknown` | A list: what a reader would look for and no source gives |
+| `also` | Another source that says something different (section 3) |
+
+**A record may hold more values than this page names,** such as `"gate_width": "38 in"`. Give each a name of letters, digits
+and underscores that says what it is, or an `of`. A name that is nearly one of this page's names is refused as a slip.
 | `was` | A list of earlier values: `{"until": "2031-02-04", "is": "104 lb", "src": "update3 R7"}` |
 
 ## 3. Values
@@ -63,6 +67,9 @@ A value that needs more than the number is an object:
 | `{"is": "44 in", "src": "drawings sheet 3"}` | It comes from a different source than the record |
 | `{"is": "9 in", "assumed": "scaled from figure 5-2"}` | No source prints it |
 | `{"by": "field", "welded": "612.40 in", "bolted": "611.75 in"}` | It depends on the kind of field, event or match (section 4) |
+| `{"is": "36 in", "also": [{"is": "36.4 in", "src": "drawings sheet 9"}]}` | Two sources disagree. `is` is the one to use; `also` keeps the others |
+
+`also` may hold `says` instead of `is`, on a value or a whole record, when the sources disagree in words.
 
 ## 4. `game.json`
 
@@ -95,7 +102,8 @@ outline that is not the same on both sides; `turn` does not.
 
 **Several of one thing.** `spots` names each: `{"near": {"at": [...]}, "far": {"at": [...]}}`. Or a pattern:
 `{"row": 4, "step": ["0 in", "48 in"], "first": {...}}`, `{"ring": 6, "around": [x, y], "step": "60 deg", "first": {...}}`.
-A pattern's spots are numbered from 1, or named by `"names"`.
+A pattern's spots are numbered from 1, or named by `"names"`. Its `first` may hold several
+named spots, such as two posts on each face: `{"ring": 6, ..., "first": {"a": {...}, "b": {...}}}` makes `1.a`, `1.b`, `2.a` and so on.
 
 ## 6. `clock.json`
 
@@ -163,10 +171,14 @@ of `when` lists, and any one is enough.
 
 ```json
 {
+  "counts": {
+    "loft_points": {"of": "alliance", "adds": ["hang", "park"]},
+    "hanging_robots": {"of": "alliance", "counts": ["hang"]}
+  },
   "awards": {
     "bale_in_barn": {"per": "piece", "points": [{"when": ["auto"], "points": 7}, {"when": ["teleop"], "points": 3}, {"when": ["teleop", "lit"], "points": 6}]},
     "park": {"per": "robot", "points": [{"when": ["teleop"], "points": 4}], "needs": [["my bumpers", "partly in", "my yard"]], "unless": ["hang"], "judged": "4 s after the end, or when all robots rest"},
-    "loft_rp": {"per": "match", "rp": 1, "when": ["qualification"], "needs": [["my loft points", "at least", 12], ["my hanging robots", "at least", 2]]}
+    "loft_rp": {"per": "match", "rp": 1, "when": ["qualification"], "needs": [["my loft_points", "at least", 12], ["my hanging_robots", "at least", 2]]}
   },
   "fouls": {"minor": {"points to them": 3}}
 }
@@ -174,7 +186,11 @@ of `when` lists, and any one is enough.
 
 Of the rows that are true, the one with the most words in `when` counts; two that tie are refused. A row that is true at
 no time scores nothing. `most` is a cap: `{"each": "barn", "is": 1}`. `needs` are conditions
-(section 11). `unless` names awards that cancel this one.
+(section 11). `unless` names awards that cancel this one. `easier` holds the `needs` that are enough at the times in its `when`.
+
+**`counts`** names everything that a condition counts. It `adds` the points of awards, `counts` how many times awards are
+earned (with a `when`, only at those times), or takes the `smallest of` or `third largest of` the pieces in some places. If
+none of these fits, `says` tells it in words.
 
 ## 11. Conditions
 
@@ -182,9 +198,9 @@ A condition is three things in a row: `[who, how, what]`. It reads as English, a
 
 | | Words |
 |---|---|
-| **Who** | `my robot`, `my bumpers`, `their robot`, `their bumpers`, `either robot`, `either bumpers`, `my alliance`, `the piece`, `my <place>` or `their <place>` (the pieces in it), or something counted, such as `my hanging robots` |
-| **How** | `partly in`, `fully in`, `fully outside`, `past` (completely over a line), `over` (any part over it), `above`, `touching`, `not touching`, `touching only`, `at least`, `at most`, `exactly`, `is`, `is not` |
-| **What** | `my <id>`, `their <id>`, `any <id>`, a list, a number, a state |
+| **Who** | `my`, `their` or `either`, then `robot`, `bumpers`, `person`, `alliance`, a place (the pieces in it) or an ID from `counts`. Or `the piece`, or `the` and a piece's ID |
+| **How** | `partly in`, `fully in`, `fully outside`, `past` (completely over a line), `over` (any part over it), `above`, `through`, `from`, `touching`, `not touching`, `touching only`, `at least`, `at most`, `exactly`, `is`, `is not` |
+| **What** | `my`, `their` or `any`, then an ID; a number; `every robot`; or a list, which may also hold words for a part of something that has no ID |
 
 `partly in` is true when any part is in, and so also when all of it is. A list of conditions must all be true.
 `{"any": [...]}` needs one of them.
@@ -245,3 +261,14 @@ limit. Each has a `code`.
 ```json
 {"momentary": {"says": "Less than about {lasts}.", "lasts": "4 s"}}
 ```
+
+## 15. Reading the sources
+
+- **Read every change notice, not only the last edition.** The last edition may print a number that only the last event
+  used. For each value that a notice changes, write what each kind of event used (`by`), and what it was before (`was`).
+- **Look at the page when it has a table, a figure or struck-out words.** Text taken out of a file scrambles tables and
+  loses the strike-through.
+- **A drawing and the manual often differ a little.** Use the official drawing for geometry if the manual says that it
+  governs, and keep the other in `also`.
+- **Say what is measured,** from where to where. If the source does not say, write that in `unknown`.
+- **Never fill a gap from memory.** Use `unknown`, or `assumed` with its reason.
