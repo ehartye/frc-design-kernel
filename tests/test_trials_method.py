@@ -10,6 +10,7 @@ from pathlib import Path
 
 from frc_design_kernel import DesignError
 from frc_design_kernel.cli import main
+from frc_design_kernel.motion import matrix as mx
 from frc_design_kernel.motion import ops
 from frc_design_kernel.trials import campaign, fit, record
 from frc_design_kernel.trials.plan import Bracket
@@ -329,6 +330,76 @@ class Fit(unittest.TestCase):
         tight = fit.path_operation({"columns": [], "rows": rows}, {"normal": "y", "atMm": 0}, 0.5)
         self.assertGreater(tight["points"], found["points"])
         self.assertIsNone(fit.path_operation({"columns": [], "rows": [[0, 5, 5, 0], [1, 5, 5, 0]]}, {"normal": "y", "atMm": 0}, 1.0)["operation"])
+        self.assertNotIn("turnDeg", tight["operation"])
+
+    ROLL = 50.0     # a point on the piece this far from its centre, to see its turn as a distance
+
+    def rolling(self, samples=201):
+        """A piece that runs a quarter circle of 300 mm counter-clockwise in (x, z) while it turns, faster and faster, through 120 degrees."""
+        rows = []
+        for i in range(samples):
+            s = i / (samples - 1)
+            spin = math.radians(240) * s     # rad/s over one second: the angle is 120 s^2 degrees
+            rows.append([s, 300 * math.cos(s * math.pi / 2), 300 * math.sin(s * math.pi / 2), spin])
+        return {"columns": ["tS", "xMm", "zMm", "spinRadps", "speedMps"], "rows": [row + [0.0] for row in rows]}
+
+    def worst_miss(self, operation, trace, plane):
+        """How far, at most, a trace sample's true placement is from the nearest placement the operation passes through:
+        the largest distance between the two of the piece's centre and of two points ROLL mm from it. Taken from
+        placements only, not from what the fit reports."""
+        def where(row):
+            at = [row[1], row[2]]
+            at.insert("xyz".index(plane["normal"]), plane["atMm"])
+            return at
+        start = where(trace["rows"][0])
+        seen = [start, *[mx.add(start, [self.ROLL if i == k else 0.0 for i in range(3)]) for k in (0, 2)]]
+        angle, previous, truth = 0.0, trace["rows"][0], []
+        for row in trace["rows"]:
+            angle += math.degrees((row[3] + previous[3]) / 2 * (row[0] - previous[0]))
+            placed = mx.chain([mx.rotation(start, (0, -1, 0), angle), mx.translation(mx.sub(where(row), start))])
+            truth.append([mx.apply(placed, p) for p in seen])
+            previous = row
+        path = [[mx.apply(ops.at([operation], n / 2000), p) for p in seen] for n in range(2001)]
+        return max(min(max(math.dist(a, b) for a, b in zip(true, there)) for there in path) for true in truth)
+
+    def test_a_turning_trace_becomes_one_turning_path_within_both_tolerances(self):
+        """Catches a fit that drops the piece's turn, writes it about the wrong axis or in the wrong sense, or strays
+        from a sample by more than its tolerances. The check rebuilds every sample's placement from the trace itself."""
+        plane, trace = {"normal": "y", "atMm": 82.5}, self.rolling()
+        found = fit.path_operation(trace, plane, 2.0, 2.0)
+        operation = found["operation"]
+        ops.check([operation], "fit")
+        self.assertEqual(operation["turnAxis"], [0, -1, 0])
+        self.assertEqual(len(operation["turnDeg"]), len(operation["throughMm"]))
+        self.assertEqual(len(found["atS"]), len(operation["throughMm"]))
+        self.assertEqual(operation["turnDeg"][0], 0.0)
+        self.assertAlmostEqual(operation["turnDeg"][-1], 120.0, delta=0.01)
+        self.assertLessEqual(found["maxTurnDeviationDeg"], 2.0)
+        self.assertEqual(found["turnToleranceDeg"], 2.0)
+        allowed = 2.0 + math.radians(2.0) * self.ROLL
+        self.assertLessEqual(self.worst_miss(operation, trace, plane), allowed + 0.5)
+        sliding = {k: v for k, v in operation.items() if not k.startswith("turn")}
+        self.assertGreater(self.worst_miss(sliding, trace, plane), 10 * allowed, "control: the check sees a fit that leaves the turn out")
+
+    def test_the_turn_keeps_points_where_the_place_alone_would_not(self):
+        """Catches a fit that only looks at position: a piece sliding straight while it spins up needs points along a
+        straight line to follow its turn. Control: with a turn tolerance too wide to matter, two points suffice."""
+        rows = [[i / 100, 3 * i, 0.0, math.radians(180) * i / 100, 0.0] for i in range(101)]
+        trace = {"columns": ["tS", "xMm", "zMm", "spinRadps", "speedMps"], "rows": rows}
+        turned = fit.path_operation(trace, {"normal": "z", "atMm": 0}, 1.0, 1.0)
+        self.assertGreater(turned["points"], 2)
+        self.assertLessEqual(turned["maxTurnDeviationDeg"], 1.0)
+        self.assertEqual(turned["operation"]["turnAxis"], [0, 0, 1])
+        self.assertAlmostEqual(turned["operation"]["turnDeg"][-1], 90.0, delta=0.01)
+        self.assertEqual(fit.path_operation(trace, {"normal": "z", "atMm": 0}, 1.0, 1000.0)["points"], 2)
+
+    def test_a_turn_in_place_is_reported_not_hidden(self):
+        """Catches a fit that claims to follow a turn it cannot express: a path is followed by length, so a piece that
+        stops and spins on the spot is reported as missed by that much."""
+        rows = [[i / 10, min(i, 5) * 10.0, 0.0, 0.0 if i <= 5 else math.radians(100), 0.0] for i in range(11)]
+        found = fit.path_operation({"columns": ["tS", "xMm", "zMm", "spinRadps", "speedMps"], "rows": rows}, {"normal": "x", "atMm": 0}, 1.0, 1.0)
+        self.assertEqual(found["operation"]["turnAxis"], [1, 0, 0])
+        self.assertGreater(found["maxTurnDeviationDeg"], 40.0)
 
 
 class Command(unittest.TestCase):

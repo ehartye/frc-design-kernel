@@ -140,6 +140,13 @@ class CrossChecks(unittest.TestCase):
         self.expect(lambda d: d["poses"]["out"].update(slide=[{"kind": "path", "curve": "arc", "throughMm": [[0, 0, 0], [1, 0, 0], [2, 0, 0]]}]),
                     "the three arc points are in a straight line")
 
+    def test_a_turning_path_is_written_in_the_source(self):
+        """Catches a source that cannot state a path's turn, or whose angles skip the expression step or the check."""
+        turning = {"kind": "path", "curve": "straight", "throughMm": [[0, 0, 0], [10, 0, 0]], "turnDeg": [0, "=tall / 4"], "turnAxis": [0, 0, 1]}
+        design = load_data(edited(lambda d: d["poses"]["out"].update(slide=[turning])))
+        self.assertEqual(design.data["poses"]["out"]["slide"][0]["turnDeg"], [0, 25.0])
+        self.expect(lambda d: d["poses"]["out"].update(slide=[{**turning, "turnDeg": [0]}]), r'poses "out"\.slide\[0\]: .*one angle per point')
+
     def test_custom_must_be_registered_used_and_present(self):
         """Catches a custom shape that skips registration, is dead weight, or has no code file."""
         use = lambda d: d["solids"][0].update(shape={"kind": "custom", "use": "wedge", "parameters": {"riseMm": "=tall / 2"}})
