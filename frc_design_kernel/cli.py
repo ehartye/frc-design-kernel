@@ -204,6 +204,24 @@ def status(args):
         print(json.dumps(found, indent=1))
 
 
+def piece_geometry(args):
+    from .measure import piece_geometry as geometry    # the CAD kernel is needed only from here on
+    record = geometry.measure(geometry.read(args.source), args.linear_mm, args.angular_rad)
+    out = Path(args.out)
+    write(out.parent, out.name, record)
+    failed = 0
+    for name, found in record["shapes"].items():
+        if not found["ok"]:
+            failed += 1
+            print(f"Error: {DesignError(**found['error'])}", file=sys.stderr)
+            continue
+        bore = found["bore"]
+        print(f'Piece "{name}": {found["symmetry"]["class"]}, {found["volumeMm3"]:.0f} mm3, hull of {count(len(found["hullMm"]), "corner")} '
+              f'grown {found["hullToleranceMm"]:g} mm' + (f'; a through-bore {bore["diameterMm"]:g} mm across.' if bore else "."))
+    print(f'Measured {len(record["shapes"]) - failed} of {count(len(record["shapes"]), "shape")}. Wrote {out}.')
+    return 1 if failed else 0
+
+
 def main(argv=None):
     made = generator()
     parser = argparse.ArgumentParser(prog="python -m frc_design_kernel", description="Build, measure and try a preliminary robot design from a design source.")
@@ -255,12 +273,17 @@ def main(argv=None):
     state.add_argument("folder", help="the folder holding measurements/ and trials.json")
     state.add_argument("--json", action="store_true", help="also print everything as JSON")
     state.set_defaults(run=status)
+    geometry = commands.add_parser("piece-geometry", help="measure each game piece's shape on its own: bounds, symmetry, hull and bore")
+    geometry.add_argument("source", help='a JSON file holding a "pieces" block, as in a design source')
+    geometry.add_argument("--out", required=True, help="the JSON file to write the record to")
+    geometry.add_argument("--linear-mm", type=float, default=0.2, help="the mesh's linear deflection for the hull, in mm (default 0.2)")
+    geometry.add_argument("--angular-rad", type=float, default=0.3, help="the mesh's angular deflection for the hull, in radians (default 0.3)")
+    geometry.set_defaults(run=piece_geometry)
     args = parser.parse_args(argv)
     if args.command == "try" and not (args.out or args.estimate):
         parser.error("try needs --out DIR, or --estimate")
     try:
-        args.run(args)
+        return args.run(args) or 0    # a command that writes its record despite failures returns 1 itself
     except DesignError as problem:
         print(f"Error: {problem}", file=sys.stderr)
         return 1
-    return 0
