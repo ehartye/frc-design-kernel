@@ -30,6 +30,9 @@ def check_solids(design):
             seen[solid["name"]] = where
             if ("shape" in solid) == ("part" in solid):
                 raise DesignError(where, 'needs exactly one of "shape" or "part"', "Draw it with a shape, or take it from a STEP file with a part")
+            if "part" in solid and ("file" in solid["part"]) == ("field" in solid["part"]):
+                raise DesignError(f"{where} part", 'needs "file" or "field", one of them',
+                                  'Give "file" for a part of the design\'s own folder, or "field" for a file of the field folder')
             if section == "fixtures":
                 solid.setdefault("group", FIXTURE_GROUP)
             elif "group" not in solid:

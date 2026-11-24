@@ -45,10 +45,11 @@ Try it (the cost is printed before anything runs):
 python -m frc_design_kernel try examples/lifter/design.json --out out
 ```
 
-Then ask which records a change to the source touched:
+Measure one motion, or only the pairs with one solid (printed, not written):
 
 ```
-python -m frc_design_kernel status examples/lifter/design.json out
+python -m frc_design_kernel measure examples/lifter/design.json --out out --motion lift
+python -m frc_design_kernel measure examples/lifter/design.json --motion lift --focus "carriage plate"
 ```
 
 The two STEP files in `parts/` are invented stand-ins for a supplier's file. `parts/make_parts.py` made them.

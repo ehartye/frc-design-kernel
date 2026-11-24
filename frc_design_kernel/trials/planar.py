@@ -8,12 +8,14 @@ at half the step to show whether the step was small enough.
 import math
 
 from ..kernel.section import AXES
+from ..workers import silent
 from . import drives as drive_math
 from . import air, frames
 from .contact import push, nearest, segment
 from .rules import holds, started
 
 CONTACT_WINDOW_S = 0.05     # a lasting contact is recorded in rows no longer than this
+TICK_STEPS = 1000           # steps between two words on how far a run is
 
 
 def load_force(load, mass, happened, t):
@@ -208,8 +210,9 @@ def applied(scene, mass, happened, t, signals, forces):
     return fx, fz, torque
 
 
-def run(scene, step=None, forces=()):
-    """Run one trial scene. forces are extra force laws: [(function(signals, parameters) -> (fx, fz, torque), parameters)]."""
+def run(scene, step=None, forces=(), tick=silent):
+    """Run one trial scene. forces are extra force laws: [(function(signals, parameters) -> (fx, fz, torque), parameters)].
+    tick hears the number of steps done, every TICK_STEPS."""
     dt = step or scene["stepS"]
     piece = scene["piece"]
     radius, mass, inertia = piece["radiusM"], piece["massKg"], piece["inertiaKgM2"]
@@ -250,6 +253,8 @@ def run(scene, step=None, forces=()):
             offset[name][1] += mvz * dt
         t += dt
         steps += 1
+        if not steps % TICK_STEPS:
+            tick(steps)
         signals = read_signals(blank, scene["axes"], t, (x, z, vx, vz, w), drive_state, hinge_state, offset, touching, pressed)
         signals.update(in_frames(scene, x, z, happened, t))
         if scene.get("air"):

@@ -1,5 +1,6 @@
 """The built design: every solid as drawn, and the same solids placed at any pose or point of a motion."""
 from dataclasses import dataclass
+from functools import cached_property
 
 from ..errors import DesignError
 from ..kernel import props
@@ -41,6 +42,11 @@ class Assembly:
     @property
     def data(self):
         return self.design.data
+
+    @cached_property
+    def figures(self):
+        """{name: (volume, centre, second moments)} of every solid as drawn, worked out once (see props.figures)."""
+        return {name: props.figures(solid.shape) for name, solid in self.solids.items()}
 
     def members(self, group):
         return [s.name for s in self.solids.values() if s.group == group]
@@ -95,7 +101,7 @@ def build(design):
     """Build every solid of a loaded design. Raises DesignError, naming the entry, for anything that cannot be built."""
     data = design.data
     placement.check_motions(data)
-    custom, parts = CustomShapes(design), Parts(design.folder)
+    custom, parts = CustomShapes(design), Parts(design)
     solids = {}
     for section in ("solids", "fixtures"):
         for i, entry in enumerate(data[section]):

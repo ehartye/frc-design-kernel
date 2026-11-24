@@ -3,11 +3,16 @@
 A count that stops rising is how a caller sees a stuck worker, so the counts must come from inside the work, from
 worker processes too, and must never change a figure.
 """
+import multiprocessing
 import os
+import sys
 import tempfile
 import time
+import types
 import unittest
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
+from unittest import mock
 
 from frc_design_kernel import workers
 from frc_design_kernel.measure import extremes, records, run
@@ -74,6 +79,15 @@ class Crew(unittest.TestCase):
         """Control: shows the stuck task above is what stopped, not every second task."""
         with workers.Crew(begin, (0.0,), 2, every_s=0.0) as crew:
             self.assertEqual(sorted(answer for _, _, answer in crew.ask(["slow", "fine"])), ["FINE", "SLOW"])
+
+    @unittest.skipUnless(multiprocessing.get_start_method() == "spawn", "only a process started afresh reads its main module again")
+    def test_a_worker_that_cannot_start_is_an_error_not_a_wait(self):
+        """Catches a run that hangs for good because a worker died before it read what it was sent (a design is far bigger than a pipe)."""
+        main = types.ModuleType("__main__")
+        main.__file__ = str(Path(tempfile.gettempdir()) / "there is no such main module.py")
+        with mock.patch.dict(sys.modules, {"__main__": main}), self.assertRaises(BrokenProcessPool):
+            with workers.Crew(begin, ("x" * 10_000_000,), 2) as crew:
+                list(crew.ask(["a", "b"]))
 
     def test_it_says_so_at_most_as_often_as_asked(self):
         """Catches a meter that talks for every pair, which would cost more than the measuring."""

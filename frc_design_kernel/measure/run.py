@@ -1,136 +1,135 @@
-"""Sharing measuring work between worker processes. Nothing here measures; it only hands out work and gathers it.
+"""A bench: one loaded design, ready to be measured, in this process or shared between worker processes.
 
-Each worker loads and builds the design once, then answers the tasks it is given. A clearance along a motion is cut
-into shares, each every n-th pair of the motion, so the rows come back in the same order whichever worker did which
-share, and the result is the same for any worker count; any other job is one task. A job given an earlier result is
-planned first (see carry): only the pairs whose inputs changed are handed out, a job with nothing changed is not
-handed out at all, and the carried rows are put back afterwards. Tasks come back as each one finishes.
+Nothing here measures; it only hands out work and gathers it. The design is built once in each process that measures,
+the first time that process is asked something. A clearance along a motion is cut into shares, each every n-th pair of
+the motion, so the rows come back in the same order whichever worker did which share, and the result is the same for
+any worker count; any other job is one task. Every asking is measured: nothing is kept from one asking to the next.
 """
 import math
-import os
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from contextlib import closing
+from dataclasses import dataclass, field
 
 from ..source.load import load
-from . import carry, clearance, jobs as kinds, scene as scenes
-from .search import DEFAULT_DEPTH
+from ..workers import EVERY_S, Crew, default_workers
+from . import clearance, jobs as kinds
 
 PAIRS_PER_SHARE = 500    # a motion with fewer pairs than this is one piece of work
 
-_built = {}
-_fixed = {}      # per process: what fixed pairs of the built design measured, reused across the jobs of that design
+
+@dataclass(frozen=True)
+class Ask:
+    """One job to answer: the normalized job, what progress calls it, and what it is limited to or built with."""
+    job: dict
+    label: dict                                     # {"job": id}, and at an adjustment's end which end it is
+    focus: tuple | None = None                      # a clearance of only the pairs with one of these solids in them
+    parameters: dict = field(default_factory=dict)  # parameters set to other values than the design's
 
 
-def default_workers():
-    """Half the machine's cores, at least one. The caller may always choose another count."""
-    return max(1, (os.cpu_count() or 2) // 2)
+@dataclass(frozen=True)
+class Task:
+    """What a process is given: an ask, its share of the pairs (None for a whole job), and which asking it belongs to."""
+    ask: Ask
+    share: tuple | None
+    asking: int
 
 
-def assembly_for(source, parameters=None):
-    """The built assembly for a design source, with any parameters set to other values, built once per process."""
-    key = (str(source), os.path.getmtime(source), tuple(sorted((parameters or {}).items())))
-    if key not in _built:
+class Built:
+    """The design as built in one process: as it is and, one at a time, with parameters set to other values."""
+
+    def __init__(self, design):
+        self.design, self.nominal, self.variant = design, None, (None, None)
+        self.fixed_of, self.fixed = None, {}        # what fixed pairs measured, shared by the jobs of one asking of one build
+
+    def assembly(self, parameters=None):
         from ..builder.assembly import build
-        _built.clear()
-        _fixed.clear()
-        _built[key] = build(load(source, parameters or None))
-    return _built[key]
+        if not parameters:
+            self.nominal = self.nominal or build(self.design)
+            return self.nominal
+        key = tuple(sorted(parameters.items()))
+        if self.variant[0] != key:
+            self.variant = (key, build(load(self.design.path, parameters, self.design.field)))
+        return self.variant[1]
+
+    def answer(self, task, meter):
+        ask, assembly = task.ask, self.assembly(task.ask.parameters)
+        if task.share is None:
+            return kinds.perform(assembly, ask.job, ask.focus, meter)
+        key = (task.asking, tuple(sorted(ask.parameters.items())))
+        if self.fixed_of != key:
+            self.fixed_of, self.fixed = key, {}
+        return kinds.perform_share(assembly, ask.job, task.share, ask.focus, self.fixed, meter)
 
 
-def job_fields(job):
-    return (job["motion"], job.get("minGapMm", 0.0), job.get("contacts", ()), job.get("absent", ()), job.get("depth", DEFAULT_DEPTH),
-            bool(job.get("includeStill", False)), job.get("displace") or None)
+def begin(design):
+    """What a worker process starts with: the function that answers its tasks."""
+    return Built(design).answer
 
 
-def inputs_of(assembly, job):
-    motion, min_gap, _, absent, depth, include_still, displace = job_fields(job)
-    return {"rules": clearance.rules(min_gap, depth, include_still), "solids": carry.along(assembly, motion, absent, displace)}
+class Counts:
+    """The progress of one asking: the counts of every task, added up for the job it is part of."""
+
+    def __init__(self, asks, owners, totals, progress):
+        self.asks, self.owners, self.totals, self.progress = asks, owners, totals, progress
+        self.done = {}
+
+    def hear(self, slot, process, done, of):
+        mine = self.owners[slot]
+        self.done[slot] = done
+        whole = sum(count for other, count in self.done.items() if self.owners[other] == mine)
+        self.progress({**self.asks[mine].label, "process": process, "processDone": done, "processOf": of, "done": whole,
+                       "of": of if self.totals[mine] is None else self.totals[mine]})
 
 
-def work(task):
-    """Answer one task: one share of a clearance along a motion, or one whole job of another kind.
+class Bench:
+    """A loaded design to measure. progress, when given, hears where the work is, at most every every_s seconds from each
+    process: {"job": id, "done", "of", "process", "processDone", "processOf"} (pairs for a clearance or an attachment)."""
 
-    Runs in a worker process (or in the caller's, with one worker)."""
-    source, job, share = task
-    assembly = assembly_for(source, job.get("parameters"))
-    if share is None:
-        return kinds.perform(assembly, job)
-    motion, min_gap, contacts, absent, depth, include_still, displace = job_fields(job)
-    scene = scenes.for_motion(assembly, motion, absent, displace)
-    chosen = job["plan"]
-    focus = set(chosen["focus"]) if chosen["focus"] is not None else None
-    part = clearance.share_of(scene, min_gap, clearance.declared(contacts, scene.names), depth, share, include_still, _fixed, focus,
-                              {tuple(pair) for pair in chosen["also"]}, chosen["carrying"])
-    if share[0] == 0 and not job["inputsKnown"]:
-        part["inputs"] = inputs_of(assembly, job)
-    return part
+    def __init__(self, design, workers=None, progress=None, every_s=EVERY_S):
+        self.design, self.progress, self.built, self.askings = design, progress, Built(design), 0
+        self.crew = Crew(begin, (design,), workers, every_s, self.built.answer)
+        self.workers = self.crew.workers
 
+    def __enter__(self):
+        return self
 
-def completed(tasks, workers):
-    """Yield (task index, answer) for each task as it finishes: in order with one worker, else as the workers finish them.
+    def __exit__(self, *_):
+        self.close()
 
-    If the caller stops early, tasks not yet started are dropped and the workers are not waited for."""
-    if workers == 1 or len(tasks) <= 1:
-        for index, task in enumerate(tasks):
-            yield index, work(task)
-        return
-    pool, waiting = ProcessPoolExecutor(max_workers=min(workers, len(tasks))), {}
-    try:
-        waiting = {pool.submit(work, task): index for index, task in enumerate(tasks)}
-        while waiting:
-            done, _ = wait(waiting, return_when=FIRST_COMPLETED)
-            for future in sorted(done, key=waiting.get):
-                yield waiting.pop(future), future.result()
-    finally:
-        pool.shutdown(wait=not waiting, cancel_futures=True)
+    def close(self):
+        self.crew.close()
 
+    @property
+    def assembly(self):
+        """The design as built in this process."""
+        return self.built.assembly()
 
-def shares_for(solids, workers):
-    """How many shares to cut a motion into: one per worker for a large motion, one for a small one."""
-    return workers if math.comb(solids, 2) >= PAIRS_PER_SHARE else 1
+    def pairs(self, ask):
+        """How many pairs of solids a clearance along a motion looks at; None for any other job."""
+        if ask.job["kind"] != "clearance" or "motion" not in ask.job:
+            return None
+        names = kinds.present(self.design.data, ask.job)
+        others = len(set(names) - set(ask.focus)) if ask.focus else 0
+        return math.comb(len(names), 2) - math.comb(others, 2)
 
+    def answers(self, asks):
+        """Yield (ask index, the job's answer) as each job finishes: in order in this process, else as the workers finish.
 
-def planned(source, job, names, assembly):
-    """(the plan, the inputs if worked out here) for one job: carried from its earlier result, or as focus says."""
-    pairs = clearance.declared(job.get("contacts", ()), names)
-    if "earlier" not in job:
-        return carry.plan(None, None, pairs, job.get("focus")), None
-    built = assembly if assembly is not None and not job.get("parameters") else assembly_for(source, job.get("parameters"))
-    inputs = inputs_of(built, job)
-    return carry.plan(job["earlier"], inputs, pairs, job.get("focus"), True), inputs
-
-
-def clearances(source, jobs, workers=None, assembly=None):
-    """Clearance along several motions of one design source, shared between workers.
-
-    jobs is a list of {"motion": name, "minGapMm": 0.0, "contacts": [[a, b], ...], "absent": [names], "depth": 9,
-    "includeStill": False, "displace": {solid: [dx, dy, dz]}, "parameters": {name: value}, "focus": [solids],
-    "earlier": result}; only "motion" is required. "parameters" measures the design with those parameters changed;
-    "focus" measures only pairs with one of those solids in them; "earlier" is an earlier result of the same job to
-    carry unchanged pairs from, with focus then naming solids to measure again as well. assembly, when given, is the
-    built design source, used here to plan carried jobs instead of building it again. Returns one clearance result
-    per job, in job order, the same as clearance.along gives.
-    """
-    workers = default_workers() if workers is None else max(1, int(workers))
-    design = load(source)
-    names = [s["name"] for s in design.data["solids"] + design.data["fixtures"]]
-    tasks, spans, plans = [], [], []
-    for job in jobs:
-        present = sorted(set(names) - set(job.get("absent", ())))
-        chosen, inputs = planned(source, job, present, assembly)
-        plans.append((chosen, inputs, present))
-        sent = {key: value for key, value in job.items() if key != "earlier"} | {"plan": chosen.job()}
-        sent["inputsKnown"] = inputs is not None       # worked out here already; the worker need not
-        count = 0 if chosen.counts is not None else shares_for(len(present), workers)
-        spans.append((len(tasks), count))
-        tasks += [(str(source), sent, (first, count)) for first in range(count)]
-    parts = [None] * len(tasks)
-    for index, part in completed(tasks, workers):
-        parts[index] = part
-    results = []
-    for job, (start, count), (chosen, inputs, present) in zip(jobs, spans, plans):
-        motion, min_gap, contacts, absent, depth, include_still, displace = job_fields(job)
-        pairs = clearance.declared(contacts, set(present))
-        mine = parts[start:start + count]
-        head = clearance.header("motion", motion, min_gap, depth, pairs, absent, include_still, displace)
-        results.append(clearance.finished([carry.carried_part(tuple(present), chosen), *mine], head, inputs or mine[0]["inputs"], chosen))
-    return results
+        Closing this generator stops the work and ends the worker processes.
+        """
+        self.askings += 1
+        totals, tasks, owners, parts = [self.pairs(ask) for ask in asks], [], [], []
+        for index, ask in enumerate(asks):
+            count = 1 if totals[index] is None or totals[index] < PAIRS_PER_SHARE else self.workers
+            shares = [None] if totals[index] is None else [(first, count) for first in range(count)]
+            tasks += [Task(ask, share, self.askings) for share in shares]
+            parts.append({len(owners) + n: None for n in range(len(shares))})
+            owners += [index] * len(shares)
+        counts = Counts(asks, owners, totals, self.progress) if self.progress else None
+        with closing(self.crew.ask(tasks, counts.hear) if counts else self.crew.ask(tasks)) as given:
+            for slot, _, part in given:
+                mine = owners[slot]
+                parts[mine][slot] = part
+                if all(found is not None for found in parts[mine].values()):
+                    ask = asks[mine]
+                    found = list(parts[mine].values())
+                    yield mine, found[0] if totals[mine] is None else kinds.combined(self.design.data, ask.job, ask.focus, found)

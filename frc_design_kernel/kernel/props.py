@@ -40,3 +40,11 @@ def centre(shape):
     properties = GProp_GProps()
     BRepGProp.VolumeProperties_s(shape, properties, True)
     return list(properties.CentreOfMass().Coord())
+
+
+def figures(shape):
+    """(volume, centre of volume, second moments of volume about that centre [xx, yy, zz, xy, xz, yz]) of a shape, in one pass."""
+    found = GProp_GProps()
+    BRepGProp.VolumeProperties_s(shape, found, True)
+    moments = found.MatrixOfInertia()
+    return found.Mass(), list(found.CentreOfMass().Coord()), [moments.Value(i, j) for i, j in ((1, 1), (2, 2), (3, 3), (1, 2), (1, 3), (2, 3))]

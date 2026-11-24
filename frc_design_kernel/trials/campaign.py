@@ -5,20 +5,18 @@ cheapest sufficient bracket plan (trials.plan). No trial definition and no custo
 """
 import copy
 import itertools
-import json
 import math
-from concurrent.futures import ProcessPoolExecutor
+from contextlib import closing
 
-from ..builder import identity, placement
 from ..errors import DesignError
 from ..source.load import load
-from ..source.uses import parameters_used
 from ..version import generator
+from ..workers import EVERY_S, Crew, silent
 from . import assumptions, custom, engines, fit, inputs, record
 from . import plan as plans_
 from .plan import DEFAULT_REFINE, Bracket, Window
 
-SCHEMA = "frc-design-kernel/trial-campaign@2"
+SCHEMA = "frc-design-kernel/trial-campaign@3"
 PARAMETERS = "parameters."
 # Roughly what each engine manages; only used to state a time before running. The 3D figure is for a pickup scene
 # with a ring of 48 segments against about 20 solids; a simpler scene runs faster.
@@ -155,33 +153,60 @@ def estimate(design, names=None):
     return {"runs": sum(p["runs"] for p in per.values()), "steps": steps, "aboutSeconds": round(sum(p["aboutSeconds"] for p in per.values()), 1), "trials": per}
 
 
-def execute(task):
-    """One run, in this process or a worker: (source path, trial name, scene, step)."""
-    source, name, scene, step = task
-    design = load(source)
-    return engines.run(scene, step, custom.force_laws(design, design.data["trials"][name]))
+def most_steps(scene, step):
+    """The steps a run takes when no stop event ends it early."""
+    return math.ceil(scene["durationS"] / step)
+
+
+def begin(design):
+    """What a process that runs starts with: the function that answers one run, (trial name, scene, step)."""
+    def answer(task, meter):
+        name, scene, step = task
+        most = most_steps(scene, step)
+        meter(0, most)
+        found = engines.run(scene, step, custom.force_laws(design, design.data["trials"][name]), tick=lambda steps: meter(steps, most))
+        meter(found["steps"], most)
+        return found
+    return answer
 
 
 class Builder:
     """Builds the design once per set of parameter changes, so a change to a design parameter moves the real geometry."""
 
-    def __init__(self, source):
-        self.source, self.built = source, {}
+    def __init__(self, design, assembly=None):
+        self.design, self.built = design, {} if assembly is None else {(): assembly}
 
     def assembly(self, changes=None):
         overrides = {path[len(PARAMETERS):]: value for path, value in (changes or {}).items() if path.startswith(PARAMETERS)}
         key = tuple(sorted(overrides.items()))
         if key not in self.built:
             from ..builder.assembly import build
-            self.built[key] = build(load(self.source, overrides or None))
+            self.built[key] = build(load(self.design.path, overrides, self.design.field) if overrides else self.design)
         return self.built[key]
+
+
+class Tally:
+    """Where a campaign is: the runs done of the most it can take, whole and for the trial running, and each run's step."""
+
+    def __init__(self, cost, progress):
+        self.cost, self.progress, self.done, self.of_trial = cost, progress or silent, 0, {}
+
+    def say(self, trial, run_id, process, step, of_steps):
+        self.progress({"trial": trial, "run": run_id, "process": process, "step": step, "ofSteps": of_steps,
+                       "trialRunsDone": self.of_trial.get(trial, 0), "trialRunsAtMost": self.cost["trials"][trial]["runs"],
+                       "runsDone": self.done, "runsAtMost": self.cost["runs"]})
+
+    def finished(self, trial, run_id, process, step, of_steps):
+        self.done += 1
+        self.of_trial[trial] = self.of_trial.get(trial, 0) + 1
+        self.say(trial, run_id, process, step, of_steps)
 
 
 class Runner:
     """Runs the changed cases of one trial and keeps every result by run id."""
 
-    def __init__(self, source, name, builder, handed, workers):
-        self.source, self.name, self.builder, self.handed, self.workers = str(source), name, builder, handed, workers
+    def __init__(self, name, builder, handed, crew, tally):
+        self.name, self.builder, self.handed, self.crew, self.tally = name, builder, handed, crew, tally
         self.where, self.results, self.changes, self.facts = f'trials "{name}"', {}, {}, None
 
     def run(self, wanted):
@@ -195,33 +220,20 @@ class Runner:
             scene = engines.build(assembly, self.name, case, self.handed)
             self.facts = self.facts or scene["facts"]
             scene.pop("facts")
-            tasks.append((self.source, self.name, scene, scene["stepS"] / 2 if half else scene["stepS"]))
+            tasks.append((self.name, scene, scene["stepS"] / 2 if half else scene["stepS"]))
             ids.append(run_id)
             self.changes[run_id] = changes
-        if self.workers > 1 and len(tasks) > 1:
-            with ProcessPoolExecutor(max_workers=self.workers) as pool:
-                done = list(pool.map(execute, tasks))
-        else:
-            done = [execute(task) for task in tasks]
+        done = [None] * len(tasks)
+        with closing(self.crew.ask(tasks, lambda index, process, step, of: self.tally.say(self.name, ids[index], process, step, of))) as given:
+            for index, process, found in given:
+                done[index] = found
+                self.tally.finished(self.name, ids[index], process, found["steps"], most_steps(*tasks[index][1:]))
         self.results.update(zip(ids, done))
 
 
 def run_summary(run_id, changes, run, met, unmet):
     return {"id": run_id, "changes": changes, "stepS": run["stepS"], "outcome": run["outcome"], "met": met, "firstUnmet": unmet,
             "endS": run["endS"], "steps": run["steps"], "measures": run["measures"], "events": run["events"]}
-
-
-def what_it_used(design, assembly, name, case, facts):
-    """Exactly what a trial drew on, with enough of each thing's identity to tell later whether it changed."""
-    raw = design.raw
-    written = [raw["trials"][name]] + [raw.get(table, {}).get(key) for table in inputs.TABLES for key in case[table]]
-    pose = case.get("pose")
-    motions = sorted({entry["motion"] for entry in case.get("movers", {}).values() if "motion" in entry})
-    return {"solids": identity.solids(assembly, [row["solid"] for row in facts["sections"]]),
-            "pose": pose, "poseOperations": assembly.data["poses"].get(pose) if pose else None,
-            "motions": {key: json.loads(json.dumps(placement.motion_stages(assembly.data, key))) for key in motions},
-            "parameters": {key: design.data["parameters"][key] for key in parameters_used(raw, written)},
-            "tables": {table: sorted(case[table]) for table in inputs.TABLES}}
 
 
 def cover(design, name, case, plans, runner, met, trial, judge):
@@ -254,11 +266,11 @@ def cover(design, name, case, plans, runner, met, trial, judge):
     return rows
 
 
-def run_trial(design, name, builder, handed, workers):
+def run_trial(design, name, builder, handed, crew, tally):
     """Run one trial's whole method and return its part of the record."""
     trial, where = design.data["trials"][name], f'trials "{name}"'
     case, plans, missing, found = method(design, name)
-    runner = Runner(design.path, name, builder, handed, workers)
+    runner = Runner(name, builder, handed, crew, tally)
     judge = custom.criterion(design, trial)
     met = {}
     grid = [(label(combo), combo, False) for combo in grid_changes(design, name, case)]
@@ -296,7 +308,6 @@ def run_trial(design, name, builder, handed, workers):
     ranking = record.sensitivity(ranges, nominal["measures"])
     return {"engine": engines.stamp(trial.get("engine", "planar")),
             "definition": case, "assumptions": {"stated": stated, "engine": standing}, "inputs": found, "saw": runner.facts,
-            "used": what_it_used(design, builder.assembly(), name, case, runner.facts),
             "result": word, "findings": findings, "touchedHulled": touched, "firstUnmet": met["nominal"][1],
             "nominal": {**run_summary("nominal", {}, nominal, *met["nominal"]), "end": nominal["end"], "trace": nominal["trace"], "contacts": nominal["contacts"]},
             "stepComparison": steps, "control": control, "ranges": ranges, "coverage": covered, "grid": grid_found, "sensitivity": ranking,
@@ -305,25 +316,32 @@ def run_trial(design, name, builder, handed, workers):
             "fit": fit.path_operation(nominal["trace"], trial["plane"], trial.get("fitToleranceMm", 10.0))}
 
 
-def run_campaign(source, names=None, max_steps=None, workers=1, announce=None):
-    """Run the trials of a design source and return the campaign record.
+def run_campaign(design, names=None, max_steps=None, workers=1, announce=None, report=None, progress=None, every_s=EVERY_S, assembly=None):
+    """Run the trials of a loaded design (those named, and any they start after) and return the campaign record.
 
     The cost is counted first and passed to announce (a function taking the estimate) before anything runs. With
-    max_steps, a campaign whose estimate is larger is refused. workers shares the runs between processes.
+    max_steps, a campaign whose estimate is larger is refused. workers shares the runs between processes. report, when
+    given, hears each trial's name and its part of the record as it finishes; an error raised there stops the
+    campaign. progress hears where the campaign is, at most every every_s seconds from each process: {"trial", "run",
+    "process", "step", "ofSteps", "trialRunsDone", "trialRunsAtMost", "runsDone", "runsAtMost"}. assembly is the design
+    as built, when the caller has it. A trial that starts after another runs from the end that one reached in this
+    campaign, never from a saved record.
     """
-    design = load(source)
     cost = estimate(design, names)
     if announce:
         announce(cost)
     if max_steps is not None and cost["steps"] > max_steps:
         raise DesignError("", f'the campaign needs up to {cost["steps"]} steps in up to {cost["runs"]} runs, over the cap of {max_steps}',
                           "Raise the cap, shorten a trial, use a larger step or narrow what is bracketed")
-    builder, handed, records = Builder(source), {}, {}
-    for name in cost["trials"]:
-        before = design.data["trials"][name]["piece"]["start"].get("after")
-        records[name] = run_trial(design, name, builder, handed.get(before), workers)
-        handed[name] = records[name]["nominal"]["end"]
-    return {"schema": SCHEMA, "generator": generator(), "design": {"name": design.data["name"], "source": design.path.name, "sourceSha256": design.sha256},
+    builder, tally, handed, records = Builder(design, assembly), Tally(cost, progress), {}, {}
+    with Crew(begin, (design,), workers, every_s) as crew:
+        for name in cost["trials"]:
+            before = design.data["trials"][name]["piece"]["start"].get("after")
+            records[name] = run_trial(design, name, builder, handed.get(before), crew, tally)
+            handed[name] = records[name]["nominal"]["end"]
+            if report:
+                report(name, records[name])
+    return {"schema": SCHEMA, "generator": generator(), "design": {"name": design.data["name"], "source": design.path.name},
             "cost": {"runsAtMost": cost["runs"], "stepsAtMost": cost["steps"], "runs": sum(len(t["runs"]) for t in records.values()),
                      "stepsRun": sum(r["steps"] for t in records.values() for r in t["runs"])},
             "custom": custom.report(design, list(records)), "trials": records}
