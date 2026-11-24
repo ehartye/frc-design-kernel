@@ -35,16 +35,30 @@ def row(a, b, method, gap, t, overlap, lower, proven, closer, samples, unresolve
     return out
 
 
+def far(scene, a, b, min_gap):
+    """The count a pair falls under when bounding boxes alone prove it stays farther than min_gap, or None.
+
+    This is the broad phase. It is cheap, so a carried pair with no stored row is counted by it again.
+    """
+    if scene.fixed(a, b):
+        return "fixedFarApart" if box_gap(scene.boxes[a], scene.boxes[b]) > min_gap + BOX_MARGIN_MM else None
+    if (box_gap(scene.boxes[a], scene.boxes[b]) - (scene.rates[a] + scene.rates[b]) > min_gap
+            or proofs.apart_along_an_axis(scene.boxes[a], scene.boxes[b], scene.laws[a], scene.laws[b], min_gap)):
+        return "farApart"
+    return None
+
+
 def measure_pair(scene, a, b, min_gap, depth, counts, memo=None):
     """One pair along the motion: a row, or None when bounding boxes alone prove it stays farther than min_gap.
 
     memo remembers the gap and overlap of a pair that keeps its relative pose, by the two solids and where each
     stands, so the same pair standing the same way in another motion is not measured again.
     """
+    settled = far(scene, a, b, min_gap)
+    if settled:
+        counts[settled] += 1
+        return None
     if scene.fixed(a, b):
-        if box_gap(scene.boxes[a], scene.boxes[b]) > min_gap + BOX_MARGIN_MM:
-            counts["fixedFarApart"] += 1
-            return None
         key = (a, b, scene.placed[a], scene.placed[b])
         if memo is None or key not in memo:
             found = gap_and_overlap(scene.start[a], scene.start[b])
@@ -53,10 +67,6 @@ def measure_pair(scene, a, b, min_gap, depth, counts, memo=None):
         gap, overlap = found if memo is None else memo[key]
         return row(a, b, "fixed relative pose", gap, 0.0, overlap, gap, True, overlap > 0 or gap < min_gap, 1)
     speed = scene.rates[a] + scene.rates[b]
-    if (box_gap(scene.boxes[a], scene.boxes[b]) - speed > min_gap
-            or proofs.apart_along_an_axis(scene.boxes[a], scene.boxes[b], scene.laws[a], scene.laws[b], min_gap)):
-        counts["farApart"] += 1
-        return None
     if proofs.straight_stroke_clear(scene, a, b, min_gap):
         return row(a, b, "enclosed straight stroke", None, None, 0.0, min_gap, True, False, 0)
     overlaps = {}
@@ -75,27 +85,25 @@ def measure_pair(scene, a, b, min_gap, depth, counts, memo=None):
     return row(a, b, "adaptive search", gap, t, 0.0, min(found["floor"], gap), True, False, found["samples"])
 
 
-def carried_count(scene, a, b, contacts, include_still, with_rows):
-    """The count a carried pair falls under: the one a full measurement puts it under."""
+def carried_count(scene, a, b, contacts, include_still, min_gap):
+    """The count a carried pair falls under: the one a full measurement puts it under, whether or not its row was kept."""
     if (a, b) in contacts:
         return "declaredContacts"
     if scene.still(a) and scene.still(b) and not include_still:
         return "bothStill"
-    if (a, b) in with_rows:
-        return "measured"
-    return "fixedFarApart" if scene.fixed(a, b) else "farApart"
+    return far(scene, a, b, min_gap) or "measured"
 
 
 def outside(focus, also, a, b):
     return focus is not None and a not in focus and b not in focus and (a, b) not in also
 
 
-def share_of(scene, min_gap, contacts, depth=DEFAULT_DEPTH, share=(0, 1), include_still=False, memo=None, focus=None, also=(), carried=None):
+def share_of(scene, min_gap, contacts, depth=DEFAULT_DEPTH, share=(0, 1), include_still=False, memo=None, focus=None, also=(), carrying=False):
     """Measure one share of a scene's pairs: every share[1]-th pair starting at pair share[0]. Shares combine in combine().
 
     focus, when given, is a set of solid names: only pairs with one of them in it, or in also, are measured. The
-    others are counted as not in focus; or, when carried is a set (the carried pairs that have an earlier row), as a
-    full measurement would count them, their rows being put in by the caller.
+    others are counted as not in focus; or, when carrying, as a full measurement would count them, their rows (those
+    kept) being put in by the caller.
     """
     first, count = share
     rows, counts, tally = [], dict.fromkeys(COUNTS, 0), {"measured": 0, "carried": 0, "notMeasured": 0}
@@ -104,11 +112,11 @@ def share_of(scene, min_gap, contacts, depth=DEFAULT_DEPTH, share=(0, 1), includ
             continue
         counts["pairs"] += 1
         if outside(focus, also, a, b):
-            if carried is None:
+            if not carrying:
                 counts["notInFocus"] += 1
                 tally["notMeasured"] += 1
             else:
-                counts[carried_count(scene, a, b, contacts, include_still, carried)] += 1
+                counts[carried_count(scene, a, b, contacts, include_still, min_gap)] += 1
                 tally["carried"] += 1
             continue
         tally["measured"] += 1
@@ -173,8 +181,7 @@ def along(assembly, motion, min_gap=0.0, contacts=(), absent=(), depth=DEFAULT_D
     parts = [carry.carried_part(names, chosen)]
     if chosen.counts is None:
         scene = scenes.for_motion(assembly, motion, absent, displace)
-        parts.append(share_of(scene, min_gap, pairs, depth, (0, 1), include_still, None, chosen.focus, chosen.also,
-                              set(chosen.rows) if chosen.carrying else None))
+        parts.append(share_of(scene, min_gap, pairs, depth, (0, 1), include_still, None, chosen.focus, chosen.also, chosen.carrying))
     return finished(parts, head, inputs, chosen)
 
 

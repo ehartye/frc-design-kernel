@@ -166,7 +166,9 @@ class EveryJobKind(unittest.TestCase):
             data["mounts"] = []
         with tempfile.TemporaryDirectory() as out:
             records.record(stack(), JOBS, out, workers=1)
+            (Path(out) / records.FOLDER / "notes.json").write_text('{"written": "by hand"}', encoding="utf-8")
             rows = {row["record"]: row for row in status(stack(remove), out)["records"]}
+        self.assertEqual((rows["notes"]["state"], rows["notes"]["changes"]), ("stale", [f"it is not a {records.SCHEMA} record"]))
         self.assertEqual(rows["reach.press.ball.bracket"]["changes"], ['the motion "press" is no longer in the source'])
         self.assertEqual(rows["clearance.motion.lift-off.displaced.post"]["changes"], ['the job names the solid "post", which is no longer in the design'])
 

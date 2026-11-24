@@ -17,6 +17,7 @@ from frc_design_kernel.cli import main
 from frc_design_kernel.measure import approach, attachment, clearance, compression, mass, records, run
 
 from .helpers import load_data
+from .test_clearance import ARM
 from .test_measure import STACK
 
 GONE = ["ball", "lamp", "loose", "plate", "shelf", "stand"]       # every solid but the bracket and the post
@@ -33,6 +34,7 @@ JOBS = [
 ]
 IDS = ["clearance.motion.press", "clearance.motion.lift-off", "clearance.motion.lift-off.displaced.post", "clearance.pose.home",
        "reach.press.ball.bracket", "indentation.press.ball.bracket", "withdrawal.lift-off", "attachment.pose.home", "mass.pose.lifted"]
+SWING = {"kind": "clearance", "motion": "swing", "minGapMm": 1.0}     # the arm of test_clearance passes five solids, each measured
 LOOSE_NEAR = {"kind": "box", "fromMm": [62, 40, 150], "toMm": [72, 50, 160]}     # 2 mm from the bracket's lift path
 
 
@@ -143,31 +145,25 @@ class EveryKind(unittest.TestCase):
 class StoredRows(unittest.TestCase):
     def test_no_file_holds_a_row_for_a_far_apart_pair(self):
         """Catches the records keeping a row for every pair that was measured: the bulk the receipts carried."""
-        with tempfile.TemporaryDirectory() as out:
+        with tempfile.TemporaryDirectory() as out, tempfile.TemporaryDirectory() as arm:
             recorded(source(), out)
-            found = files(out)
-        stored = measured = 0
-        for name in IDS:
-            if not name.startswith("clearance."):
-                continue
-            held = found[name]
-            near = held["inputs"]["rules"].get("nearMm", 0.0)
-            gap = held["result"]["minGapMm"]
+            recorded(load_data(copy.deepcopy(ARM)).path, arm, [SWING])
+            found = [held for held in [*files(out).values(), *files(arm).values()] if held["job"]["kind"] == "clearance"]
+        for held in found:
+            near, gap = held["inputs"]["rules"].get("nearMm", 0.0), held["result"]["minGapMm"]
             for row in held["result"]["pairs"]:
-                self.assertTrue(row["closerThanMinGap"] or not row["proven"] or row["lowerBoundMm"] < gap + near, (name, row))
-            stored += len(held["result"]["pairs"])
-            measured += held["counts"]["measured"]
-        self.assertGreater(measured, stored)        # some pairs were measured and passed, and are counted, not stored
+                self.assertTrue(row["closerThanMinGap"] or not row["proven"] or row["lowerBoundMm"] < gap + near, (held["id"], row))
+        swing = found[-1]
+        self.assertEqual((swing["counts"]["measured"], swing["result"]["pairs"], swing["result"]["closest"]), (5, [], None))
 
     def test_control_a_wider_near_band_keeps_the_passing_rows(self):
         """Control: shows passing rows do reach a file when the caller asks for them, so the check above can fail."""
-        wide = [dict(JOBS[1], nearMm=1000.0)]
         with tempfile.TemporaryDirectory() as out:
-            recorded(source(), out, wide)
-            held = files(out)["clearance.motion.lift-off"]
-        passing = [row for row in held["result"]["pairs"] if not row["closerThanMinGap"]]
-        self.assertTrue(passing)
-        self.assertEqual(held["result"]["closest"]["pair"], min(held["result"]["pairs"], key=lambda r: r["gapMm"] or 0)["pair"])
+            recorded(load_data(copy.deepcopy(ARM)).path, out, [dict(SWING, nearMm=10.0)])
+            held = files(out)["clearance.motion.swing"]
+        self.assertEqual([row["pair"] for row in held["result"]["pairs"]], [["arm", "post"]])      # 4.9 mm away; the others are proven at least 11 mm away
+        self.assertFalse(held["result"]["pairs"][0]["closerThanMinGap"])
+        self.assertEqual(held["result"]["closest"]["pair"], ["arm", "post"])
 
 
 class Stopped(unittest.TestCase):
@@ -256,6 +252,15 @@ class Requests(unittest.TestCase):
                                  ({"kind": "mass", "id": "Mass Here"}, "job 1: an id is lower-case letters, digits")):
                 with self.assertRaisesRegex(DesignError, message):
                     recorded(path, out, [bad])
+
+    def test_a_file_in_another_format_is_measured_over(self):
+        """Catches a carry that crashes on, or trusts, a file at a job's place that is not a job record of this format."""
+        with tempfile.TemporaryDirectory() as out:
+            target = Path(out) / records.FOLDER / "mass.pose.lifted.json"
+            target.parent.mkdir()
+            target.write_text('{"schema": "frc-design-kernel/measurement-job@0", "result": {}}', encoding="utf-8")
+            entry, = recorded(source(), out, [JOBS[8]])
+            self.assertEqual((entry["action"], files(out)["mass.pose.lifted"]["schema"]), ("measured", records.SCHEMA))
 
     def test_check_says_which_requested_jobs_are_current_stale_or_missing(self):
         """Catches a judging tool told a record is current when its own rule changed, or when no record exists."""

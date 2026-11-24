@@ -234,7 +234,7 @@ class Command(unittest.TestCase):
         lines = text.getvalue().splitlines()
         self.assertEqual(lines[0], 'Measuring "Stack": 11 jobs against a gap of 1 mm, touching within 3 mm.')
         self.assertEqual(lines[1], "clearance.motion.press: 0 pairs closer than the gap; 0 pairs not settled.")
-        self.assertIn("clearance.pose.home: 2 pairs closer than the gap.", lines)
+        self.assertIn("clearance.pose.home: closest plate and post at 0.000 mm; 2 pairs closer than the gap.", lines)
         self.assertIn("attachment.pose.home: 1 solid not connected to the base; 1 fixture off the floor.", lines)
         self.assertIn("mass.pose.home: 4.000 kg; 2 solids with no mass.", lines)
         self.assertEqual(lines[-1], f"Wrote 11 job records to {Path(out) / 'measurements'}.")

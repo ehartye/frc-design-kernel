@@ -65,49 +65,66 @@ def pairs_line(label, found):
     return f'{label}: measured {checked["pairsMeasured"]} of {count(total, "pair")} again{why}, carried {checked["pairsCarried"]}.'
 
 
-def carry_lines(record):
-    for name, found in record["motions"].items():
-        print(pairs_line(f'Motion "{name}"', found))
-    for row in record["poses"]:
-        label = f'Pose "{row["pose"]}"' if row["pose"] else "As drawn"
-        print(pairs_line(f"{label}, clearance", row["clearance"]))
-        said = {"carried": "carried", "measured": "measured again"}
-        print(f'{label}: attachment {said[row["checked"]["attachment"]]}, mass {said[row["checked"]["mass"]]}.')
+def clearance_facts(job, found):
+    nearest = found["closest"]
+    near = [f'closest {nearest["pair"][0]} and {nearest["pair"][1]} at {nearest["gapMm"]:.3f} mm'] if nearest else []
+    settled = [f'{count(len(found["unresolved"]), "pair")} not settled'] if "motion" in job else []
+    return "; ".join([*near, f'{count(len(found["closer"]), "pair")} closer than the gap', *settled])
+
+
+FACTS = {
+    "clearance": clearance_facts,
+    "reach": lambda job, found: (f'reached, {found["gapMm"]:.3f} mm at t = {found["t"]:.3f}' if found["reached"]
+                                 else f'not reached; closest {found["gapMm"]:.3f} mm at t = {found["t"]:.3f}'),
+    "indentation": lambda job, found: f'deepest {found["deepestMm"]:.3f} mm at t = {found["t"]:.3f}' + ("; deeper than the limit" if found["deeperThanLimit"] else ""),
+    "withdrawal": lambda job, found: f'the moved solids end {found["smallestBoxGapMm"]:.3f} mm from the rest, box to box',
+    "attachment": lambda job, found: (f'{count(len(found["notConnectedToBase"]), "solid")} not connected to the base; '
+                                      f'{count(len(found["fixturesOffFloor"]), "fixture")} off the floor'),
+    "mass": lambda job, found: f'{found["totalKg"]:.3f} kg' + (f'; {count(len(found["unweighed"]), "solid")} with no mass' if found["unweighed"] else ""),
+}
+
+
+def job_lines(entry, detail):
+    """One line per finished job: what it found, or that it was carried; with detail, what a clearance measured and carried."""
+    name, held = entry["id"], entry["record"]
+    if entry["action"] == "carried":
+        print(f"{name}: carried; its record is current.")
+        return
+    facts = FACTS.get(held["job"]["kind"])
+    print(f'{name}: {facts(held["job"], held["result"]) if facts else "measured"}.')
+    if detail and "counts" in held:
+        print(pairs_line(name, held))
 
 
 def measure(args):
-    from .measure import summary as measures    # the CAD kernel is needed only from here on
+    from .measure import records, summary as measures    # the CAD kernel is needed only from here on
+    data = load(args.source).data
     part = bool(args.motion or args.pose)
-    old = earlier(args.out, "measurements.json")
-    if args.carry and old is None:
-        raise DesignError("", f"--carry needs an earlier measurements.json in {args.out} to carry from", "Measure once without --carry first")
-    record = measures.measure_design(args.source, args.min_gap, args.touch_gap, args.floor_z, args.ignore, args.workers, args.depth,
-                                     (args.motion or []) if part else None, (args.pose or []) if part else None,
-                                     old if args.carry else None, args.focus)
-    print(f'Measured "{record["design"]["name"]}" against a gap of {args.min_gap:g} mm, touching within {args.touch_gap:g} mm.')
-    for name, found in record["motions"].items():
-        nearest = found["closest"]
-        near = f'closest {nearest["pair"][0]} and {nearest["pair"][1]} at {nearest["gapMm"]:.3f} mm' if nearest else "no pair near enough to measure"
-        print(f'Motion "{name}": {near}; {count(len(found["closer"]), "pair")} closer than the gap; {count(len(found["unresolved"]), "pair")} not settled.')
-    for row in record["poses"]:
-        label = f'Pose "{row["pose"]}"' if row["pose"] else "As drawn"
-        hold, weight = row["attachment"], row["mass"]
-        print(f'{label}: {count(len(row["clearance"]["closer"]), "pair")} closer than the gap; {count(len(hold["notConnectedToBase"]), "solid")} not connected to the base; '
-              f'{count(len(hold["fixturesOffFloor"]), "fixture")} off the floor; mass {weight["totalKg"]:.3f} kg.')
+    motions, poses = ((args.motion or []), (args.pose or [])) if part else (None, None)
+    jobs = measures.design_jobs(data, args.min_gap, args.touch_gap, args.floor_z, args.ignore, args.depth, args.near, motions, poses)
+    folder = Path(args.out) / records.FOLDER
+    if args.carry and not folder.is_dir():
+        raise DesignError("", f"--carry needs earlier job records in {folder} to carry from", "Measure once without --carry first")
+    print(f'Measuring "{data["name"]}": {count(len(jobs), "job")} against a gap of {args.min_gap:g} mm, touching within {args.touch_gap:g} mm.')
+    entries = records.record(args.source, jobs, args.out, args.workers, carry=args.carry, focus=args.focus,
+                             report=lambda entry: job_lines(entry, bool(args.carry or args.focus)))
     if args.extremes:
-        from .measure.extremes import at_extremes
-        record["adjustments"] = at_extremes(args.source, args.min_gap, args.depth, args.workers,
-                                            (args.motion or []) if part else None, (args.pose or []) if part else None)
-        for name, found in record["adjustments"].items():
-            for row in found["settings"]:
-                closer = sum(len(m["closer"]) for m in row["motions"].values()) + sum(len(p["closer"]) for p in row["poses"])
-                print(f'Adjustment "{name}" at {row["setting"]:g}: moves {count(len(row["moves"]), "solid")}; '
-                      f'{count(closer, "pair")} with one of them closer than the gap over the motions and poses measured.')
-    if args.carry or args.focus:
-        carry_lines(record)
-    old = old if part else None
-    write(args.out, "measurements.json", measures.merged(old, record) if old else record)
-    print(f"Wrote measurements.json to {args.out}" + (", keeping the parts that were not measured again." if old else "."))
+        extremes(args, motions, poses)
+    carried = sum(1 for entry in entries if entry["action"] == "carried")
+    print(f'Wrote {count(len(entries) - carried, "job record")} to {folder}' + (f"; carried {carried} that were current." if carried else "."))
+
+
+def extremes(args, motions, poses):
+    """Clearance at both ends of every mechanical adjustment, written to adjustments.json."""
+    from .measure.extremes import at_extremes
+    found = at_extremes(args.source, args.min_gap, args.depth, args.workers, motions, poses)
+    for name, entry in found.items():
+        for row in entry["settings"]:
+            closer = sum(len(m["closer"]) for m in row["motions"].values()) + sum(len(p["closer"]) for p in row["poses"])
+            print(f'Adjustment "{name}" at {row["setting"]:g}: moves {count(len(row["moves"]), "solid")}; '
+                  f'{count(closer, "pair")} with one of them closer than the gap over the motions and poses measured.')
+    write(args.out, "adjustments.json", {"schema": "frc-design-kernel/adjustments@1", "generator": generator(), "adjustments": found})
+    print(f"Wrote adjustments.json to {args.out}.")
 
 
 def screen(args):
@@ -171,6 +188,7 @@ def status(args):
     for row in found["records"]:
         print(f'{row["record"]}: {row["state"]}' + ("" if not row["changes"] else " - " + "; ".join(row["changes"][:6])
                                                    + (f'; and {len(row["changes"]) - 6} more' if len(row["changes"]) > 6 else "")))
+    print(f'Checked {count(len(found["records"]), "record")} in {found["seconds"]:.2f} s.')
     ready = found["readyFor3d"]
     print(f'For a 3D engine: {count(len(ready["concaveWithNoBreakdown"]), "trial solid")} concave with no convex breakdown; '
           f'{count(len(ready["solidsWithNoMass"]), "solid")} with no mass; {count(len(ready["groupsNotOneHingeOrSlider"]), "moving group")} not one hinge or slider; '
@@ -192,7 +210,7 @@ def main(argv=None):
     make.add_argument("--out", required=True, help="the folder to write into")
     make.add_argument("--pose", help="the named pose to export (default: as drawn)")
     make.set_defaults(run=build)
-    gauge = commands.add_parser("measure", help="measure clearance, attachment and mass, and write measurements.json")
+    gauge = commands.add_parser("measure", help="measure clearance, attachment and mass, one job record each under measurements/")
     gauge.add_argument("source", help="the design source JSON file")
     gauge.add_argument("--out", required=True, help="the folder to write into")
     gauge.add_argument("--motion", action="append", metavar="NAME", help="measure only this motion; may be repeated")
@@ -203,9 +221,12 @@ def main(argv=None):
     gauge.add_argument("--ignore", action="append", default=[], metavar="SOLID", help="a solid to leave out of the attachment record; may be repeated")
     gauge.add_argument("--workers", type=int, help="worker processes (default: half the cores)")
     gauge.add_argument("--depth", type=int, default=9, help="how many times the search may halve the stroke (default 9)")
-    gauge.add_argument("--extremes", action="store_true", help="also measure at both ends of every mechanical adjustment, the pairs with a solid it moves")
-    gauge.add_argument("--carry", action="store_true", help="carry from the measurements.json already in --out: measure again only the pairs "
-                       "whose solids, placements or rules changed, and attachment and mass only at poses where something moved")
+    gauge.add_argument("--near", type=float, default=0.0, help="also keep the rows of pairs that may come within this many mm of the gap "
+                       "(default 0: only pairs closer than the gap, or not settled)")
+    gauge.add_argument("--extremes", action="store_true", help="also measure at both ends of every mechanical adjustment, the pairs with a solid it "
+                       "moves, and write adjustments.json")
+    gauge.add_argument("--carry", action="store_true", help="carry from the job records already in --out: a current record is kept as it "
+                       "is, and a stale clearance or attachment measures again only the pairs whose solids, placements or rules changed")
     gauge.add_argument("--focus", action="append", metavar="SOLID", help="measure the pairs with this solid in them (again, with --carry; "
                        "without it, only those, and the record says how many were not measured); may be repeated")
     gauge.set_defaults(run=measure)
@@ -224,7 +245,7 @@ def main(argv=None):
     attempt.set_defaults(run=trials)
     state = commands.add_parser("status", help="say which records in a folder are current and which are stale, and why")
     state.add_argument("source", help="the design source JSON file")
-    state.add_argument("folder", help="the folder holding measurements.json and trials.json")
+    state.add_argument("folder", help="the folder holding measurements/ and trials.json")
     state.add_argument("--json", action="store_true", help="also print everything as JSON")
     state.set_defaults(run=status)
     args = parser.parse_args(argv)
