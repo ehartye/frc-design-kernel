@@ -57,7 +57,7 @@ library that a robot project and a tooling plugin can both import.
 frc_design_kernel/
   __init__.py        the public functions: load, build, export
   __main__.py        python -m frc_design_kernel
-  cli.py             the build, validate, measure, try and status commands
+  cli.py             the validate, build, measure, screen, try, status and piece-geometry commands
   status.py          which records are current, which are stale, and why
   errors.py          DesignError: where, what is wrong, how to fix it
   version.py         library version and commit, for information
@@ -87,7 +87,7 @@ frc_design_kernel/
     load.py          files to checked, plain design
 
   kernel/            thin wrappers over the CAD kernel (OCP). Few lines each.
-    shapes.py        box, cylinder, sphere, prism, tube
+    shapes.py        box (sharp or rounded), cylinder, cone, sphere, torus, prism, tube
     booleans.py      union, difference, intersection
     props.py         volume, bounds, validity, solid count, centre of volume
     between.py       the gap between two shapes, shared volume, facing contact area
@@ -98,6 +98,7 @@ frc_design_kernel/
     step_write.py    named solids to a STEP file
     quiet.py         stop the kernel's own console chatter
     mesh.py          a solid as triangles, for drawing or for a physics engine
+    hull.py          a convex hull grown to contain a solid; the faces of the hull of any points
 
   builder/           the build layer (named builder so the build() function keeps its name)
     shape.py         a shape entry to one solid
@@ -124,6 +125,7 @@ frc_design_kernel/
     screen.py        screen facts: is an interaction the same in every section?
     symmetry.py      what kind of shape a solid is, read from its faces
     compression.py   how deep a solid presses into a ball or ring
+    piece_geometry.py  each piece's shape measured on its own: bounds, symmetry, hull, bore
     run.py           sharing work between worker processes, handed back as each piece finishes
     jobs.py          the kinds of measuring job: fields, file names, what each draws on, how each is answered
     records.py       one file per job, written as it finishes; carried while current
@@ -153,9 +155,9 @@ frc_design_kernel/
 ```
 
 **Import direction.** `motion` and `motor` import nothing from the rest. `source` imports `motion` (to check
-operations). `kernel` imports only OCP. `builder` imports `source`, `motion` and `kernel`. `measure` imports
-`builder`, `motion`, `motor` and `kernel`; `trials` does too. Nothing imports upward, and nothing imports in a circle. A test enforces the
-no-circle rule.
+operations). `kernel` imports only OCP and the error type. `builder` imports `source`, `motion` and `kernel`.
+`measure` imports `builder`, `motion`, `motor`, `kernel` and `source`; `trials` does too. Nothing imports upward,
+and nothing imports in a circle. A test enforces the no-circle rule.
 
 ## 4. The design source
 
@@ -224,9 +226,11 @@ weight, and no lump on its group, is listed as unweighed.
 
 | `kind` | Fields |
 |---|---|
-| `box` | `fromMm`, `toMm`: two opposite corners, in any order |
+| `box` | `fromMm`, `toMm`: two opposite corners, in any order. Optional `edgeRadiusMm` rounds all twelve edges to that radius, and the corners become parts of a ball. It must be less than half the smallest side, or no flat face would be left; a larger one is refused |
 | `cylinder` | `fromMm`, `toMm`: the two end centres; `radiusMm`. Optional `sweepDeg` and `sweepFrom` (a direction) make a pie slice |
+| `cone` | `fromMm`, `toMm`: the two end centres; `radiusFromMm`, `radiusToMm`: the radius at each end. A frustum (a cone with its point cut off). One radius may be 0, for a point, but not both. Equal radii give a cylinder |
 | `sphere` | `centerMm`, `radiusMm` |
+| `torus` | `centerMm`, `axis`, `majorRadiusMm` (from the centre to the middle of the ring), `minorRadiusMm` (the ring's own radius). A ring. `minorRadiusMm` must be smaller than `majorRadiusMm`, so a hole goes through the middle |
 | `prism` | `plane` (`xy`, `xz` or `yz`), `outlineMm` (a closed 2D outline in that plane), `fromMm` and `toMm` (the two levels along the third axis). A plate is a thin prism |
 | `tube` | `section` `round`: `fromMm`, `toMm`, `outerDiameterMm`, `wallMm`. `section` `rectangular`: `fromMm`, `toMm`, `widthMm`, `heightMm`, `wallMm`, optional `up` (the direction `heightMm` is measured in) |
 | `union` | `of`: a list of shapes joined into one solid |
@@ -1067,7 +1071,7 @@ good or bad, and nothing says which engine to use.
 
 | Fact | What is reported |
 |---|---|
-| Piece symmetry | `sphere`, `body of revolution` (with its axis), `prismatic` or `general`, read from the faces of the piece's 3D shape. A ring is a body of revolution, not a sphere. |
+| Piece symmetry | `sphere`, `body of revolution` (with its axis), `prismatic` or `general`, read from the faces of the piece's 3D shape. A ring is a body of revolution, not a sphere. A box or a prism is `prismatic` only when every face is flat: a box with rounded edges is `general`, because its section changes near every face. A cone is a body of revolution. |
 | Section constancy | Each meeting solid is cut at the centre plane and at four more levels across the piece's width (plus `marginMm`). The largest difference between a section and the centre section is given in mm, with the level; levels where the solid is not cut at all (it ends inside the width); and in words which faces change across the plane: a cone or taper, a dome, a sloped face, a round face lying across. |
 | Sideways hold | At each `pieceAtMm`, the gap from the piece to the nearest guide on each side along the plane's normal, or none (unguided). The probe is the piece's shadow pushed out sideways. |
 | Mechanism in the plane | For each motion named, the moving groups whose hinge, or whose path's turn, is not square to the plane, whose slide crosses it, or whose path or poses leave it. |
@@ -1087,6 +1091,100 @@ good or bad, and nothing says which engine to use.
   question, with no second source file: a control that shows a check can report an interference.
 - `frc_design_kernel.placements(design, pose=None, motion=None, t=0.0)` gives `{group: 12 numbers}`.
 - `assembly.mesh(name, deflection_mm)` gives a solid as triangles.
+
+### 12.6c Piece geometry: each piece's shape on its own
+
+```
+python -m frc_design_kernel piece-geometry PIECES.json --out GEOMETRY.json [--linear-mm 0.2] [--angular-rad 0.3]
+```
+
+measures game pieces with no design source. It gives the numbers a tool needs to work out where a piece can go,
+such as a delivery envelope: the piece's bounds, volume, symmetry, a convex hull that holds it and any hole through
+it. It does not say whether a piece fits anything.
+
+**The input** is a design source's own `pieces` block: `{"pieces": {name: {"shape": {...}, ...}}}`. Only `shape` is
+read. `massKg`, `note` and any other field are ignored, so a block copied from a design source, or written by another
+tool, is read as it is. Each shape is checked against the schema's shape definition, then its `"=..."` texts are
+worked out with no parameters (an expression that names a parameter is an error for that shape), then it is built
+as one solid. A `custom` shape is refused, because it needs a design folder and its code (section 6).
+
+**The record** is always written, even when some shapes fail:
+
+```json
+{"schema": "frc-design-kernel/piece-geometry@1",
+ "generator": {"library": "frc-design-kernel", "version": "0.1.0", "commit": "..."},
+ "used": {"library": "0.1.0", "meshing": {"linearMm": 0.2, "angularRad": 0.3}},
+ "shapes": {
+  "ring": {"ok": true,
+           "identity": {"kind": "torus", "volumeMm3": 1850550.825, "boundsMm": [[-15, -180, -145], [35, 170, 205]]},
+           "boundsMm": [[-15, -180, -145], [35, 170, 205]], "volumeMm3": 1850550.825, "centreMm": [10, -5, 30],
+           "symmetry": {"class": "body of revolution", "axis": [1, 0, 0]},
+           "hullMm": [[-15.159, -156.864, 32.566], ...], "hullToleranceMm": 0.228,
+           "bore": {"diameterMm": 250, "axis": [1, 0, 0], "centreMm": [10, -5, 30]}},
+  "fat ring": {"ok": false, "error": {"where": "pieces \"fat ring\" shape",
+                                      "problem": "minorRadiusMm must be smaller than majorRadiusMm",
+                                      "fix": "A ring needs a hole through its middle"}}}}
+```
+
+| Field | What it is |
+|---|---|
+| `identity` | The built solid's kind, volume and bounds. A tool that keeps a record compares these with a fresh run to tell whether the shape changed. It is figures, never a fingerprint of the file, so rewriting the file or a note changes nothing. |
+| `boundsMm`, `volumeMm3`, `centreMm` | The box fitted to the true surfaces, as `[[low x, y, z], [high x, y, z]]`; the volume; the centre of volume. Positions to 0.0001 mm, volume to 0.001 mm³. |
+| `symmetry` | `sphere`, `body of revolution` with its axis, `prismatic` or `general`, as in screen facts (12.6a). |
+| `hullMm`, `hullToleranceMm` | The corners of a convex hull that holds the whole solid, and how far it was grown (below). |
+| `bore` | A hole straight through, by the one rule below, or `null`. |
+
+`used` gives the library version and the meshing the hull was made with. The `status` command does not read this
+record: there is no design source to compare it with.
+
+**Exit codes.** 0 when every shape was measured. 1 when any shape failed: the file is still written, and each failed
+shape gets one line on stderr, `Error: where: problem. Fix: fix`. 1 also when the file is missing, is not JSON or has
+no `pieces` block; then nothing is written. 2 for a usage error, such as no `--out`.
+
+**The hull holds the true solid** (`kernel/hull.py`: `hull(shape, linear_mm=0.2, angular_rad=0.3)`, and
+`planes(points)` for the faces of the hull of any points).
+
+- The solid is meshed into triangles at the linear deflection `--linear-mm` and the angular deflection
+  `--angular-rad`. The mesh's corners lie on the true surface, but its flat triangles cut inside a round one, so the
+  hull of the corners alone sits a little inside the solid: up to 0.15 mm inside a ball 120 mm across.
+- So each face of that hull, and each face of the box fitted to the true surfaces, is pushed outward by t. The
+  corners where the pushed faces meet are reported, each coordinate rounded away from the middle to 0.001 mm.
+- t is the larger of `--linear-mm` and 4/3 of the largest gap between the middle of a triangle edge and the true
+  surface, plus 0.002 mm for the rounding and the arithmetic, rounded up to 0.001 mm. Over a small triangle the gap
+  is close to a quadratic (a curve shaped like a parabola) that is zero at the triangle's corners, and such a curve
+  rises at most 4/3 of its largest edge-middle value. The gap has to be measured, because the mesher can overshoot
+  its deflection on a round face meshed as a grid. On a ball 50 mm across at 0.2 mm the gap reaches 0.40 mm: a
+  hull grown by 0.2 mm alone leaves 0.05 mm of the ball outside. There t is 0.542 mm.
+- Each edge middle is projected onto its face's surface. Near the face's edge, the surface's nearest point can lie
+  past that edge, where it is not part of the solid: at a frustum's narrow rim, or a ball with a slice cut off. The
+  projection then finds no point, or only one on the far side of the surface. Such a middle is measured to the
+  trimmed face itself instead, which never understates the gap.
+- The hull is found by quickhull, on points snapped to a grid 2⁻⁴⁰ of their size, so every inside-or-outside test is
+  exact and near-flat clusters of points cannot tangle it. Points that all lie on one line or in one plane enclose
+  no volume and are refused.
+
+**What "within the tolerance" means.** t is the most the hull stands clear of a flat face of the solid, and the most
+its extent along x, y or z exceeds the solid's on each side. Where pushed faces meet at a slant over a round surface,
+a corner can stand a little more than t clear: by a factor of one over the cosine of half the angle between the two
+faces. On a box, each hull corner is within t of the box's corner along every axis, which is t × √3 in a straight
+line.
+
+**The bore, by one rule.** A shape that classifies as a body of revolution has a bore straight through it when its
+axis line does not meet the solid. The line is drawn through the centre of volume, which lies on the axis of every
+body of revolution, and runs well past the bounding box. The diameter is twice the line's smallest distance from the
+solid. The centre is the centre of volume, the point of the axis nearest it. This covers a ring (2 × (major radius −
+minor radius)), a round tube (outer diameter − 2 × wall) and a disc with a hole cut through it. A solid bar, a cone,
+a ball, a box and a cup closed at one end give `null`.
+
+**Limits.**
+
+- Where a slanted cut meets a round face, a chord along that edge may be measured to the uncut surface, which is a
+  little less than the edge curve's own bulge. The mesher keeps each edge's chords within `--linear-mm` of the edge,
+  and t is never below that, so the hull still holds. A test with a ball cut on a slant checks this.
+- The record is large: a ball 120 mm across has about 3,000 hull corners, and one 240 mm across about 5,000.
+  Pushing the faces out turns each corner of the mesh's hull into a small cluster of corners.
+- One solid per shape, and no mass, inertia or orientation. Whether a piece can be delivered is for the tool that
+  reads the record.
 
 ### 12.6 What the measure layer leaves out
 
@@ -1424,9 +1522,11 @@ trials with no re-authoring.
 5. **Assumptions have ids.** A trial's list is the list of things a fuller engine should test.
 6. **Readiness is reported as plain facts** by `status`: trial solids that are concave with no convex breakdown to
    be had from how they were built; solids with no mass; moving groups that are not one hinge or one slider (they
-   would have to be driven along a path); drives not tied to a solid; trial surfaces that were typed in. How a shape
-   was built from boxes, cylinders and unions stays in the design source, so an exact convex breakdown can be worked
-   out later; it is not thrown away at export.
+   would have to be driven along a path); drives not tied to a solid; trial surfaces that were typed in; and pieces
+   whose shape is not a ball, a cylinder, a tube or a sharp box (`piecesNotPrimitive`), a box with rounded edges
+   among them. A cone and a rounded box count as convex; a torus is reported as `a ring (a torus)`. How a shape was
+   built from boxes, cylinders and unions stays in the design source, so an exact convex breakdown can be worked out
+   later; it is not thrown away at export.
 7. **Results hand forward.** Each trial's `handForward` block gives the nominal inputs, the range each held over,
    the marginal edges, the sensitivity order and the control, so a later engine can run the nominal case and only
    the marginal edges, with the same control.
@@ -1449,12 +1549,15 @@ MuJoCo.
 
 **How the scene is made from the design source.**
 
-- Each solid the trial names becomes a fixed body at the trial's pose. A box, a ball and a full cylinder become that
-  exact primitive. A union becomes its parts. A prism with a convex outline becomes its exact hull.
+- Each solid the trial names becomes a fixed body at the trial's pose. A sharp box, a ball and a full cylinder
+  become that exact primitive. A cone and a box with rounded edges are convex but have no primitive, so each becomes
+  one convex mesh of its triangles at 0.2 mm. A union becomes its parts. A prism with a convex outline becomes its
+  exact hull.
 - A hollow or cut shape whose construction allows it is run as its **true convex pieces** (`trials/convex.py`): a
-  rectangular tube as four walls, a box with boxes cut out as the boxes that are left, a prism of any outline as
-  triangles pushed through (all exact); a round tube as a ring of 24 wedges and a pie slice as slices of at most a
-  half turn (their round faces become flat facets, and `saw.faceted` states by how much).
+  rectangular tube as four walls, a sharp box with sharp boxes cut out as the boxes that are left (a rounded box is
+  never split this way), a prism of any outline as triangles pushed through (all exact); a round tube as a ring of
+  24 wedges and a pie slice as slices of at most a half turn (their round faces become flat facets, and
+  `saw.faceted` states by how much).
 - Anything else (a shape cut by a round, a custom shape, an imported part) is **split at its own faces**
   (`kernel/split.py`). A solid is convex when all of it lies on the inner side of each face's plane: the plane of a
   flat face, or a plane touching a round face that bulges outward. Where some of it does not, that plane cuts it in
