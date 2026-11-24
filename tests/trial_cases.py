@@ -12,7 +12,8 @@ BOX = lambda low, high: {"kind": "box", "fromMm": low, "toMm": high}
 PANEL = {"stiffnessNPerM": MEASURED(2.0e5), "restitution": MEASURED(0.2), "friction": {"value": 0.5, "assumed": [0.2, 0.8]}}
 BALL = {"kind": "sphere", "centerMm": [0, 0, 0], "radiusMm": 20}
 
-# A wedge whose top face slopes down toward +X at slope_deg, and a long flat belt bed whose top is at z = -500.
+# A wedge whose top face slopes down toward +X at slope_deg, a long flat belt bed whose top is at z = -500, and a motor
+# block off to one side for a motor drive to name.
 DESIGN = {
     "schema": "frc-design-kernel/design@1", "name": "Trial bench", "units": {"length": "mm", "mass": "kg"},
     "parameters": {"slope_deg": 20, "rise": "=2000 * tan(radians(slope_deg))"},
@@ -21,6 +22,7 @@ DESIGN = {
         {"name": "wedge", "group": "bench", "shape": {"kind": "prism", "plane": "xz", "fromMm": -50, "toMm": 50,
                                                        "outlineMm": [[0, 0], [2000, 0], [0, "=rise"]]}},
         {"name": "belt bed", "group": "bench", "shape": BOX([-3000, -50, -520], [3000, 50, -500])},
+        {"name": "motor", "group": "bench", "shape": BOX([-100, 200, 0], [-60, 260, 40]), "note": "The one motor a drive of the bench may name; off every trial's plane."},
     ],
     "pieces": {
         "block": {"shape": BALL, "massKg": MEASURED(1.0), "inertiaKgM2": MEASURED(1e6), "note": "A piece that cannot spin."},

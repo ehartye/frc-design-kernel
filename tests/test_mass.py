@@ -204,7 +204,7 @@ BAR = {
     "solids": [{"name": "bar", "group": "bar", "massKg": ASSUMED(2.0, 1.5, 3.0), "shape": BOX([-50, -20, -10], [50, 20, 10])},
                {"name": "block", "group": "other", "massKg": 1.0, "shape": BOX([200, -5, -5], [210, 5, 5])}],
     "poses": {"turned": {"bar": [{"kind": "rotation", "originMm": [0, 0, 0], "axis": [0, 0, 1], "travelDeg": 90}]}},
-    "motions": {"turn": {"from": "turned", "moves": {"bar": [{"kind": "rotation", "originMm": [0, 0, 0], "axis": [0, 0, 1], "travelDeg": -90}]}}},
+    "motions": {"turn": {"by": "hand", "from": "turned", "moves": {"bar": [{"kind": "rotation", "originMm": [0, 0, 0], "axis": [0, 0, 1], "travelDeg": -90}]}}},
 }
 KG_M2 = 1e-6    # kg mm^2 to kg m^2
 

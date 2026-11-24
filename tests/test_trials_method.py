@@ -229,7 +229,7 @@ class HandOff(unittest.TestCase):
     def test_a_drive_can_start_at_the_speed_the_earlier_trial_left_it_at(self):
         """Catches a wheel that restarts from rest in every shot of a batch: its speed must carry when the trial asks."""
         motor = {"small": {"ktNmPerA": MEASURED(0.02), "ohm": MEASURED(0.1), "keVsPerRad": MEASURED(0.02)}}
-        drive = {"wheel": {"motor": "small", "gear": 2.0, "radiusMm": 25, "inertiaKgM2": MEASURED(2e-4), "statorLimitA": 40}}
+        drive = {"wheel": {"motor": "small", "motorSolid": "motor", "gear": 2.0, "radiusMm": 25, "inertiaKgM2": MEASURED(2e-4), "statorLimitA": 40}}
         first = hold_trial(commands={"wheel": {"mode": "voltage", "busV": 12.0}})
         second = hold_trial(commands={"wheel": {"mode": "voltage", "busV": None}})      # power off: it keeps whatever speed it starts with
         second["piece"]["start"] = {"after": "first", "carryDrives": True}

@@ -41,7 +41,7 @@ def gate(engine, spring, side=1, cart=False):
     design["groups"]["cart"] = {"role": "mechanism"}
     design["solids"].append({"name": "leaf", "group": "cart" if cart else "bench", "shape": BOX([99, -50, -500], [101, 50, -440])})
     design["poses"] = {"back": {}}
-    design["motions"] = {"roll": {"from": "back", "moves": {"cart": [{"kind": "translation", "travelMm": [600, 0, 0]}]}}}
+    design["motions"] = {"roll": {"by": "hand", "from": "back", "moves": {"cart": [{"kind": "translation", "travelMm": [600, 0, 0]}]}}}
     at = 100 + side * 100
     trial = {**BASE, "engine": engine, "durationS": 0.6, "piece": {"use": "block", "start": {"atMm": [at, -480], "velocityMps": [0 if cart else -side, 0]}},
              "surfaces": [{"solid": "belt bed", "material": "slick"}],
@@ -105,7 +105,7 @@ class Parts(unittest.TestCase):
         design["groups"]["cart"] = {"role": "mechanism"}
         design["solids"].append({"name": "deck", "group": "cart", "shape": BOX([-3000, -50, -520], [3000, 50, -500])})
         design["poses"] = {"back": {}}
-        design["motions"] = {"roll": {"from": "back", "moves": {"cart": [{"kind": "translation", "travelMm": [250, 0, 0]}]}}}
+        design["motions"] = {"roll": {"by": "hand", "from": "back", "moves": {"cart": [{"kind": "translation", "travelMm": [250, 0, 0]}]}}}
         design["drives"] = {"spin": {"radiusMm": 25, "turns": [{"solid": "deck", "axis": [0, 1, 0]}]}}
         trial = {**BASE, "engine": "mujoco", "durationS": 0.45, "piece": {"use": "block", "start": {"atMm": [0, -480]}},
                  "commands": {"spin": {"mode": "imposed", "speedMps": 1.0}}, "movers": {"go": {"motion": "roll", "group": "cart", "startS": 0.0, "durationS": 0.5}},

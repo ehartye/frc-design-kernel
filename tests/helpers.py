@@ -21,7 +21,7 @@ MINIMAL = {
          "shape": {"kind": "box", "fromMm": [0, 0, "=tall"], "toMm": [50, 40, "=tall + 10"]}},
     ],
     "poses": {"in": {}, "out": {"slide": [{"kind": "translation", "travelMm": [80, 0, 0]}]}},
-    "motions": {"extend": {"from": "in", "to": "out", "moves": {"slide": [{"kind": "translation", "travelMm": [80, 0, 0]}]}}},
+    "motions": {"extend": {"by": "hand", "from": "in", "to": "out", "moves": {"slide": [{"kind": "translation", "travelMm": [80, 0, 0]}]}}},
 }
 
 

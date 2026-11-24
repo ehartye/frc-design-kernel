@@ -32,13 +32,13 @@ ARM = {
     ],
     "poses": {"start": {}, "half": {"arm": [TURN(90)]}, "end": {"arm": [TURN(180)]}},
     "motions": {
-        "swing": {"from": "start", "moves": {"arm": [TURN(180)]}},
-        "swing through poses": {"through": ["start", "half", "end"]},
-        "slide": {"from": "start", "moves": {"slider": [{"kind": "translation", "travelMm": [120, 0, 0]}]}},
-        "slide past the corner": {"from": "start", "moves": {"slider": [{"kind": "translation", "travelMm": [50, -30, 0]}]}},
-        "slide and settle": {"from": "start", "moves": {"slider": [{"kind": "translation", "travelMm": [50, -30, 0]},
+        "swing": {"by": "hand", "from": "start", "moves": {"arm": [TURN(180)]}},
+        "swing through poses": {"by": "hand", "through": ["start", "half", "end"]},
+        "slide": {"by": "hand", "from": "start", "moves": {"slider": [{"kind": "translation", "travelMm": [120, 0, 0]}]}},
+        "slide past the corner": {"by": "hand", "from": "start", "moves": {"slider": [{"kind": "translation", "travelMm": [50, -30, 0]}]}},
+        "slide and settle": {"by": "hand", "from": "start", "moves": {"slider": [{"kind": "translation", "travelMm": [50, -30, 0]},
                                                                     {"kind": "gravity-drop", "fallMm": 0.0, "quadraticFraction": 1}]}},
-        "ball over the wall": {"from": "start", "moves": {"ball": [
+        "ball over the wall": {"by": "piece", "from": "start", "moves": {"ball": [
             {"kind": "path", "curve": "arc", "throughMm": [[150, 100, 5], [200, 150, 5], [250, 100, 5]]}]}},
     },
 }

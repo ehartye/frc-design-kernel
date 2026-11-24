@@ -13,7 +13,7 @@ from .trial_cases import G, MEASURED, PANEL, bench, hold_trial, on_slope
 
 STOP_LOW = [{"name": "landed", "when": {"signal": "zMm", "below": 0}, "outcome": "landed"}]
 MOTOR = {"ktNmPerA": MEASURED(0.02), "ohm": MEASURED(0.1), "keVsPerRad": MEASURED(0.02)}
-WHEEL = {"motor": "small", "gear": 2.0, "radiusMm": 25, "inertiaKgM2": MEASURED(2e-4), "statorLimitA": 40}
+WHEEL = {"motor": "small", "motorSolid": "motor", "gear": 2.0, "radiusMm": 25, "inertiaKgM2": MEASURED(2e-4), "statorLimitA": 40}
 
 
 def run(trial, parameters=None, **design):

@@ -56,9 +56,9 @@ def motions_for(i):
     x0, y0 = 60 + (i % CELLS_X) * CELL_X, 50 + (i // CELLS_X) * CELL_Y
     pivot = [x0, y0 + 60, 60]
     slides = [[0, 0, 40], [0, 0, 120], [20, 0, 0], [0, 25, 30]]
-    found = {f"{group} slide {k}": {"from": "stowed", "moves": {group: [{"kind": "translation", "travelMm": travel}]}} for k, travel in enumerate(slides)}
+    found = {f"{group} slide {k}": {"by": "hand", "from": "stowed", "moves": {group: [{"kind": "translation", "travelMm": travel}]}} for k, travel in enumerate(slides)}
     for k, angle in enumerate((-40, -75)):
-        found[f"{group} swing {k}"] = {"from": "stowed", "moves": {group: [{"kind": "rotation", "originMm": pivot, "axis": [0, 1, 0], "travelDeg": angle}]}}
+        found[f"{group} swing {k}"] = {"by": "hand", "from": "stowed", "moves": {group: [{"kind": "rotation", "originMm": pivot, "axis": [0, 1, 0], "travelDeg": angle}]}}
     return found
 
 
@@ -75,8 +75,8 @@ def design():
         poses[f"mech {i} raised"] = {f"mech {i}": [{"kind": "translation", "travelMm": [0, 0, 120]}]}
     solids += [{"name": "pad", "group": "frame", "massKg": 0.1, "shape": box([860, 300, 0], [960, 400, 20])},
                {"name": "ball", "group": "payload", "massKg": 0.2, "shape": {"kind": "sphere", "centerMm": [910, 350, 90], "radiusMm": 60}}]
-    motions["payload press"] = {"from": "stowed", "moves": {"payload": [{"kind": "translation", "travelMm": [0, 0, -12]}]}}
-    motions["payload lift"] = {"from": "stowed", "moves": {"payload": [{"kind": "translation", "travelMm": [0, 0, 80]}]}}
+    motions["payload press"] = {"by": "piece", "from": "stowed", "moves": {"payload": [{"kind": "translation", "travelMm": [0, 0, -12]}]}}
+    motions["payload lift"] = {"by": "piece", "from": "stowed", "moves": {"payload": [{"kind": "translation", "travelMm": [0, 0, 80]}]}}
     fixtures = [{"name": f"stand {i}", "group": "stand", "shape": box([1100 + i * 80, 0, 0], [1160 + i * 80, 60, 300])} for i in range(6)]
     groups["stand"] = {"role": "test stand"}
     return {"schema": "frc-design-kernel/design@1", "name": "Scaled bench", "units": {"length": "mm", "mass": "kg"},

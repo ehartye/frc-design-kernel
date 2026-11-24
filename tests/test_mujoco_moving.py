@@ -24,7 +24,7 @@ def rig(axis=(0, 1, 0), motor=False):
     drive = {"radiusMm": 25, "turns": [{"solid": "roller", "axis": list(axis)}]}
     command = {"mode": "imposed", "speedMps": 1.0}
     if motor:
-        drive.update(motor="small", gear=2.0, inertiaKgM2=MEASURED(2e-4), statorLimitA=40)
+        drive.update(motor="small", motorSolid="motor", gear=2.0, inertiaKgM2=MEASURED(2e-4), statorLimitA=40)
         command = {"mode": "speed", "setpointMps": 1.0, "band": 0.05, "busV": 12.0, "startMps": 1.0}
     return {"solids": solids, "drives": {"spin": drive}, "motors": MOTOR, "materials": {"panel": PANEL, "slick": SLICK}}, command
 
@@ -45,9 +45,9 @@ def pushed(engine, motion):
     design["groups"]["finger"] = {"role": "mechanism", "carriedBy": "gate"}
     design["solids"].append({"name": "pusher", "group": "gate" if motion != "carried" else "finger", "shape": BOX([-60, -50, -500], [-40, 50, -440])})
     design["poses"] = {"back": {}, "half": {"gate": [{"kind": "translation", "travelMm": [100, 0, 0]}]}, "out": {"gate": [{"kind": "translation", "travelMm": [200, 0, 0]}]}}
-    design["motions"] = {"slide": {"from": "back", "moves": {"gate": [{"kind": "translation", "travelMm": [200, 0, 0]}]}},
-                         "by poses": {"through": ["back", "half", "out"]},
-                         "swing": {"from": "back", "moves": {"gate": [{"kind": "rotation", "originMm": [-50, 0, -300], "axis": [0, -1, 0], "travelDeg": 40}]}}}
+    design["motions"] = {"slide": {"by": "hand", "from": "back", "moves": {"gate": [{"kind": "translation", "travelMm": [200, 0, 0]}]}},
+                         "by poses": {"by": "hand", "through": ["back", "half", "out"]},
+                         "swing": {"by": "hand", "from": "back", "moves": {"gate": [{"kind": "rotation", "originMm": [-50, 0, -300], "axis": [0, -1, 0], "travelDeg": 40}]}}}
     trial = {"engine": engine, "assumes": ASSUMES, "plane": {"normal": "y", "atMm": 0}, "stepS": 1e-4, "durationS": 0.8, "traceS": 0.01, "events": [],
              "pass": {"outcomes": ["timeout"]}, "piece": {"use": "ball", "start": {"atMm": [0, -480]}},
              "movers": {"push": {"motion": motion if motion != "carried" else "slide", "group": "gate", "startS": 0.05, "durationS": 0.5}},
