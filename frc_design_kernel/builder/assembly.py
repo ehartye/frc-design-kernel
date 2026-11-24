@@ -7,6 +7,7 @@ from ..kernel.transform import moved
 from ..motion import matrix as mx
 from ..motion import ops
 from ..source.schema import step
+from ..source.sourced import span
 from . import placement
 from .custom import CustomShapes
 from .parts import Parts
@@ -24,6 +25,7 @@ class Solid:
     kind: str               # the shape kind, or "part"
     fixture: bool
     mass_kg: float | None   # None when the source gives no mass for this solid
+    mass_range_kg: tuple | None     # (low, high); both ends are mass_kg unless the source assumes a range
     mass_from: str | None   # "massKg" or "densityKgM3"
     note: str
 
@@ -63,11 +65,13 @@ class Assembly:
 
 
 def mass_of(entry, shape):
-    if "massKg" in entry:
-        return float(entry["massKg"]), "massKg"
-    if "densityKgM3" in entry:
-        return props.volume(shape) * 1e-9 * entry["densityKgM3"], "densityKgM3"
-    return None, None
+    """(mass, (low, high), where it came from) of a solid entry, or (None, None, None) when the source gives none."""
+    for key, scale in (("massKg", lambda: 1.0), ("densityKgM3", lambda: props.volume(shape) * 1e-9)):
+        if key in entry:
+            factor = scale()
+            value, low, high = span(entry[key])
+            return value * factor, (low * factor, high * factor), key
+    return None, None, None
 
 
 def build_solid(entry, where, group, custom, parts, fixture):
@@ -82,9 +86,9 @@ def build_solid(entry, where, group, custom, parts, fixture):
         shape = moved(shape, transform)
         if abs(props.volume(shape) - before) > PART_VOLUME_TOLERANCE * before:
             raise DesignError(where, "placing this solid changed its volume", "Report this: a rigid placement must not change a solid")
-    mass, basis = mass_of(entry, shape)
+    mass, ends, basis = mass_of(entry, shape)
     kind = "part" if "part" in entry else entry["shape"]["kind"]
-    return Solid(entry["name"], entry["group"], shape, kind, fixture, mass, basis, entry.get("note", ""))
+    return Solid(entry["name"], entry["group"], shape, kind, fixture, mass, ends, basis, entry.get("note", ""))
 
 
 def build(design):

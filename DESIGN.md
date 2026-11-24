@@ -77,6 +77,7 @@ frc_design_kernel/
     trial.schema.json
     expand.py        "each" rows and "=..." values turned into plain numbers
     checks.py        cross-references: names exist, no loops, no double mass
+    sourced.py       a physical input's number and the range it may lie in
     uses.py          which parameters something depends on
     load.py          file to checked, plain design
 
@@ -112,7 +113,7 @@ frc_design_kernel/
     approach.py      does a pair meet, is a seat bearing, is a set withdrawn
     attachment.py    what touches what, what is loose, measured mounts
     sets.py          connected sets
-    mass.py          mass and centre of mass
+    mass.py          mass with its range, centre of mass, and the inertia of groups about any line
     extremes.py      clearance at both ends of every mechanical adjustment
     screen.py        screen facts: is an interaction the same in every section?
     symmetry.py      what kind of shape a solid is, read from its faces
@@ -196,6 +197,20 @@ just to do the arithmetic.
 Each solid has a unique `name`, a `group`, and exactly one of `shape` or `part`. Optional: `place` (a list of motion
 operations applied in full, to move the solid after it is made), `massKg` **or** `densityKgM3`, and a `note`.
 
+**Weight.** `massKg` and `densityKgM3` take a plain number or the sourced form of section 4.5b:
+
+```json
+"massKg": 0.4
+"massKg": {"value": 0.4, "measured": "shop scale"}
+"massKg": {"value": 0.4, "assumed": [0.3, 0.55]}
+"densityKgM3": {"value": 2700, "assumed": [2650, 2800]}
+```
+
+A plain number and a measured value are exact: they count at both ends of the weight range. Only an assumed range
+widens it. A density weighs the drawn volume, so use it for a solid drawn as the real shape. A blockout solid (a box
+standing for a gearbox) takes a stated `massKg`, because its drawn volume is not the part's. A robot solid with no
+weight, and no lump on its group, is listed as unweighed.
+
 **Shapes.** Each is a few lines over the CAD kernel.
 
 | `kind` | Fields |
@@ -246,14 +261,27 @@ fixtures and mounts.
 ```
 
 A group is a set of solids that move as one rigid body. `role` is free text for the reader. `carriedBy` names the
-group this one rides on: when the carrier moves, this group moves with it. `massKg` on a group is one lump figure for
-the whole group; its solids then must not carry their own mass, so nothing is counted twice.
+group this one rides on: when the carrier moves, this group moves with it. `massKg` on a group (plain or sourced) is
+one lump figure for the whole group, spread over its solids by volume; its solids then must not carry their own mass,
+so nothing is counted twice.
 
 `place` on a group moves every solid in it once, when the design is built. Use it to draw a mechanism in its own
 handy coordinates and then put it in the robot frame.
 
 **One group, one rigid body.** If a left hook and a right hook turn in opposite directions, they are two groups, even
 though a person would call them "the hooks". Solids that never move relative to each other belong in one group.
+
+### 4.3a Weight with no solid
+
+```json
+"extraMass": [{"name": "wiring", "group": "base", "massKg": {"value": 0.8, "assumed": [0.5, 1.2]},
+               "note": "Loom, connectors and ties; not drawn."}]
+```
+
+Some weight has no solid worth drawing: wiring, fasteners, paint, a growth allowance. Each entry names it once,
+gives its `massKg` (plain or sourced) and puts it in a `group` that holds at least one robot solid. It sits at the
+centre of that group's volume and moves with the group. It adds to the group's weight; it does not weigh the
+group's unweighed solids.
 
 ### 4.4 Fixtures
 
@@ -497,9 +525,21 @@ The library cannot detect all of these. It makes them visible. Judging them is t
 - `DIR/manifest.json`: the record of what was built.
 
 The manifest holds: the source file name and fingerprint; units; the pose that was exported; each solid (name, group,
-kind, volume, bounding box, mass and where the mass came from); each group (role, carrier, members, mass); mounts;
-poses and motions with every number worked out; parts used (file, fingerprint, solid name); custom shapes used; mass
-totals and the solids with no mass; and the library version and commit.
+kind, volume, bounding box, mass, its range and where the mass came from); each group (role, carrier, members); the
+weight with no solid; mounts; poses and motions with every number worked out; parts used (file, fingerprint, solid
+name); custom shapes used; the mass block; and the library version and commit.
+
+The mass block is the robot's weight, fixtures left out:
+
+```json
+"mass": {"totalKg": 24.6, "rangeKg": [22.9, 27.1],
+         "groups": {"base": {"massKg": 15.2, "rangeKg": [14.1, 16.8], "from": "solids", "extra": ["wiring"]}},
+         "unweighed": ["spool"]}
+```
+
+`totalKg` adds the nominal values. `rangeKg` adds the low ends and the high ends separately. Each robot group states
+the same, with `from` (`solids` or `group massKg`) and the names of its extra masses. `unweighed` lists the robot
+solids that no figure covers. The library states these numbers; a tool that judges compares them with its limits.
 
 `validate SOURCE` checks everything that needs no CAD kernel: the schema, names, loops, files present. `build` then
 checks the rest: every shape is one valid solid, every part's solid name exists in its file, every motion with a
@@ -565,7 +605,9 @@ These were the simpler choice at the time. Any of them may change while the libr
 6. **A `path` operation turns about one fixed direction.** Its angle grows evenly with length between points, so a
    turn made standing still cannot be written, and a turn whose axis itself swings needs a `through` motion.
 7. **Mounts are records, not constraints.** Nothing yet checks that the two solids meet at the mount point.
-8. **Mass is a single figure**, per solid or per group. Ranges (low and high) are left to the tools that budget.
+8. **A weight range is two ends added separately.** The low ends add to the low total and the high ends to the high
+   total, as though every assumed weight were at its end at once. That is the safe bound, not a likely total. If a
+   statistical spread is ever wanted, it belongs here as a stated choice.
 9. **Custom shape imports are checked by reading the file.** That stops honest mistakes, not a determined author.
 10. **Solid names are plain ASCII text.** The CAD kernel damages accented letters and symbols when it writes a STEP
     file, so the build refuses them. Names read from a supplier's STEP file are repaired where possible.
@@ -659,7 +701,8 @@ counted); `absent` (solids taken out of the scene, such as a cover removed befor
 | `approach.withdrawn` | At the end of a motion, how far are the moved solids from everything that stayed? | Box gap per moved solid |
 | `attachment.at_pose` | What touches what within a gap? What hangs together? What is not connected to the base? Which fixtures float above the floor? | Touching pairs with gaps, connected sets, loose solids with their nearest neighbour, fixtures off the floor |
 | `attachment` (mounts) | Is each mount real? | Per mount: the true gap between its two solids, and the stated point's distance to each |
-| `mass.roll_up` | What does it weigh and where is the centre of mass, at a pose? | Per group and whole. A solid's mass sits at the centre of its volume; a lump group mass at the centre of the group's volume. A pose moves solids rigidly, so the centre as drawn is moved by the group's placement and no shape is measured again |
+| `mass.roll_up` | What does it weigh, within what range, and where is the centre of mass, at a pose? | Per group and whole: `totalKg`, `rangeKg`, `centreMm`, `unweighed`. A solid's mass sits at the centre of its volume; a lump group mass is spread over the group by volume; weight with no solid is a point at the centre of the group's volume. A pose moves solids rigidly, so the centre as drawn is moved by the group's placement and no shape is measured again |
+| `mass.inertia` | What is the inertia of these groups about this line, at a pose or a point of a motion? | `kgM2` and `rangeKgM2`, from each solid's second moments of volume times its mass over its volume, turned with its group and moved to the line; weight with no solid as a point. Unweighed solids are named |
 | `compression.indentation` | How deep does a solid press into a ball or a round ring along a motion? | Deepest sample, and a proven ceiling |
 
 `attachment` takes its own inputs as data: the touching `gap`, the `floor_z`, solids to `ignore` (a game piece, a

@@ -5,6 +5,7 @@ import re
 from ..errors import DesignError
 from ..motion import ops as motion_ops
 from .schema import step
+from .sourced import span
 
 FIXTURE_GROUP = "fixtures"
 
@@ -46,15 +47,38 @@ def check_solids(design):
     return seen
 
 
+def check_weight(entry, key, where):
+    """A mass or density, plain or sourced, that states its source properly and is not below zero at its low end."""
+    if key not in entry:
+        return
+    check_sourced(entry[key], f"{where} {key}")
+    if span(entry[key])[1] < 0:
+        raise DesignError(where, f"{key} is negative", "Give zero or more, and an assumed range whose low end is zero or more")
+
+
 def check_mass(solid, group, where):
     if "massKg" in solid and "densityKgM3" in solid:
         raise DesignError(where, "has both massKg and densityKgM3", "Keep one: a known mass, or a density to weigh the drawn volume")
     for key in ("massKg", "densityKgM3"):
-        if key in solid and solid[key] < 0:
-            raise DesignError(where, f"{key} is negative", "Give zero or more")
+        check_weight(solid, key, where)
         if key in solid and "massKg" in group:
             raise DesignError(where, f'has {key}, but its group "{solid["group"]}" already has one lump massKg',
                               "Remove the mass from the solid or from the group, so nothing is counted twice")
+
+
+def check_extra_mass(design):
+    """Weight with no solid: named once, in a group that holds at least one robot solid, so it has a place to sit."""
+    robot, seen = {solid["group"] for solid in design["solids"]}, {}
+    for i, entry in enumerate(design["extraMass"]):
+        where = step("extraMass", i, entry)
+        if entry["name"] in seen:
+            raise DesignError(where, f"has the same name as {seen[entry['name']]}", "Give every extra mass its own name")
+        seen[entry["name"]] = f"extraMass[{i}]"
+        if entry["group"] not in design["groups"]:
+            raise unknown(where, "group", entry["group"], design["groups"])
+        if entry["group"] not in robot:
+            raise DesignError(where, f'the group "{entry["group"]}" holds no robot solid', "Put the weight in a group of the robot, which places it at that group's centre")
+        check_weight(entry, "massKg", where)
 
 
 def check_groups(design):
@@ -63,8 +87,7 @@ def check_groups(design):
         groups.setdefault(FIXTURE_GROUP, {"role": "fixture"})
     for name, group in groups.items():
         where = f'groups "{name}"'
-        if group.get("massKg", 0) < 0:
-            raise DesignError(where, "massKg is negative", "Give zero or more")
+        check_weight(group, "massKg", where)
         motion_ops.check(group.get("place", []), f"{where} place")
         trail = [name]
         while "carriedBy" in groups[trail[-1]]:
@@ -254,6 +277,7 @@ def check_all(design):
     """Run every check on a plain design. Returns {custom shape name: [solids that use it]}."""
     check_groups(design)
     solids = check_solids(design)
+    check_extra_mass(design)
     used = check_custom(design)
     check_mounts(design, solids)
     check_contacts(design, solids)

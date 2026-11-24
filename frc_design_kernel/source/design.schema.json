@@ -76,6 +76,35 @@
         "$ref": "#/$defs/solid"
       }
     },
+    "extraMass": {
+      "type": "array",
+      "description": "Weight that no solid stands for, placed at the centre of its group's volume.",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "group",
+          "massKg"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "group": {
+            "type": "string",
+            "minLength": 1
+          },
+          "massKg": {
+            "$ref": "#/$defs/sourced"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "fixtures": {
       "type": "array",
       "items": {
@@ -489,7 +518,7 @@
           "$ref": "#/$defs/ops"
         },
         "massKg": {
-          "$ref": "#/$defs/number"
+          "$ref": "#/$defs/sourced"
         },
         "note": {
           "type": "string"
@@ -565,10 +594,10 @@
           "$ref": "#/$defs/ops"
         },
         "massKg": {
-          "$ref": "#/$defs/number"
+          "$ref": "#/$defs/sourced"
         },
         "densityKgM3": {
-          "$ref": "#/$defs/number"
+          "$ref": "#/$defs/sourced"
         },
         "note": {
           "type": "string"

@@ -45,7 +45,7 @@ def used_by_pose(assembly, pose):
     return {"solids": solids_used(assembly, assembly.solids), "poses": {pose: data["poses"][pose]} if pose else {},
             "groups": {name: {"carriedBy": group.get("carriedBy"), "massKg": group.get("massKg")} for name, group in data["groups"].items()},
             "mounts": [{key: value for key, value in mount.items() if key != "note"} for mount in data["mounts"]],
-            "contacts": sorted(sorted(pair) for pair in contacts_for(data))}
+            "contacts": sorted(sorted(pair) for pair in contacts_for(data)), "extraMass": data["extraMass"]}
 
 
 def chosen(table, names, what):
