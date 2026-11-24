@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 from frc_design_kernel.builder.assembly import build
-from frc_design_kernel.cli import main
+from frc_design_kernel.builder.manifest import manifest
 from frc_design_kernel.errors import DesignError
 from frc_design_kernel.measure import summary
 from frc_design_kernel.source import schema
@@ -88,11 +88,13 @@ def solid_entry(files, file, name):
 
 
 def measured(path):
-    """Every file the measure command's jobs write for a design: clearance along each motion and at each pose, attachment, mass."""
+    """What a design is and measures as: its solids, poses, motions, mounts and contacts as built, and the records of one motion and one pose."""
     design = load(path)
     with tempfile.TemporaryDirectory() as out:
-        recorded(design, summary.design_jobs(design.data, 1.0, 1.0, near=5.0), out)
-        return job_files(out)
+        recorded(design, summary.design_jobs(design.data, 1.0, 1.0, near=5.0, motions=["lift"], poses=["raised"]), out)
+        held = manifest(build(design))
+        solids = {row["name"]: row for row in held["solids"] + held["fixtures"]}      # the order solids are listed in means nothing
+        return {"solids": solids, **{key: held[key] for key in ("poses", "motions", "mounts", "contacts", "parameters")}, **job_files(out)}
 
 
 class Merge(unittest.TestCase):

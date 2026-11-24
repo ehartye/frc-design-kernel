@@ -11,7 +11,6 @@ import frc_design_kernel as kernel
 from frc_design_kernel import DesignError
 from frc_design_kernel.builder import placement
 from frc_design_kernel.builder.manifest import manifest
-from frc_design_kernel.cli import main
 from frc_design_kernel.measure import mass
 
 from .helpers import load_data, recorded

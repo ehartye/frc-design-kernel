@@ -12,7 +12,7 @@ from frc_design_kernel.measure import records
 from . import scaled_design
 from .helpers import load_data, recorded
 
-BUDGET_BYTES = 1_000_000
+BUDGET_BYTES = 500_000
 
 
 class AtScale(unittest.TestCase):
@@ -32,7 +32,7 @@ class AtScale(unittest.TestCase):
         self.assertEqual((len(self.data["solids"]) + len(self.data["fixtures"]), len(self.data["motions"])), (228, 74))
         self.assertEqual(len(self.files), 106)
 
-    def test_the_job_files_total_at_most_1_mb(self):
+    def test_the_job_files_total_at_most_half_a_mb(self):
         """Catches the records rebuilding the bulk of a receipt: far-apart rows or per-solid tables copied into every job."""
         size = sum(path.stat().st_size for path in self.files)
         self.assertLessEqual(size, BUDGET_BYTES, f"{size} bytes in {len(self.files)} job files")

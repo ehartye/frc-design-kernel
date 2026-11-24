@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 import frc_design_kernel as kernel
-from frc_design_kernel import DesignError
+from frc_design_kernel import DesignError, workers
 from frc_design_kernel.cli import main
 from frc_design_kernel.measure import approach, attachment, clearance, compression, mass, records, run
 
@@ -168,8 +168,8 @@ class Sharing(unittest.TestCase):
             {"kind": "clearance", "motion": "lift off", "minGapMm": 1.0, "nearMm": 1e6, "absent": ["loose"]},
             {"kind": "clearance", "motion": "press", "minGapMm": 1.0, "nearMm": 1e6, "id": "press-declared"}]
 
-    def answers(self, design, workers):
-        with run.Bench(design, workers) as bench:
+    def answers(self, design, count):
+        with run.Bench(design, count) as bench:
             return [entry["record"] for entry in records.answers(bench, self.JOBS)]
 
     def test_any_worker_count_gives_the_same_result(self):
@@ -186,7 +186,7 @@ class Sharing(unittest.TestCase):
             self.assertEqual(self.answers(assembly.design, 2), alone)
         finally:
             run.PAIRS_PER_SHARE = old
-        self.assertGreaterEqual(run.default_workers(), 1)
+        self.assertGreaterEqual(workers.default_workers(), 1)
 
 
 class Quicker(unittest.TestCase):

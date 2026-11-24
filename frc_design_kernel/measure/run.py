@@ -10,8 +10,8 @@ from contextlib import closing
 from dataclasses import dataclass, field
 
 from ..source.load import load
-from ..workers import EVERY_S, Crew, default_workers
-from . import clearance, jobs as kinds
+from ..workers import EVERY_S, Crew
+from . import jobs as kinds
 
 PAIRS_PER_SHARE = 500    # a motion with fewer pairs than this is one piece of work
 

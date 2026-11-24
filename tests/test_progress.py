@@ -65,7 +65,7 @@ class Crew(unittest.TestCase):
         """Catches a stuck worker hidden by the others, or a caller that cannot stop until a stuck worker finishes."""
         last, finished = {}, []
         began = time.perf_counter()
-        with workers.Crew(begin, (0.2,), 2, every_s=0.0) as crew:
+        with workers.Crew(begin, (0.1,), 2, every_s=0.0) as crew:
             asked = crew.ask(["stuck", "fine"], lambda index, process, done, of: last.__setitem__(index, (process, done)))
             index, _, answer = next(asked)
             finished.append((index, answer))

@@ -927,8 +927,8 @@ every `every_s` seconds (0.5) from each process, and once more as each task ends
 `done` of `of` is the whole job, over every process working on it; `processDone` of `processOf` is the share of the one
 that spoke. They are pairs for a clearance or an attachment (for a pose, the pairs near enough to measure), and one
 question for any other job. At an adjustment's end the event also has `adjustment` and `setting`. A worker that is
-stuck is a count that stops rising. The counts never reach a record. They cost less than the measurement's own
-run-to-run difference on the invented design of 12.4, where whole runs vary by a few per cent.
+stuck is a count that stops rising. The counts never reach a record. On the invented design of 12.4 they cost nothing
+that can be measured (under 1 % of a run, which is less than two runs differ).
 
 ### 12.4 The records: one file per job
 
@@ -992,7 +992,7 @@ closer than the gap, a pair not settled, and a pair whose proven floor (`lowerBo
 `nearMm`. A pair proven farther than that is counted under `measured`, not stored. `closest` is the closest kept row,
 or `null` when none is kept. With the default `nearMm` of 0 a file holds the failures and their witnesses only; a
 tool that wants near misses on a page asks for a band. On an invented design of 228 solids, 74 motions and 8 poses,
-the 106 jobs a judging tool asks for take SIZE.
+the 106 jobs a judging tool asks for take 0.37 MB.
 
 **Written as each job finishes.** A job's file is written whole the moment its job is done: into a temporary file
 beside it, then moved into place. A run is partial when a job asked for has no file; there is no flag and no file
@@ -1028,8 +1028,8 @@ solid in them, prints it and writes nothing.
 ### 12.4a Nothing here works out what changed
 
 The library does not decide what to measure or try, or whether an earlier answer still stands, from anything that
-changed. It keeps no fingerprint of a solid, no list of what an answer used and no state of a record, and it reads no
-earlier record. What is asked is measured, in full, every time. A tool that keeps results and wants to know how old
+changed. It keeps no fingerprint of a solid, no list of what an answer used and no state of a record, and no earlier
+record decides anything. What is asked is measured, every time. A tool that keeps results and wants to know how old
 they are keeps its own dates.
 
 ### 12.5 For tools that only know the three old operations
