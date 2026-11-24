@@ -134,6 +134,18 @@ def check_motion(design, name, motion):
     check_loads(design, motion, where)
 
 
+def check_battery(design):
+    """The battery's open-circuit voltage is above zero and its resistance is not below zero, each with its source."""
+    battery = design["battery"]
+    if battery is None:
+        return
+    for key, lowest, words in (("openCircuitV", 0.0, "above zero"), ("resistanceOhm", None, "zero or more")):
+        check_sourced(battery[key], f"battery {key}")
+        low = span(battery[key])[1]
+        if low < 0 or (lowest is not None and low <= lowest):
+            raise DesignError(f"battery {key}", f"is not {words} at its low end", "Give the figure, and an assumed range around it, in volts or ohms")
+
+
 def check_chains(design):
     """Every motion that starts after another names a motion that exists, and no chain of such starts loops."""
     motions = design["motions"]

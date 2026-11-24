@@ -86,6 +86,9 @@
               "restitution": {"value": 0.2, "assumed": [0.1, 0.4]},
               "friction": {"value": 0.4, "assumed": [0.2, 0.6]}}
   },
+  "battery": {"note": "An invented bench pack.",
+              "openCircuitV": {"value": 12.6, "assumed": [12.2, 12.9]},
+              "resistanceOhm": {"value": 0.02, "assumed": [0.015, 0.03]}},
   "motors": {
     "bench gearmotor": {"note": "The motor inside the gearmotor, before its gearbox. Invented figures.",
                         "ktNmPerA": {"value": 0.012, "assumed": [0.011, 0.013]},

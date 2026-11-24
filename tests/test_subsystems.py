@@ -24,7 +24,7 @@ from frc_design_kernel.status import status
 from .helpers import EXAMPLE
 from .test_source import keywords_in
 
-WHOLE = ("schema", "name", "units", "frame", "parameters", "custom", "fixtures", "pieces", "materials", "motors", "trials")
+WHOLE = ("schema", "name", "units", "frame", "parameters", "custom", "fixtures", "battery", "pieces", "materials", "motors", "trials")
 PLAN = {"base": "subsystems/base.json", "fixtures": "subsystems/base.json", "drive": "subsystems/drive.json",
         "carriage": "subsystems/carriage.json", "load": "subsystems/carriage.json"}
 LAST = "subsystems/carriage.json"       # poses, motions, adjustments and interactions live with the carriage

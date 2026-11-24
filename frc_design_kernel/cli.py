@@ -83,6 +83,11 @@ FACTS = {
     "attachment": lambda job, found: (f'{count(len(found["notConnectedToBase"]), "solid")} not connected to the base; '
                                       f'{count(len(found["fixturesOffFloor"]), "fixture")} off the floor'),
     "mass": lambda job, found: f'{found["totalKg"]:.3f} kg' + (f'; {count(len(found["unweighed"]), "solid")} with no mass' if found["unweighed"] else ""),
+    "electrical": lambda job, found: "; ".join(
+        [f'{name} {drive["currentA"]["range"][1]:.1f} A per motor at most' + (" (clamped at its limit)" if drive["clamped"] else "")
+         for name, drive in found["drives"].items()]
+        + [f'bus {found["bus"]["volts"]["range"][0]:.2f} to {found["bus"]["volts"]["range"][1]:.2f} V under {found["bus"]["loadA"]["range"][1]:.1f} A at most'
+           if found["bus"] else "no battery, so no bus voltage"]),
 }
 
 
