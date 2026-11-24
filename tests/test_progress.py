@@ -3,6 +3,7 @@
 A count that stops rising is how a caller sees a stuck worker, so the counts must come from inside the work, from
 worker processes too, and must never change a figure.
 """
+import importlib.util
 import multiprocessing
 import os
 import sys
@@ -156,18 +157,26 @@ class InsideAJob(unittest.TestCase):
 
 
 class InsideACampaign(unittest.TestCase):
-    def test_a_run_names_itself_and_its_step_rises_in_every_engine(self):
+    def steps(self, engine):
+        told = []
+        design = load_data(bench({"hold": {**hold_trial(), "engine": engine}}, materials=GRIPPY))
+        found = campaign.run_campaign(design, progress=told.append, every_s=0.0)
+        self.assertEqual({row["trial"] for row in told}, {"hold"})
+        self.assertEqual({row["run"] for row in told}, {row["id"] for row in found["trials"]["hold"]["runs"]})
+        nominal = [row for row in told if row["run"] == "nominal"]
+        self.assertTrue(rises([row["step"] for row in nominal]), engine)
+        self.assertEqual({row["ofSteps"] for row in nominal}, {10000})
+        self.assertEqual({row["process"] for row in told}, {os.getpid()})
+
+    def test_a_run_names_itself_and_its_step_rises(self):
         """Catches a long trial that says nothing until every run of a round is back."""
+        self.steps("planar")
+
+    @unittest.skipUnless(importlib.util.find_spec("mujoco"), "MuJoCo is not installed (the optional extra)")
+    def test_a_run_of_the_3d_engine_does_too(self):
+        """Catches an engine added without a word on its step."""
         for engine in ENGINES:
-            told = []
-            design = load_data(bench({"hold": {**hold_trial(), "engine": engine}}, materials=GRIPPY))
-            found = campaign.run_campaign(design, progress=told.append, every_s=0.0)
-            self.assertEqual({row["trial"] for row in told}, {"hold"})
-            self.assertEqual({row["run"] for row in told}, {row["id"] for row in found["trials"]["hold"]["runs"]})
-            nominal = [row for row in told if row["run"] == "nominal"]
-            self.assertTrue(rises([row["step"] for row in nominal]), engine)
-            self.assertEqual({row["ofSteps"] for row in nominal}, {10000})
-            self.assertEqual({row["process"] for row in told}, {os.getpid()})
+            self.steps(engine)
 
     def test_the_runs_done_rise_toward_the_most_it_can_take(self):
         """Catches a campaign whose count of runs never moves, or is out of a total nobody stated."""

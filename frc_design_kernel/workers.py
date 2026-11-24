@@ -7,9 +7,12 @@ not yet started are dropped and the worker processes are ended.
 import functools
 import multiprocessing
 import os
+import pickle
 import queue
+import tempfile
 import time
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from pathlib import Path
 
 EVERY_S = 0.5       # how often at most a running task says how far it is
 POLL_S = 0.2        # how often the counts from worker processes are read while no answer comes
@@ -40,10 +43,10 @@ def silent(*_):
     """What listens when nobody does."""
 
 
-def _begin(first, told, every_s):
+def _begin(start, told, every_s):
     global _worker
     told.cancel_join_thread()       # a worker that is ended never waits for its counts to be read
-    begin, arguments = first.get()
+    begin, arguments = pickle.loads(Path(start).read_bytes())
     _worker = (begin(*arguments), told, every_s)
 
 
@@ -67,7 +70,7 @@ class Crew:
     def __init__(self, begin, arguments=(), workers=None, every_s=EVERY_S, here=None):
         self.begin, self.arguments, self.here, self.every_s = begin, arguments, here, every_s
         self.workers = default_workers() if workers is None else max(1, int(workers))
-        self.pool, self.told, self.given = None, None, 0
+        self.pool, self.told, self.folder, self.given = None, None, None, 0
 
     def __enter__(self):
         return self
@@ -78,6 +81,7 @@ class Crew:
     def close(self):
         if self.pool is not None:
             self.pool.shutdown()
+            self.folder.cleanup()
             self.pool = None
 
     def ask(self, tasks, notice=silent):
@@ -120,13 +124,12 @@ class Crew:
                 self._end()
 
     def _start(self):
-        """Make the pool. What each worker starts with waits for it in a queue, because arguments too big for a pipe handed
-        to a process that dies as it starts would leave this one waiting for good."""
-        first, self.told = multiprocessing.Queue(), multiprocessing.Queue()
-        first.cancel_join_thread()      # what no worker took is not waited for
-        for _ in range(self.workers):
-            first.put((self.begin, self.arguments))
-        self.pool = ProcessPoolExecutor(self.workers, initializer=_begin, initargs=(first, self.told, self.every_s))
+        """Make the pool. What each worker starts with waits for it in a temporary file, because arguments too big for a pipe
+        handed to a process that dies as it starts would leave this one waiting for good."""
+        self.folder, self.told = tempfile.TemporaryDirectory(ignore_cleanup_errors=True), multiprocessing.Queue()
+        start = Path(self.folder.name) / "start"
+        start.write_bytes(pickle.dumps((self.begin, self.arguments)))
+        self.pool = ProcessPoolExecutor(self.workers, initializer=_begin, initargs=(str(start), self.told, self.every_s))
 
     def _hear(self, notice, first, running):
         """Pass on every count that has arrived from a task still running."""
@@ -145,3 +148,4 @@ class Crew:
         pool.shutdown(wait=False, cancel_futures=True)
         for process in processes:
             process.terminate()
+        self.folder.cleanup()
