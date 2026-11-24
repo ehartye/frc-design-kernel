@@ -5,6 +5,7 @@ the schema file starts using a keyword that is not listed here. The first proble
 that names the entry and says how to fix it.
 """
 import difflib
+import functools
 import json
 import re
 from pathlib import Path
@@ -20,7 +21,9 @@ TYPES = {"object": dict, "array": list, "string": str, "number": (int, float), "
 WORDS = {"object": "an object in { }", "array": "a list in [ ]", "string": "text in quotes", "number": "a number", "boolean": "true or false", "null": "null"}
 
 
+@functools.cache
 def load_schema(name="design"):
+    """The schema named name, read once. Callers must not change it."""
     return json.loads(SCHEMA_FILE.with_name(f"{name}.schema.json").read_text(encoding="utf-8"))
 
 
@@ -51,8 +54,10 @@ def check(value, schema, root=None, where=""):
     root = schema if root is None else root
     fix = schema.get("fix", "")
     if "$ref" in schema:
+        file, _, pointer = schema["$ref"].partition("#")
+        root = load_schema(file.removesuffix(".schema.json")) if file else root    # a reference into another schema file
         target = root
-        for part in schema["$ref"].removeprefix("#/").split("/"):
+        for part in filter(None, pointer.split("/")):
             target = target[part]
         return check(value, target, root, where)
     if "oneOf" in schema:

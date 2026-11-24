@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ehartye/frc-design-kernel/subsystem.schema.json",
+  "title": "frc-design-kernel subsystem file",
+  "description": "One subsystem's entries. Each section is defined once, in design.schema.json.",
+  "type": "object",
+  "required": [
+    "schema"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "const": "frc-design-kernel/subsystem@1"
+    },
+    "note": {
+      "type": "string",
+      "description": "What this subsystem is."
+    },
+    "groups": {
+      "$ref": "design.schema.json#/properties/groups"
+    },
+    "solids": {
+      "$ref": "design.schema.json#/properties/solids"
+    },
+    "mounts": {
+      "$ref": "design.schema.json#/properties/mounts"
+    },
+    "contacts": {
+      "$ref": "design.schema.json#/properties/contacts"
+    },
+    "drives": {
+      "$ref": "design.schema.json#/properties/drives"
+    },
+    "motions": {
+      "$ref": "design.schema.json#/properties/motions"
+    },
+    "poses": {
+      "$ref": "design.schema.json#/properties/poses"
+    },
+    "adjustments": {
+      "$ref": "design.schema.json#/properties/adjustments"
+    },
+    "interactions": {
+      "$ref": "design.schema.json#/properties/interactions"
+    },
+    "extraMass": {
+      "$ref": "design.schema.json#/properties/extraMass"
+    }
+  }
+}
