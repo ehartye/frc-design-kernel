@@ -54,7 +54,7 @@ and underscores that says what it is, or an `of`. A name that is nearly one of t
 | `"at most 96 in"`, `"at least 3/8 in"`, `"less than 2 1/4 in"`, `"more than 7 s"`, `"at most 6"` | A limit, on a quantity or a count. The words say which way it goes |
 | `45` | A count |
 | `"= size.length / 2"` | Worked out. Names are `record.field`, and a list's parts are `.x`, `.y`, `.z`. A bare number has no unit, so only multiply or divide by it |
-| `true`, `"plain words"` | A yes or no, or text |
+| `true`, `"plain words"` | A yes or no, or text. A text value never starts with a number, so that it cannot be taken for a quantity |
 
 Units that convert: `in ft mm cm m`, `lb oz kg g`, `s min`, `deg`. Others (`A V W psi AWG Ah USD lb/ft3`) are kept as
 printed.
@@ -177,7 +177,7 @@ of `when` lists, and any one is enough.
   },
   "awards": {
     "bale_in_barn": {"per": "piece", "points": [{"when": ["auto"], "points": 7}, {"when": ["teleop"], "points": 3}, {"when": ["teleop", "lit"], "points": 6}]},
-    "park": {"per": "robot", "points": [{"when": ["teleop"], "points": 4}], "needs": [["my bumpers", "partly in", "my yard"]], "unless": ["hang"], "judged": "4 s after the end, or when all robots rest"},
+    "park": {"per": "robot", "points": [{"when": ["teleop"], "points": 4}], "needs": [["my bumpers", "partly in", "my yard"]], "unless": ["hang"], "judged": {"after_teleop": "4 s", "or_sooner": "all robots rest"}},
     "loft_rp": {"per": "match", "rp": 1, "when": ["qualification"], "needs": [["my loft_points", "at least", 12], ["my hanging_robots", "at least", 2]]}
   },
   "fouls": {"minor": {"points to them": 3}}
