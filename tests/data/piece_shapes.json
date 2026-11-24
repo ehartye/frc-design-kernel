@@ -11,6 +11,10 @@
   "cup": {"shape": {"kind": "difference",
                     "from": {"kind": "cylinder", "fromMm": [0, 0, 0], "toMm": [0, 0, 40], "radiusMm": 30},
                     "cut": [{"kind": "cylinder", "fromMm": [0, 0, 5], "toMm": [0, 0, 41], "radiusMm": 25}]},
-          "note": "A hollow open at one end only: it has no through-bore."}
+          "note": "A hollow open at one end only: it has no through-bore."},
+  "cone": {"shape": {"kind": "cone", "fromMm": [0, 0, 0], "toMm": [0, 0, "=300"], "radiusFromMm": 100, "radiusToMm": 20},
+           "note": "An invented tapered marker, solid throughout."},
+  "cube": {"shape": {"kind": "box", "fromMm": [-60, -60, 0], "toMm": [60, 60, 120], "edgeRadiusMm": "=120 / 8"},
+           "massKg": {"value": 0.5, "assumed": [0.4, 0.6]}, "note": "An invented foam cube with rounded edges."}
  }
 }

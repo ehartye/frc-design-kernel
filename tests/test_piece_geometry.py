@@ -10,7 +10,8 @@ from pathlib import Path
 from frc_design_kernel.cli import main
 
 DATA = Path(__file__).resolve().parent / "data" / "piece_shapes.json"
-KINDS = {"ball": "sphere", "ring": "torus", "pipe": "tube", "bar": "cylinder", "crate": "box", "disc": "difference", "cup": "difference"}
+KINDS = {"ball": "sphere", "ring": "torus", "pipe": "tube", "bar": "cylinder", "crate": "box", "disc": "difference", "cup": "difference",
+         "cone": "cone", "cube": "box"}
 
 
 def run(*args):
@@ -75,10 +76,12 @@ class Record(unittest.TestCase):
                     self.assertGreaterEqual(max(v[axis] for v in found["hullMm"]), high[axis])
 
     def test_symmetry_classes_and_axes(self):
-        """Catches a ball not called a sphere, or a bar, ring or pipe that loses its axis or gets the wrong one."""
+        """Catches a ball not called a sphere, a rounded box called prismatic, or a bar, ring, pipe or cone that loses its
+        axis or gets the wrong one."""
         self.assertEqual(self.shapes["ball"]["symmetry"], {"class": "sphere"})
         self.assertEqual(self.shapes["crate"]["symmetry"], {"class": "prismatic"})
-        for name, axis in (("ring", [1, 0, 0]), ("bar", [0, 1, 0]), ("pipe", [0, 0, 1]), ("disc", [0, 0, 1])):
+        self.assertEqual(self.shapes["cube"]["symmetry"], {"class": "general"})
+        for name, axis in (("ring", [1, 0, 0]), ("bar", [0, 1, 0]), ("pipe", [0, 0, 1]), ("disc", [0, 0, 1]), ("cone", [0, 0, 1])):
             with self.subTest(name):
                 self.assertEqual(self.shapes[name]["symmetry"]["class"], "body of revolution")
                 near(self, [abs(v) for v in self.shapes[name]["symmetry"]["axis"]], axis, places=6)
@@ -93,8 +96,9 @@ class Record(unittest.TestCase):
                 near(self, bore["centreMm"], centre)
 
     def test_control_shapes_with_no_through_bore_report_none(self):
-        """Control: catches a bore rule that reports a hole in a solid bar, a ball, a box, or a cup closed at one end."""
-        for name in ("bar", "ball", "crate", "cup"):
+        """Control: catches a bore rule that reports a hole in a solid bar, a ball, a box, a rounded box, a cone, or a cup
+        closed at one end."""
+        for name in ("bar", "ball", "crate", "cube", "cone", "cup"):
             with self.subTest(name):
                 self.assertIsNone(self.shapes[name]["bore"])
 
