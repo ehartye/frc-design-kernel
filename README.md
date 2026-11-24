@@ -10,7 +10,7 @@ The library does three things and nothing else:
 
 | Layer | What it does | State |
 |---|---|---|
-| **Build** | Turns one design source file (JSON) into named solids, poses, motions, a STEP file and a manifest. | Here now |
+| **Build** | Turns one design source (a JSON file, or a top file and one file per subsystem) into named solids, poses, motions, a STEP file and a manifest. | Here now |
 | **Measure** | Clearance along a motion with a proof that nothing was missed, what touches what, mass and centre of mass. | Here now |
 | **Try** | Physics trials described as data: one round piece in a plane, with a control, brackets and a half-step repeat. | Here now (planar) |
 

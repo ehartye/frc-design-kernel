@@ -6,9 +6,7 @@
   "required": [
     "schema",
     "name",
-    "units",
-    "groups",
-    "solids"
+    "units"
   ],
   "additionalProperties": false,
   "properties": {
@@ -50,6 +48,24 @@
       },
       "additionalProperties": {
         "$ref": "#/$defs/number"
+      }
+    },
+    "subsystems": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Subsystem files (frc-design-kernel/subsystem@1), each holding one subsystem's entries. Paths are relative to this file.",
+      "items": {
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     "groups": {

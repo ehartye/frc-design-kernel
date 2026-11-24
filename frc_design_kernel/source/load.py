@@ -1,11 +1,11 @@
-"""Read a design source file into a checked, plain Design."""
+"""Read a design source, its top file and any subsystem files, into a checked, plain Design."""
 import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..errors import DesignError
-from . import checks, schema
+from . import checks, schema, subsystems
 from .expand import expand
 
 CUSTOM_FOLDER = "custom"
@@ -18,7 +18,8 @@ class Design:
     data: dict
     sha256: str
     custom_used: dict    # {custom code name: [names of the solids or trials that use it]}
-    raw: dict            # the source as written (trial files read in), for asking which parameters something used
+    raw: dict            # the source as written (trial and subsystem files read in), for asking which parameters something used
+    files: tuple         # every source file read: the top file, then each subsystem file in the order listed
 
     @property
     def folder(self):
@@ -74,17 +75,44 @@ def read_trials(raw, folder):
         schema.check(entry, trial_schema, where=where)
 
 
+def read_subsystems(raw, folder):
+    """[(file as listed, its source, its path)] for each subsystem file the top file lists, each read once from inside the folder."""
+    subsystems.check_top(raw)
+    part_schema, parts, seen = schema.load_schema("subsystem"), [], set()
+    for i, entry in enumerate(raw.get("subsystems", [])):
+        where, file = f"subsystems[{i}]", entry["file"]
+        target = (folder / file).resolve()
+        if not target.is_relative_to(folder.resolve()):
+            raise DesignError(where, f'the subsystem file "{file}" is outside the design folder', "Keep subsystem files beside the design source")
+        if target in seen:
+            raise DesignError(where, f'the subsystem file "{file}" is listed twice', "List each subsystem file once")
+        if not target.is_file():
+            raise DesignError(where, f'the subsystem file "{file}" does not exist', "Check the path; it is relative to the design source")
+        seen.add(target)
+        body = read_json(target)
+        schema.check(body, part_schema, where=f'subsystem "{file}"')
+        parts.append((file, body, folder / file))
+    return parts
+
+
 def load(path, parameters=None):
     """Read, check and expand the design source at path. Raises DesignError for the first problem found.
 
     parameters replaces the values of named parameters, so a variant of the design can be built without editing
-    the file. Everything worked out from those parameters follows.
+    the file. Everything worked out from those parameters follows. A top file that lists subsystem files is merged
+    with them into one design; which file an entry is written in changes nothing in the result.
     """
     path = Path(path)
     raw = read_json(path)
     schema.check(raw, schema.load_schema())
+    parts = read_subsystems(raw, path.parent)
     read_trials(raw, path.parent)
-    data = expand(raw, parameters)
-    design = Design(path=path, data=data, sha256=hashlib.sha256(path.read_bytes()).hexdigest(), custom_used=checks.check_all(data), raw=raw)
-    check_files(design)
+    data, origins = expand(raw, parameters, [(file, body) for file, body, _ in parts], top=path.name)
+    subsystems.check_present(data, parts)
+    files = (path, *(target for _, _, target in parts))
+    sha256 = hashlib.sha256(b"".join(file.read_bytes() for file in files)).hexdigest()
+    with subsystems.attributed(origins):
+        design = Design(path=path, data=data, sha256=sha256, custom_used=checks.check_all(data), raw=subsystems.merged(raw, parts), files=files)
+        check_files(design)
+    subsystems.settle(data)
     return design

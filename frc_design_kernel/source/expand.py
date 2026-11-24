@@ -7,6 +7,7 @@ from .schema import step
 
 REPEATABLE = ("solids", "fixtures", "mounts", "contacts", "extraMass")
 PLAIN = ("groups", "poses", "motions", "pieces", "materials", "motors", "drives", "adjustments", "interactions", "trials")
+NAMED = {"solids": "solids", "fixtures": "solids", "extraMass": "extraMass"}    # named list entries; solids and fixtures share one set of names
 
 
 def text_of(value):
@@ -68,15 +69,40 @@ def rows(entries, section, names):
     return out
 
 
-def expand(raw, overrides=None):
-    """The plain design: no "each", no expressions. Every list and table the build reads is present."""
+def defined_once(found, section, key, file, top):
+    """Note where a name is defined; a name already defined in another file is refused, naming both files."""
+    if key in found and found[key] != file:
+        first, second = (name or top for name in (found[key], file))
+        raise DesignError(f'{section} "{key}"', f"is defined in two files, {first} and {second}", "Keep each name in one file")
+    found.setdefault(key, file)
+
+
+def expand(raw, overrides=None, parts=(), top="the top file"):
+    """The plain design: no "each", no expressions. Every list and table the build reads is present.
+
+    parts are the subsystem files as [(file, source)]. Their sections join the top file's, worked out with the top
+    file's parameters. Returns the plain design and where each entry came from: {section: {name: file}} for tables
+    and {section: [(file, place in that file)]} for lists, with None for the top file.
+    """
     names = parameters(raw, overrides)
     plain = {k: raw[k] for k in ("schema", "name", "units")}
     plain["frame"] = raw.get("frame", "")
     plain["parameters"] = names
     plain["custom"] = copy.deepcopy(raw.get("custom", {}))
-    for section in PLAIN:
-        plain[section] = work_out(copy.deepcopy(raw.get(section, {})), names, section)
-    for section in REPEATABLE:
-        plain[section] = rows(raw.get(section, []), section, names)
-    return plain
+    plain.update({section: {} for section in PLAIN})
+    plain.update({section: [] for section in REPEATABLE})
+    origins = {section: {} for section in PLAIN} | {section: [] for section in REPEATABLE}
+    named = {space: {} for space in NAMED.values()}
+    for file, part in [(None, raw), *parts]:
+        prefix = f'subsystem "{file}" ' if file else ""
+        for section in PLAIN:
+            for key, value in work_out(copy.deepcopy(part.get(section, {})), names, prefix + section).items():
+                defined_once(origins[section], section, key, file, top)
+                plain[section][key] = value
+        for section in REPEATABLE:
+            found = rows(part.get(section, []), prefix + section, names)
+            for entry in found if section in NAMED else ():
+                defined_once(named[NAMED[section]], section, entry["name"], file, top)
+            origins[section] += [(file, i) for i in range(len(found))]
+            plain[section] += found
+    return plain, origins

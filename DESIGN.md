@@ -74,12 +74,14 @@ frc_design_kernel/
     expressions.py   safe arithmetic for "=..." values
     schema.py        a small JSON Schema checker with plain messages
     design.schema.json
+    subsystem.schema.json
     trial.schema.json
     expand.py        "each" rows and "=..." values turned into plain numbers
     checks.py        cross-references: names exist, no loops, no double mass
     sourced.py       a physical input's number and the range it may lie in
     uses.py          which parameters something depends on
-    load.py          file to checked, plain design
+    subsystems.py    what a subsystem file holds, and naming its file in a problem
+    load.py          files to checked, plain design
 
   kernel/            thin wrappers over the CAD kernel (OCP). Few lines each.
     shapes.py        box, cylinder, sphere, prism, tube
@@ -151,8 +153,9 @@ no-circle rule.
 
 ## 4. The design source
 
-One JSON file per design. The schema is `frc_design_kernel/source/design.schema.json`. Units are fixed: millimetres
-and kilograms. Angles are degrees. The file says so in `units` so a reader never has to guess.
+One JSON file per design, or one top file plus one file per subsystem (4.9). The schema is
+`frc_design_kernel/source/design.schema.json`. Units are fixed: millimetres and kilograms. Angles are degrees. The
+file says so in `units` so a reader never has to guess.
 
 ```json
 {
@@ -434,6 +437,65 @@ a builder used to do now lives.
 | Pick a variant with an `if` | not offered. A variant is its own source file |
 | Check clearances, starting size or reach, and stop the build | not here, ever. The measure layer will report numbers; tools that judge decide |
 | Write budgets, records, review pages | not here, ever (section 2) |
+
+### 4.9 Subsystem files
+
+A large design is easier to edit in pieces: an agent or a student reads only the subsystem it changes. The top file
+keeps what belongs to the whole design and lists the subsystem files:
+
+```json
+{
+  "schema": "frc-design-kernel/design@1",
+  "name": "Bench lifter",
+  "units": {"length": "mm", "mass": "kg"},
+  "parameters": {"post_x": -120},
+  "custom": {},
+  "fixtures": [],
+  "pieces": {}, "materials": {}, "motors": {}, "trials": {},
+  "subsystems": [{"file": "subsystems/base.json"}, {"file": "subsystems/carriage.json"}]
+}
+```
+
+Each subsystem file (`frc-design-kernel/subsystem@1`, schema `source/subsystem.schema.json`) holds that subsystem's
+`groups`, `solids`, `mounts`, `contacts`, `drives`, `motions`, `poses`, `adjustments`, `interactions` and
+`extraMass`, and an optional `note`:
+
+```json
+{
+  "schema": "frc-design-kernel/subsystem@1",
+  "note": "The carriage, its tines and the load it carries.",
+  "groups": {"carriage": {"role": "mechanism", "carriedBy": "base"}},
+  "solids": [{"name": "carriage plate", "group": "carriage", "shape": {"kind": "box", "fromMm": ["=post_x + 20", -130, 85], "toMm": ["=post_x + 26", 130, 145]}}]
+}
+```
+
+- **One place for each kind of entry.** The top file keeps `schema`, `name`, `units`, `frame`, `parameters`,
+  `custom`, `fixtures`, `pieces`, `materials`, `motors` and `trials`. A top file that lists `subsystems` holds none
+  of the subsystem entries; a subsystem file holds none of the whole-design ones. Each section has one definition,
+  in `design.schema.json`, which the subsystem schema refers to.
+- **Merged on load.** The library reads the top file, then each subsystem file in the order listed, and joins their
+  sections into one design. Everything after loading (the build, the measures, the trials, `status`) sees only the
+  merged design.
+- **A name is defined once.** A group, solid, motion, pose, drive, adjustment, interaction or extra mass defined in
+  two files is refused, and the message names both files. A solid's name is checked after its `each` rows are
+  written out, and a subsystem solid may not take a fixture's name.
+- **References cross files freely.** A solid names a group from another file, a group is `carriedBy` a group in
+  another file, a mount or contact names solids anywhere.
+- **Numbers come from the top file.** `each` rows and `=` expressions work inside subsystem files with the top
+  file's parameters. A changed parameter reaches every file.
+- **Paths are relative to the top file.** Subsystem files, part files (`part.file`) and custom code
+  (`custom/<name>.py`) are all found from the top file's folder, wherever the subsystem file sits. Each subsystem file
+  must be inside that folder and listed once.
+- **Where an entry lives changes nothing measured.** Identities and `used` blocks come from the merged design. Solids
+  are known by name and shape, so their order does not matter. Mounts, contacts and extra masses have no order that
+  means anything, so the library keeps them sorted. Moving an entry to another file leaves every record current.
+- **Problems name the file.** A problem in a subsystem file is reported as `subsystem "subsystems/carriage.json"
+  solids[2] "carriage plate" ...`, with the entry's place in that file.
+- **The source hash covers every file.** `sha256` (`sourceSha256` in records) is the hash of the top file's bytes
+  followed by each subsystem file's bytes, in the order listed. For a design in one file it is that file's own hash.
+  `Design.files` lists every file read.
+
+A small design needs no subsystem files. One file without `subsystems` holds everything, as before.
 
 ## 5. The motion vocabulary
 

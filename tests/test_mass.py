@@ -167,7 +167,7 @@ class Checks(unittest.TestCase):
     def test_the_sourced_form_is_accepted_on_solids_densities_and_lumps(self):
         """Catches the schema refusing {value, measured} or {value, assumed} on a solid mass, a density or a group lump."""
         loaded = load_data(design())
-        self.assertEqual(loaded.data["extraMass"][1]["name"], "bolts")
+        self.assertIn("bolts", [entry["name"] for entry in loaded.data["extraMass"]])
         self.assertEqual(load_data(design(lambda d: d.pop("extraMass"))).data["extraMass"], [])
 
     def test_extra_mass_must_name_a_robot_group(self):
