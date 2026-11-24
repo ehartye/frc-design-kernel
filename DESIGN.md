@@ -659,7 +659,7 @@ counted); `absent` (solids taken out of the scene, such as a cover removed befor
 | `approach.withdrawn` | At the end of a motion, how far are the moved solids from everything that stayed? | Box gap per moved solid |
 | `attachment.at_pose` | What touches what within a gap? What hangs together? What is not connected to the base? Which fixtures float above the floor? | Touching pairs with gaps, connected sets, loose solids with their nearest neighbour, fixtures off the floor |
 | `attachment` (mounts) | Is each mount real? | Per mount: the true gap between its two solids, and the stated point's distance to each |
-| `mass.roll_up` | What does it weigh and where is the centre of mass, at a pose? | Per group and whole. A solid's mass sits at the centre of its volume; a lump group mass at the centre of the group's volume |
+| `mass.roll_up` | What does it weigh and where is the centre of mass, at a pose? | Per group and whole. A solid's mass sits at the centre of its volume; a lump group mass at the centre of the group's volume. A pose moves solids rigidly, so the centre as drawn is moved by the group's placement and no shape is measured again |
 | `compression.indentation` | How deep does a solid press into a ball or a round ring along a motion? | Deepest sample, and a proven ceiling |
 
 `attachment` takes its own inputs as data: the touching `gap`, the `floor_z`, solids to `ignore` (a game piece, a
@@ -676,20 +676,86 @@ caller chooses the count. The default is half the machine's cores.
 ```
 python -m frc_design_kernel measure SOURCE --out DIR [--min-gap MM] [--touch-gap MM] [--floor-z MM]
                                                      [--ignore SOLID] [--workers N] [--depth N]
+                                                     [--motion NAME] [--pose NAME] [--extremes]
+                                                     [--carry] [--focus SOLID]
 ```
 
 writes `DIR/measurements.json`:
 
 ```json
-{"schema": "frc-design-kernel/measurements@1",
+{"schema": "frc-design-kernel/measurements@3",
  "generator": {"library": "frc-design-kernel", "version": "...", "commit": "..."},
  "design": {"name": "...", "source": "design.json", "sourceSha256": "..."},
  "settings": {"minGapMm": 1.0, "touchGapMm": 3.0, "floorZMm": 0.0, "ignored": [], "depthLimit": 9},
- "motions": {"lift": {"motion": "lift", "counts": {}, "proven": true, "closer": [], "unresolved": [], "closest": {}, "pairs": []}},
- "poses": [{"pose": null, "clearance": {}, "attachment": {}, "mass": {}}]}
+ "motions": {"lift": {"motion": "lift", "counts": {}, "proven": true, "closer": [], "unresolved": [], "closest": {},
+                      "pairs": [], "inputs": {}, "checked": {}, "used": {}}},
+ "poses": [{"pose": null, "clearance": {"inputs": {}, "checked": {}}, "attachment": {"inputs": {}, "checked": {}},
+            "mass": {}, "inputs": {"attachment": "...", "mass": "..."}, "checked": {"attachment": "measured", "mass": "measured"},
+            "used": {}}]}
 ```
 
 The command prints one line per motion and per pose. It prints numbers and counts, not verdicts.
+
+### 12.4a Measuring again only what changed
+
+A pair's clearance depends only on its two solids, where each stands along the motion (or at the pose), and the
+rules it was measured under. So every clearance result (`clearance.along`, `clearance.at_pose`, each
+`run.clearances` job) records its `inputs`:
+
+```json
+"inputs": {"rules": {"minGapMm": 1.0, "depthLimit": 9, "includeStill": true},
+           "solids": {"arm": "3f9c0d2a71b84e65", "post": "a07e5b1c9d2f3846"}}
+```
+
+Each solid's identity is a short digest of figures the build already produces: its volume, the centre of its volume,
+its second moments of volume about that centre and its bounding box as drawn; its group's whole placement along
+that motion or at that pose (carriers included); and any `displace` shift. A solid absent from the case has no
+entry. At a pose the rules are the gap alone. No file bytes, names, notes, status words or versions enter it, so a
+renamed design, a renamed solid or an edited note changes no identity. The one limit: two different shapes with the
+same volume, centre, second moments and box would be taken for the same solid.
+
+Given an earlier result of the same question (`earlier=`, or the job field `"earlier"`), only these are measured:
+
+- every pair with a solid whose identity changed, a new solid, or a solid named in `focus`;
+- every pair whose declared contact changed (`measuredPairs`).
+
+Every other pair is carried: its earlier row, if it had one, under its current names, and its place in `counts`
+worked out as a full measurement would put it (contact, both still, fixed and far, far), so the merged result equals
+a full measurement of the design as it is now. A renamed solid is found by its identity alone and its rows are
+carried under the new name. A result with nothing to measure is not handed to a worker at all. Every pair is
+measured when the rules differ, when the earlier result records no inputs, or when it was only part measured.
+
+Each result says what it did in `checked`:
+
+```json
+"checked": {"measuredSolids": ["arm"], "measuredPairs": [], "pairsMeasured": 7, "pairsCarried": 21,
+            "pairsNotMeasured": 0, "renamed": {}}
+```
+
+`measuredSolids` is `null` when every pair was measured. `pairsMeasured` counts the pairs looked at now, including
+those that boxes proved far apart (`counts.measured` is only the pairs that got a row). `focus` without an earlier
+result measures only the focus solids' pairs and leaves the rest out (`pairsNotMeasured`); such a result is never
+carried from.
+
+At a pose, attachment and mass are carried whole when the pose row's `inputs` digests are unchanged: for attachment
+the solids' identities at that pose with their names, groups and fixture flags, declared contacts, mounts (notes
+left out), the touching gap, the floor and the ignored solids; for mass the same identities with each solid's mass
+and each group's lump mass. Those two records name solids and groups, so their digests hold the names: a rename
+measures them again (cheaply, below), though no clearance pair. When something at the pose moved, `attachment.at_pose`
+still carries from its earlier result: the touching gaps and mount distances of pairs of unchanged solids are
+copied, only pairs and mounts with a changed solid are measured, and the sets, loose solids and fixtures are worked
+out again from them. Its own `checked` gives `pairsMeasured`, `pairsCarried`, `mountsMeasured` and `mountsCarried`
+(`null` when nothing could be carried, such as across a new touching gap). The pose row's `checked` says
+`"attachment"` and `"mass"`: `carried` or `measured`.
+
+`measure --carry` carries from the `measurements.json` already in `--out` (it refuses when there is none);
+`--focus SOLID` measures that solid's pairs again as well, or, without `--carry`, only those. Both print a line per
+motion and per pose saying how many pairs were measured and how many carried.
+
+On a design of about 230 solids, 74 motions and 75 poses, the decision costs well under a second beyond the build
+(about 3 s); one solid moved measures its pairs along all 74 motions in about 12 s with four workers, and its pairs,
+touching gaps and mounts at a pose in about 0.2 s, where a whole pose takes about 35 s for clearance and 40 s for
+attachment.
 
 ### 12.5 For tools that only know the three old operations
 
@@ -928,6 +994,9 @@ again only what the change touched. To make that possible:
   stale.
 - A targeted rerun is one command: `measure --motion NAME` or `--pose NAME`, and `try --trial NAME`. Each puts its
   result into the existing record and keeps the rest.
+- `measure --carry` goes further: inside every motion and pose it measures only the pairs whose solids, placements,
+  rules or declared contacts changed, carries the rest, and says which (section 12.4a). It decides from figures the
+  build already produces, so the decision takes seconds and a rename or a note measures nothing.
 
 A clearance along a motion, and the measures at a pose, use every solid present: any of them may be the obstacle or
 the weight. A trial uses only the solids its plane cut.

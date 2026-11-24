@@ -177,9 +177,10 @@ class NothingChanged(unittest.TestCase):
         before = measured(source())
         edited = source(lambda d: next(s for s in d["solids"] if s["name"] == "loose")["shape"].update(fromMm=[301, 0, 50], toMm=[311, 10, 60]))
         with watched() as seen:
-            measured(edited, earlier=before)
-        self.assertTrue(seen["attachment"] and seen["mass"] and seen["poseGaps"])
+            carried = measured(edited, earlier=before)
+        self.assertTrue(seen["attachment"] and seen["mass"])
         self.assertEqual(seen["motionScenes"], 2)
+        self.assertEqual({row["clearance"]["checked"]["measuredSolids"][0] for row in carried["poses"]}, {"loose"})
 
 
 class PoseCarry(unittest.TestCase):
@@ -208,6 +209,31 @@ class PoseCarry(unittest.TestCase):
         self.assertEqual(comparable(carried), comparable(measured(edited)))
         self.assertEqual((seen["attachment"], len(seen["mass"]), seen["pairs"]), ([], 3, []))
         self.assertNotEqual(carried["poses"][0]["mass"], before["poses"][0]["mass"])
+
+
+class AttachmentCarry(unittest.TestCase):
+    def test_touching_gaps_and_mounts_of_unchanged_solids_are_carried(self):
+        """Catches an attachment that measures every touching pair and mount again after one solid moved, or merges to a different answer."""
+        before = measured(source())
+        moved = source(move_loose)
+        carried = measured(moved, earlier=before)
+        self.assertEqual(comparable(carried), comparable(measured(moved)))
+        for row in carried["poses"]:
+            checked = row["attachment"]["checked"]
+            self.assertEqual((checked["mountsMeasured"], checked["mountsCarried"]), (0, 1))
+            self.assertGreater(checked["pairsCarried"], 0)
+
+    def test_control_a_carried_gap_is_the_earlier_number_and_a_new_touch_gap_measures_all(self):
+        """Control: shows touching gaps really are carried (a wrong earlier gap shows through) and are not across a new touch gap."""
+        before = measured(source())
+        lying = copy.deepcopy(before)
+        for row in lying["poses"]:
+            for pair in row["attachment"]["touching"]:
+                pair["gapMm"] = 0.5
+        carried = measured(source(move_loose), earlier=lying)
+        self.assertEqual({pair["gapMm"] for row in carried["poses"] for pair in row["attachment"]["touching"]}, {0.5})
+        again = summary.measure_design(source(move_loose), 3.0, 2.0, workers=1, earlier=before)
+        self.assertEqual({row["attachment"]["checked"] is None for row in again["poses"]}, {True})
 
 
 class Focus(unittest.TestCase):

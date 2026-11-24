@@ -6,6 +6,7 @@
     mass          mass and centre of mass per group and for the whole robot
     compression   how deep a solid presses into a ball or ring
     run           sharing clearance work between worker processes
+    carry         each solid's identity, and which pairs to measure again and which to carry from an earlier result
     summary       all of the above for one design source, as one record
 
 Supporting modules: scene (solids set up for measuring), pairs (broad phase), search (the adaptive proof),
