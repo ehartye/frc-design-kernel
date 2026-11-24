@@ -48,9 +48,9 @@ def pieces_of(solid):
 
 
 def primitive(shape, placed_at):
-    """A geom's attributes for a box, a ball or a full cylinder, moved by a transform; None for any other shape."""
+    """A geom's attributes for a sharp box, a ball or a full cylinder, moved by a transform; None for any other shape."""
     kind = shape["kind"]
-    if kind == "box":
+    if kind == "box" and not shape.get("edgeRadiusMm"):
         low, high = shape["fromMm"], shape["toMm"]
         centre = mx.apply(placed_at, [(a + b) / 2 for a, b in zip(low, high)])
         return {"type": "box", "pos": text(mx.scale(centre, MM)), "quat": text(quaternion(placed_at)), "size": text(abs(a - b) / 2 * MM for a, b in zip(low, high))}

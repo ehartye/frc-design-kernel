@@ -2,8 +2,12 @@
 import math
 
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon, BRepBuilderAPI_MakeWire
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder, BRepPrimAPI_MakePrism, BRepPrimAPI_MakeSphere, BRepPrimAPI_MakeTorus
+from OCP.BRepFilletAPI import BRepFilletAPI_MakeFillet
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCone, BRepPrimAPI_MakeCylinder, BRepPrimAPI_MakePrism, BRepPrimAPI_MakeSphere, BRepPrimAPI_MakeTorus
 from OCP.gp import gp_Ax2, gp_Circ, gp_Dir, gp_Pnt, gp_Vec
+from OCP.TopAbs import TopAbs_EDGE
+from OCP.TopExp import TopExp_Explorer
+from OCP.TopoDS import TopoDS
 
 PLANES = {"xy": lambda a, b, level: (a, b, level), "xz": lambda a, b, level: (a, level, b), "yz": lambda a, b, level: (level, a, b)}
 NORMALS = {"xy": (0, 0, 1), "xz": (0, 1, 0), "yz": (1, 0, 0)}
@@ -13,6 +17,26 @@ def box(corner, opposite):
     low = [min(a, b) for a, b in zip(corner, opposite)]
     high = [max(a, b) for a, b in zip(corner, opposite)]
     return BRepPrimAPI_MakeBox(gp_Pnt(*low), gp_Pnt(*high)).Shape()
+
+
+def rounded_box(corner, opposite, edge_radius):
+    """A box with all twelve edges rounded to edge_radius; the corners become parts of a ball."""
+    shape = box(corner, opposite)
+    fillet, seen = BRepFilletAPI_MakeFillet(shape), []
+    found = TopExp_Explorer(shape, TopAbs_EDGE)
+    while found.More():     # each edge is met once from each of its two faces
+        edge = TopoDS.Edge(found.Current())
+        if not any(edge.IsSame(other) for other in seen):
+            seen.append(edge)
+            fillet.Add(edge_radius, edge)
+        found.Next()
+    return fillet.Shape()
+
+
+def cone(start, end, radius_start, radius_end):
+    """A cone or frustum between two end centres, its radius going from radius_start to radius_end. One may be 0."""
+    axis = [b - a for a, b in zip(start, end)]
+    return BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(*start), gp_Dir(*axis)), radius_start, radius_end, math.dist(start, end)).Shape()
 
 
 def cylinder(start, end, radius, sweep_deg=None, sweep_from=None):

@@ -129,7 +129,8 @@ def pieces(shape):
     kind = shape["kind"]
     if kind == "tube":
         return rectangular_tube(shape) if shape["section"] == "rectangular" else round_tube(shape)
-    if kind == "difference" and shape["from"]["kind"] == "box" and all(cut["kind"] == "box" for cut in shape["cut"]):
+    sharp = lambda part: part["kind"] == "box" and not part.get("edgeRadiusMm")
+    if kind == "difference" and sharp(shape["from"]) and all(sharp(cut) for cut in shape["cut"]):
         return box_less_boxes(shape)
     if kind == "prism":
         return prism(shape)

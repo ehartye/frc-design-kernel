@@ -26,6 +26,12 @@ def positive(entry, key, where):
     return entry[key]
 
 
+def at_least_zero(entry, key, where):
+    if entry.get(key, 0) < 0:
+        raise DesignError(where, f"{key} must be 0 or more, not {entry[key]:g}", "Give a size in millimetres; 0 means none")
+    return entry.get(key, 0)
+
+
 def apart(entry, where, first="fromMm", second="toMm"):
     if math.dist(entry[first], entry[second]) <= 1e-9:
         raise DesignError(where, f"{first} and {second} are the same point", "Give two different points")
@@ -35,7 +41,14 @@ def apart(entry, where, first="fromMm", second="toMm"):
 def _box(entry, where, custom):
     if any(abs(a - b) <= 1e-9 for a, b in zip(entry["fromMm"], entry["toMm"])):
         raise DesignError(where, "the box has zero size along an axis", "Give two opposite corners that differ in x, y and z")
-    return shapes.box(entry["fromMm"], entry["toMm"])
+    edge = at_least_zero(entry, "edgeRadiusMm", where)
+    if not edge:
+        return shapes.box(entry["fromMm"], entry["toMm"])
+    half = min(abs(a - b) for a, b in zip(entry["fromMm"], entry["toMm"])) / 2
+    if edge >= half:
+        raise DesignError(where, f"edgeRadiusMm {edge:g} must be less than {half:g}, half the smallest side, or no flat face is left",
+                          f"Use an edgeRadiusMm below {half:g}, or draw a rounder piece with a sphere or cylinder")
+    return shapes.rounded_box(entry["fromMm"], entry["toMm"], edge)
 
 
 def _cylinder(entry, where, custom):
@@ -44,6 +57,16 @@ def _cylinder(entry, where, custom):
     if sweep is not None and not 0 < sweep <= 360:
         raise DesignError(where, "sweepDeg must be more than 0 and at most 360", "Give the angle of the pie slice in degrees")
     return shapes.cylinder(start, end, positive(entry, "radiusMm", where), None if sweep in (None, 360) else sweep, entry.get("sweepFrom"))
+
+
+def _cone(entry, where, custom):
+    start, end = apart(entry, where)
+    near, far = at_least_zero(entry, "radiusFromMm", where), at_least_zero(entry, "radiusToMm", where)
+    if near == far == 0:
+        raise DesignError(where, "at least one of radiusFromMm and radiusToMm must be greater than 0", "Give the radius at the wide end; the other may be 0 for a point")
+    if abs(near - far) <= 1e-9:
+        return shapes.cylinder(start, end, near)
+    return shapes.cone(start, end, near, far)
 
 
 def _sphere(entry, where, custom):
@@ -93,7 +116,7 @@ def _custom(entry, where, custom):
     return custom(entry["use"], entry.get("parameters", {}), where)
 
 
-MAKERS = {"box": _box, "cylinder": _cylinder, "sphere": _sphere, "torus": _torus, "prism": _prism, "tube": _tube, "union": _union,
+MAKERS = {"box": _box, "cylinder": _cylinder, "cone": _cone, "sphere": _sphere, "torus": _torus, "prism": _prism, "tube": _tube, "union": _union,
           "difference": _difference, "intersection": _intersection, "custom": _custom}
 
 
