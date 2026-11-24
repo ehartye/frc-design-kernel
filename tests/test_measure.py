@@ -210,26 +210,34 @@ class Quicker(unittest.TestCase):
 
 
 class Command(unittest.TestCase):
-    def test_measure_writes_one_stamped_record(self):
-        """Catches the command writing nothing, losing the version stamp, or changing between two runs."""
+    def test_measure_writes_one_stamped_file_per_job(self):
+        """Catches the command writing nothing, losing the version stamp or a job's settings, or changing between two runs."""
         source = str(built().design.path)
-        records = []
+        written = []
         for _ in range(2):
             with tempfile.TemporaryDirectory() as out:
                 text = io.StringIO()
                 with contextlib.redirect_stdout(text):
                     code = main(["measure", source, "--out", out, "--min-gap", "1", "--touch-gap", "3", "--ignore", "ball", "--workers", "1"])
-                records.append(json.loads((Path(out) / "measurements.json").read_text(encoding="utf-8")))
-        record = records[0]
-        self.assertEqual((code, records[1]), (0, record))
-        self.assertEqual((record["schema"], record["generator"]["library"]), ("frc-design-kernel/measurements@3", "frc-design-kernel"))
-        self.assertEqual(record["settings"], {"minGapMm": 1.0, "touchGapMm": 3.0, "floorZMm": 0.0, "ignored": ["ball"], "depthLimit": 9})
-        self.assertEqual(record["motions"]["press"]["declaredContacts"], [["ball", "bracket"]])
-        self.assertEqual([row["pose"] for row in record["poses"]], [None, "home", "lifted"])
+                written.append({path.name: path.read_bytes() for path in sorted((Path(out) / "measurements").iterdir())})
+        self.assertEqual((code, written[1]), (0, written[0]))
+        found = {name: json.loads(text) for name, text in written[0].items()}
+        self.assertEqual(sorted(found), sorted(f"{name}.json" for name in (
+            "clearance.motion.press", "clearance.motion.lift-off", *(f"{kind}.{at}" for kind in ("clearance", "attachment", "mass")
+                                                                    for at in ("drawn", "pose.home", "pose.lifted")))))
+        press = found["clearance.motion.press.json"]
+        self.assertEqual((press["schema"], press["generator"]["library"]), ("frc-design-kernel/measurement-job@1", "frc-design-kernel"))
+        self.assertEqual(press["job"], {"kind": "clearance", "motion": "press", "minGapMm": 1.0, "depth": 9, "includeStill": False, "nearMm": 0.0,
+                                        "contacts": "declared", "absent": [], "displace": {}})
+        self.assertEqual(press["result"]["declaredContacts"], [["ball", "bracket"]])
+        self.assertEqual(found["attachment.pose.home.json"]["job"]["ignore"], ["ball"])
         lines = text.getvalue().splitlines()
-        self.assertEqual(lines[0], 'Measured "Stack" against a gap of 1 mm, touching within 3 mm.')
-        self.assertEqual(lines[1], 'Motion "press": no pair near enough to measure; 0 pairs closer than the gap; 0 pairs not settled.')
-        self.assertEqual(lines[4], 'Pose "home": 2 pairs closer than the gap; 1 solid not connected to the base; 1 fixture off the floor; mass 4.000 kg.')
+        self.assertEqual(lines[0], 'Measuring "Stack": 11 jobs against a gap of 1 mm, touching within 3 mm.')
+        self.assertEqual(lines[1], "clearance.motion.press: 0 pairs closer than the gap; 0 pairs not settled.")
+        self.assertIn("clearance.pose.home: 2 pairs closer than the gap.", lines)
+        self.assertIn("attachment.pose.home: 1 solid not connected to the base; 1 fixture off the floor.", lines)
+        self.assertIn("mass.pose.home: 4.000 kg; 2 solids with no mass.", lines)
+        self.assertEqual(lines[-1], f"Wrote 11 job records to {Path(out) / 'measurements'}.")
 
     def test_contacts_in_the_source_are_checked(self):
         """Catches a declared contact that names a solid or motion that does not exist."""

@@ -3,17 +3,23 @@ import contextlib
 import copy
 import io
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 import frc_design_kernel as kernel
 from frc_design_kernel.cli import main
+from frc_design_kernel.measure import records
 from frc_design_kernel.status import status
 from frc_design_kernel.trials import ready
 
 from .helpers import load_data
+from .test_records import IDS, JOBS, move_loose, source as stack
 from .trial_cases import MEASURED, PANEL, bench, hold_trial
+
+POSED = [f"{kind}.{at}" for at in ("drawn", "pose.open", "pose.shut") for kind in ("clearance", "attachment", "mass")]
+MOTIONS = ["clearance.motion.shove", "clearance.motion.sweep", "clearance.motion.swing"]
 
 GRIPPY = {"panel": {**PANEL, "friction": {"value": 0.5, "assumed": [0.42, 0.8]}}}
 TURN = {"kind": "rotation", "originMm": [0, 0, 0], "axis": [0, 1, 0], "travelDeg": 30}
@@ -71,8 +77,7 @@ class Stale(unittest.TestCase):
         """Catches records reported stale when nothing has changed."""
         found = states(self.after())
         self.assertEqual(set(found.values()), {"current"})
-        self.assertEqual(sorted(found), ['clearance along "shove"', 'clearance along "sweep"', 'clearance along "swing"', "measures as drawn", 'measures at the pose "open"',
-                                         'measures at the pose "shut"', 'trial "hold"', 'trial "ride"'])
+        self.assertEqual(sorted(found), sorted([*MOTIONS, *POSED, 'trial "hold"', 'trial "ride"']))
 
     def test_a_moved_solid_makes_stale_exactly_the_records_that_used_it(self):
         """Catches a moved solid going unnoticed, or records that never used it being called stale."""
@@ -81,8 +86,9 @@ class Stale(unittest.TestCase):
         self.assertEqual(rows['trial "ride"']["state"], "stale")
         self.assertEqual(rows['trial "ride"']["changes"], ['solid "belt bed" changed (boundsMm, volumeMm3)'])
         self.assertEqual(rows['trial "hold"']["state"], "current")      # it cut the wedge only
-        for name in ('clearance along "swing"', "measures as drawn"):   # every solid present is an obstacle or a weight there
-            self.assertEqual((rows[name]["state"], rows[name]["changes"]), ("stale", ['solid "belt bed" changed (boundsMm, volumeMm3)']))
+        for name in ("clearance.motion.swing", "clearance.drawn", "attachment.drawn"):   # every solid present is an obstacle or a support there
+            self.assertEqual((rows[name]["state"], rows[name]["changes"]), ("stale", ['solid "belt bed" changed']))
+        self.assertEqual(rows["mass.drawn"]["state"], "current")       # the bed has no mass, so the roll-up does not use its shape
 
     def test_a_renamed_design_or_an_edited_note_makes_nothing_stale(self):
         """Catches staleness tied to the file's fingerprint when only words changed."""
@@ -100,25 +106,28 @@ class Stale(unittest.TestCase):
         self.assertEqual(slope['trial "ride"']["changes"], ['parameter "rise" changed: 727.940469 to 932.615316', 'parameter "slope_deg" changed: 20 to 25'])
         grip = {r["record"]: r for r in self.after(lambda d: d["materials"]["panel"]["friction"].update(value=0.6))["records"]}
         self.assertEqual(grip['trial "hold"']["changes"], ["the trial definition changed at materials.panel.friction.value"])
-        self.assertEqual(grip["measures as drawn"]["state"], "current")
+        self.assertEqual(grip["clearance.drawn"]["state"], "current")
         moved = {r["record"]: r for r in self.after(lambda d: d["motions"]["swing"]["moves"]["gate"][0].update(travelDeg=31))["records"]}
-        self.assertEqual((moved['clearance along "swing"']["changes"], moved['clearance along "sweep"']["state"]), (["motion changed"], "current"))
+        self.assertEqual((moved["clearance.motion.swing"]["changes"], moved["clearance.motion.sweep"]["state"]), (['solid "gate" changed'], "current"))
         shoved = {r["record"]: r for r in self.after(lambda d: d["motions"]["shove"]["moves"]["gate"][0].update(travelMm=[12, 0, 0]))["records"]}
         self.assertEqual((shoved['trial "ride"']["changes"], shoved['trial "hold"']["state"]), (['the motion "shove" changed'], "current"))     # a mover follows it
         heavier = {r["record"]: r for r in self.after(lambda d: d["solids"][2].update(massKg=0.3))["records"]}
-        self.assertEqual(heavier["measures as drawn"]["changes"], ['solid "gate" changed (massKg, massRangeKg)'])     # a plain number is both ends
+        self.assertEqual(heavier["mass.drawn"]["changes"], ['masses "gate" changed: 0.2 to 0.3'])
+        self.assertEqual(heavier["clearance.drawn"]["state"], "current")      # a clearance does not use a mass
 
     def test_a_targeted_rerun_is_one_command_and_keeps_the_rest(self):
         """Catches a rerun of one trial or one motion throwing away the records that were not run again."""
         with tempfile.TemporaryDirectory() as out, contextlib.redirect_stdout(io.StringIO()) as text:
-            for name in ("trials.json", "measurements.json"):
-                (Path(out) / name).write_text((Path(self.folder.name) / name).read_text(encoding="utf-8"), encoding="utf-8")
+            (Path(out) / "trials.json").write_text((Path(self.folder.name) / "trials.json").read_text(encoding="utf-8"), encoding="utf-8")
+            shutil.copytree(Path(self.folder.name) / records.FOLDER, Path(out) / records.FOLDER)
+            kept = (Path(out) / records.FOLDER / "clearance.motion.sweep.json").read_bytes()
             self.assertEqual(main(["try", str(self.path), "--out", out, "--trial", "ride"]), 0)
             self.assertEqual(main(["measure", str(self.path), "--out", out, "--motion", "swing", "--workers", "1"]), 0)
             trials = json.loads((Path(out) / "trials.json").read_text(encoding="utf-8"))
-            measures = json.loads((Path(out) / "measurements.json").read_text(encoding="utf-8"))
+            measures = sorted(path.stem for path in (Path(out) / records.FOLDER).glob("*.json"))
+            self.assertEqual((Path(out) / records.FOLDER / "clearance.motion.sweep.json").read_bytes(), kept)
         self.assertEqual(sorted(trials["trials"]), ["hold", "ride"])
-        self.assertEqual((sorted(measures["motions"]), len(measures["poses"])), (["shove", "sweep", "swing"], 3))
+        self.assertEqual(measures, sorted([*MOTIONS, *POSED]))
         self.assertIn("keeping the trials that were not run again", text.getvalue())
         self.assertNotIn('Trial "hold"', text.getvalue())
 
@@ -130,7 +139,36 @@ class Stale(unittest.TestCase):
         lines = text.getvalue().splitlines()
         self.assertEqual(lines[0], f'Records in {self.folder.name} against "Trial bench" as it is now:')
         self.assertIn('trial "hold": current', lines)
+        self.assertRegex(lines[-2], r"^Checked 14 records in \d+\.\d\d s\.$")
         self.assertTrue(lines[-1].startswith("For a 3D engine: 0 trial solids concave with no convex breakdown; 2 solids with no mass; 1 moving group not one hinge or slider;"))
+
+
+class EveryJobKind(unittest.TestCase):
+    def test_status_reads_every_kind_of_job_record_and_says_how_long_it_took(self):
+        """Catches a kind of job record that status skips, calls stale when nothing changed, or misses when its solid moved."""
+        with tempfile.TemporaryDirectory() as out:
+            records.record(stack(), JOBS, out, workers=1)
+            untouched = status(stack(), out)
+            moved = status(stack(move_loose), out)
+        self.assertEqual({row["record"]: row["state"] for row in untouched["records"]}, dict.fromkeys(IDS, "current"))
+        self.assertEqual({row["record"] for row in untouched["records"]}, {row["record"] for row in moved["records"]})
+        self.assertEqual(sorted(row["record"] for row in moved["records"] if row["state"] == "stale"),
+                         ["attachment.pose.home", "clearance.motion.lift-off", "clearance.motion.press", "clearance.pose.home", "withdrawal.lift-off"])
+        self.assertEqual({row["kind"] for row in moved["records"]}, {"clearance", "reach", "indentation", "withdrawal", "attachment", "mass"})
+        self.assertGreater(untouched["seconds"], 0)
+
+    def test_a_motion_or_solid_a_record_names_that_is_gone_is_stated(self):
+        """Catches a record of a removed motion or solid crashing status, or passing as current."""
+        def remove(data):
+            del data["motions"]["press"]
+            data["contacts"] = []
+            data["solids"] = [s for s in data["solids"] if s["name"] != "post"]
+            data["mounts"] = []
+        with tempfile.TemporaryDirectory() as out:
+            records.record(stack(), JOBS, out, workers=1)
+            rows = {row["record"]: row for row in status(stack(remove), out)["records"]}
+        self.assertEqual(rows["reach.press.ball.bracket"]["changes"], ['the motion "press" is no longer in the source'])
+        self.assertEqual(rows["clearance.motion.lift-off.displaced.post"]["changes"], ['the job names the solid "post", which is no longer in the design'])
 
 
 class ReadyFor3d(unittest.TestCase):
