@@ -129,6 +129,8 @@ def out_of_plane(data, motions, normal):
                             why.add("drops across the plane")
                         if op["kind"] == "path" and len({round(p["xyz".index(normal)], 9) for p in op["throughMm"]}) > 1:
                             why.add("follows a path that leaves the plane")
+                        if op["kind"] == "path" and "turnAxis" in op and along(op["turnAxis"]) < 1 - 1e-9:
+                            why.add("turns about an axis that is not square to the plane")
                 elif kind == "through":
                     for start, end in zip(value, value[1:]):
                         point, axis, angle, slide = screw.decompose(start, end)
