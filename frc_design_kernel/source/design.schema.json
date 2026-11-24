@@ -248,6 +248,26 @@
         }
       }
     },
+    "battery": {
+      "type": "object",
+      "description": "The robot's battery: its open-circuit voltage and internal resistance, each with its source. The low voltage and the high resistance are the weak pack.",
+      "required": [
+        "openCircuitV",
+        "resistanceOhm"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "openCircuitV": {
+          "$ref": "#/$defs/sourced"
+        },
+        "resistanceOhm": {
+          "$ref": "#/$defs/sourced"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
     "drives": {
       "type": "object",
       "additionalProperties": {

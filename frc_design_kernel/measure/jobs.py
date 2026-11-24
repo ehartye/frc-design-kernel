@@ -14,7 +14,7 @@ import re
 
 from ..builder import placement
 from ..errors import DesignError
-from . import approach, attachment, carry, clearance, compression, mass, summary
+from . import approach, attachment, carry, clearance, compression, electrical, mass, summary
 from .search import DEFAULT_DEPTH
 
 REQUIRED = "required"
@@ -26,9 +26,10 @@ KINDS = {
     "withdrawal": {"absent": []},
     "attachment": {"touchGapMm": 0.0, "floorZMm": 0.0, "ignore": [], "base": None, "contacts": "declared", "absent": [], "pairs": True},
     "mass": {"absent": []},
+    "electrical": {"samples": electrical.DEFAULT_SAMPLES},
 }
-NAMES = ("clearance", "reach", "indentation", "withdrawal", "attachment", "mass")
-ALONG = {"clearance", "reach", "indentation", "withdrawal"}     # kinds asked along a motion; the rest at a pose
+NAMES = ("clearance", "reach", "indentation", "withdrawal", "attachment", "mass", "electrical")
+ALONG = {"clearance", "reach", "indentation", "withdrawal", "electrical"}     # kinds asked along a motion; the rest at a pose
 NUMBERS = {"minGapMm", "nearMm", "withinMm", "maxDepthMm", "touchGapMm", "floorZMm"}
 ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,159}")
 
@@ -37,7 +38,7 @@ def fields_of(job):
     """The KINDS row for a job: a clearance with a pose is the pose form."""
     kind = job.get("kind")
     if kind not in NAMES:
-        raise DesignError("", f'there is no job kind "{kind}"', "Use clearance, reach, indentation, withdrawal, attachment or mass")
+        raise DesignError("", f'there is no job kind "{kind}"', "Use clearance, reach, indentation, withdrawal, attachment, mass or electrical")
     return KINDS["clearance at a pose" if kind == "clearance" and "pose" in job else kind]
 
 
@@ -50,6 +51,8 @@ def plain_value(field, value):
         return {name: [float(v) for v in shift] for name, shift in sorted(value.items())}
     if field == "window":
         return [float(v) for v in value]
+    if field == "samples":
+        return int(value)
     if field == "contacts" and value != "declared":
         return sorted(sorted(pair) for pair in value)
     return value
@@ -72,6 +75,10 @@ def normalized(data, job):
         out[field] = plain_value(field, job.get(field, default))
     if kind == "reach" and not (isinstance(out["pair"], list) and len(out["pair"]) == 2):
         raise DesignError("", "a reach job's pair is two solid names", 'For example "pair": ["hook", "bar"]')
+    if kind == "electrical":
+        electrical.load_of(data, out["motion"])
+        if out["samples"] < 2:
+            raise DesignError("", "an electrical job needs at least 2 samples", "Give samples of 2 or more; 32 is the default")
     if "id" in job:
         if not isinstance(job["id"], str) or not ID.fullmatch(job["id"]):
             raise DesignError("", "an id is lower-case letters, digits, dots, dashes and underscores, starting with a letter or digit",
@@ -115,6 +122,8 @@ def present(assembly, job):
 
 def drawn_on(assembly, job):
     """(inputs, used) of a normalized job on a built design: its rules and solid identities, and the other facts it uses."""
+    if job["kind"] == "electrical":
+        return summary.used_by_electrical(assembly, job["motion"], job["samples"])
     kind, names, data = job["kind"], present(assembly, job), assembly.data
     if "motion" in job:
         solids = carry.along(assembly, job["motion"], job["absent"], job.get("displace") or None)
@@ -170,6 +179,8 @@ def perform(assembly, job):
     if kind == "attachment":
         return attachment.at_pose(assembly, job["pose"], job["touchGapMm"], job["floorZMm"], job["ignore"], job["base"], job["contacts"],
                                   job["absent"], job["pairs"], earlier)
+    if kind == "electrical":
+        return electrical.measured(assembly, job["motion"], job["samples"])
     return mass.roll_up(assembly, job["pose"], job["absent"])
 
 

@@ -22,6 +22,7 @@ tines. A gearmotor and a spool sit on the base; the spool winds a cord that rais
 | Poses | `lowered`, `raised`, `set down` |
 | A motor placed as a solid, driving a slide joint through its gearing | `hoist` (on `gearmotor body`, under `motors` and `drives`) |
 | A motion as a motor command, checked against its end pose | `lift` |
+| A battery, and the electrical load of a driven motion | `battery`; `measure` records `electrical.lift` |
 | A motion that starts where another ends, with its cause stated | `hand off` (after `lift`, by hand) |
 | A curved move as one operation | `hand off` (an arc) |
 | A motion through several poses | `whole cycle` |

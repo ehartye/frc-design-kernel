@@ -255,6 +255,7 @@ def check_all(design):
     check_groups(design)
     solids = check_solids(design)
     check_extra_mass(design)
+    motions.check_battery(design)
     used = check_custom(design)
     check_mounts(design, solids)
     check_contacts(design, solids)

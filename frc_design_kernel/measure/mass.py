@@ -122,11 +122,41 @@ def spin(moments, transform, axis):
             + 2 * (xy * u[0] * u[1] + xz * u[0] * u[2] + yz * u[1] * u[2]))
 
 
-def inertia(assembly, groups, axis, point_mm, pose=None, places=None):
+def placed_masses(weight, figures, move):
+    """[(weight, point)] of one group's masses placed by move: each solid's share at its centre, and each extra mass at
+    the centre of the group's volume."""
+    centre = {name: mx.apply(move, figures[name][1]) for name in weight.members}
+    volume = {name: figures[name][0] for name in weight.members}
+    middle = weighted_centre([(volume[name], centre[name]) for name in weight.members])
+    return [(mass, centre[name]) for name, mass in weight.per_solid(volume).items()] + [(mass, middle) for mass in weight.extra.values()]
+
+
+def balance(assembly, groups, places, found=None):
+    """Mass and first moment of the named groups together at places ({group: transform}), at each end of the range.
+
+    Returns {"kg": (nominal, low, high), "momentKgMm": (vector, vector, vector), "unweighed"}: the first moment is the
+    sum of each mass times its point, so it over the mass is the centre of mass at that end. found is weights(assembly)
+    when the caller already has it.
+    """
+    figures, found = carry.figures(assembly), weights(assembly) if found is None else found
+    kg, moment, unweighed = [0.0, 0.0, 0.0], [ZERO, ZERO, ZERO], []
+    for group in groups:
+        if group not in found:
+            continue
+        for weight, point in placed_masses(found[group], figures, places[group]):
+            for end in range(3):
+                kg[end] += weight[end]
+                moment[end] = mx.add(moment[end], mx.scale(point, weight[end]))
+        unweighed += found[group].unweighed
+    return {"kg": tuple(kg), "momentKgMm": tuple(tuple(vector) for vector in moment), "unweighed": sorted(unweighed)}
+
+
+def inertia(assembly, groups, axis, point_mm, pose=None, places=None, found=None):
     """Moment of inertia of the named groups together about the line through point_mm along axis, in kg m^2.
 
     Each solid is taken as uniform: its mass over its volume times its second moments, moved to the line. Weight
     with no solid is a point at its group's centre of volume. At a named pose, or at places ({group: transform}).
+    found is weights(assembly) when the caller already has it.
     Returns {"groups", "axis", "pointMm", "kgM2" (nominal), "rangeKgM2": [low, high], "unweighed"}.
     """
     for group in groups:
@@ -134,7 +164,7 @@ def inertia(assembly, groups, axis, point_mm, pose=None, places=None):
             raise DesignError("", f'there is no group named "{group}"', f"Known groups: {', '.join(assembly.data['groups'])}")
     figures = carry.figures(assembly)
     places = placement.at_pose(assembly.data, pose) if places is None else places
-    line, point, found = mx.unit(axis), tuple(point_mm), weights(assembly)
+    line, point, found = mx.unit(axis), tuple(point_mm), weights(assembly) if found is None else found
     parts, unweighed = [], []
     for group in groups:
         if group not in found:

@@ -1,9 +1,11 @@
-"""Checks on drives and motions that need no placement worked out. Each raises a DesignError naming what is wrong.
+"""Checks on drives, motions and the battery that need no placement worked out. Each raises a DesignError naming what
+is wrong.
 
 A drive with a motor names the solid that is the motor, so every motor is weighed and sits somewhere. A drive with a
 joint moves one group. A motion either commands drives, or states what moves its typed geometry ("by"). A motion may
 start where another ends, and no chain of such starts may loop. What needs a placement (a command past a joint's
-travel, a group that does not start on its joint) is checked when the placements are worked out.
+travel, a group that does not start on its joint) is checked when the placements are worked out. The battery states
+its two figures with their sources.
 """
 from ..errors import DesignError, unknown
 from ..motion import matrix as mx
@@ -132,6 +134,18 @@ def check_motion(design, name, motion):
     if "through" in motion and ("from" in motion or "to" in motion):
         raise DesignError(where, 'has "through" together with "from" or "to"', 'A "through" motion starts at its first pose and ends at its last; remove "from" and "to"')
     check_loads(design, motion, where)
+
+
+def check_battery(design):
+    """The battery's open-circuit voltage is above zero and its resistance is not below zero, each with its source."""
+    battery = design["battery"]
+    if battery is None:
+        return
+    for key, lowest, words in (("openCircuitV", 0.0, "above zero"), ("resistanceOhm", None, "zero or more")):
+        check_sourced(battery[key], f"battery {key}")
+        low = span(battery[key])[1]
+        if low < 0 or (lowest is not None and low <= lowest):
+            raise DesignError(f"battery {key}", f"is not {words} at its low end", "Give the figure, and an assumed range around it, in volts or ohms")
 
 
 def check_chains(design):

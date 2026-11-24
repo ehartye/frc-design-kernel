@@ -89,6 +89,7 @@ def expand(raw, overrides=None, parts=(), top="the top file"):
     plain["frame"] = raw.get("frame", "")
     plain["parameters"] = names
     plain["custom"] = copy.deepcopy(raw.get("custom", {}))
+    plain["battery"] = work_out(copy.deepcopy(raw["battery"]), names, "battery") if "battery" in raw else None
     plain.update({section: {} for section in PLAIN})
     plain.update({section: [] for section in REPEATABLE})
     origins = {section: {} for section in PLAIN} | {section: [] for section in REPEATABLE}
