@@ -112,7 +112,7 @@ class Stale(unittest.TestCase):
         shoved = {r["record"]: r for r in self.after(lambda d: d["motions"]["shove"]["moves"]["gate"][0].update(travelMm=[12, 0, 0]))["records"]}
         self.assertEqual((shoved['trial "ride"']["changes"], shoved['trial "hold"']["state"]), (['the motion "shove" changed'], "current"))     # a mover follows it
         heavier = {r["record"]: r for r in self.after(lambda d: d["solids"][2].update(massKg=0.3))["records"]}
-        self.assertEqual(heavier["mass.drawn"]["changes"], ['masses "gate" changed: 0.2 to 0.3'])
+        self.assertEqual(heavier["mass.drawn"]["changes"], ['massRanges "gate" changed: [0.2, 0.2] to [0.3, 0.3]', 'masses "gate" changed: 0.2 to 0.3'])     # a plain number is both ends
         self.assertEqual(heavier["clearance.drawn"]["state"], "current")      # a clearance does not use a mass
 
     def test_a_targeted_rerun_is_one_command_and_keeps_the_rest(self):

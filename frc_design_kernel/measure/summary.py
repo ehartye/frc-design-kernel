@@ -5,6 +5,7 @@ its "used" block, in plain words and numbers, so the status command can say what
 the mounts, which solids are fixtures, and the masses.
 """
 from ..errors import DesignError
+from ..source.sourced import span
 from . import carry
 from .search import DEFAULT_DEPTH
 
@@ -60,17 +61,22 @@ def used_by_attachment(assembly, job, present):
 
 
 def weighed(assembly, present):
-    """The robot solids whose shape a mass roll-up uses: those with a mass, and every member of a group with a lump mass."""
-    groups = assembly.data["groups"]
-    return sorted(name for name in present if not assembly.solids[name].fixture
-                  and (assembly.solids[name].mass_kg is not None or "massKg" in groups[assembly.solids[name].group]))
+    """The robot solids whose shape a mass roll-up uses: those with a mass, and every member of a group with a lump mass
+    or with extra mass (which sits at the centre of its group's volume)."""
+    data, built = assembly.data, assembly.solids
+    spread = {name for name, group in data["groups"].items() if "massKg" in group} | {entry["group"] for entry in data["extraMass"]}
+    return sorted(name for name in present if not built[name].fixture and (built[name].mass_kg is not None or built[name].group in spread))
 
 
 def used_by_mass(assembly, present):
-    """What a mass roll-up draws on besides shapes: each solid's mass, each group's lump mass, and the solids with none."""
-    built, groups = assembly.solids, assembly.data["groups"]
+    """What a mass roll-up draws on besides shapes: each solid's mass and range, each group's lump mass, the weight with no
+    solid, the solids with none, and which group each solid is in."""
+    data, built = assembly.data, assembly.solids
     robot = [name for name in sorted(present) if not built[name].fixture]
-    return {"masses": {name: built[name].mass_kg for name in robot if built[name].mass_kg is not None},
-            "groupMasses": {name: group["massKg"] for name, group in groups.items() if "massKg" in group},
-            "unweighed": [name for name in robot if built[name].mass_kg is None and "massKg" not in groups[built[name].group]],
+    weighs = [name for name in robot if built[name].mass_kg is not None]
+    return {"masses": {name: built[name].mass_kg for name in weighs},
+            "massRanges": {name: list(built[name].mass_range_kg) for name in weighs},
+            "groupMasses": {name: list(span(group["massKg"])) for name, group in data["groups"].items() if "massKg" in group},
+            "extraMass": data["extraMass"],
+            "unweighed": [name for name in robot if built[name].mass_kg is None and "massKg" not in data["groups"][built[name].group]],
             "groups": carry.digest({name: built[name].group for name in robot})}

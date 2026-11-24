@@ -836,10 +836,12 @@ digits, dots, dashes and underscores). Two jobs with the same id in one list are
 - `inputs.rules` are the caller's numbers the answer depends on; `inputs.solids` the identity (12.4a) of every solid
   the answer depends on: every solid present for a clearance, a withdrawal or an attachment (the ignored ones left
   out), the two named solids for a reach or an indentation, and for a mass the solids whose shape the roll-up uses
-  (those with a mass, and every member of a group with a lump mass).
+  (those with a mass, and every member of a group with a lump mass or with extra mass, which sits at the centre of
+  its group's volume).
 - `used` holds the other design facts the answer depends on: a clearance's declared `contacts`; an attachment's
   `contacts`, `mounts` (notes left out), `fixtures` and a digest of which group each solid is in; a mass's `masses`,
-  `groupMasses`, `unweighed` and the same group digest.
+  `massRanges`, `groupMasses` (each as value, low, high), `extraMass` (notes left out of the comparison),
+  `unweighed` and the same group digest. A change to a range alone, or to any weight with no solid, makes it stale.
 - `checked` says what this run did: for a clearance, the pairs measured and carried (12.4a); for an attachment, its
   touching pairs and mounts measured and carried; for the others `{"measured": "whole"}`.
 - A clearance also has `counts`: every pair, under exactly one of `declaredContacts`, `bothStill`, `farApart`,
@@ -1174,7 +1176,7 @@ again only what the change touched. To make that possible:
   their values.
 - `python -m frc_design_kernel status SOURCE DIR` works those out again from the source as it is now, for every job
   file under `DIR/measurements/` and every trial in `DIR/trials.json`, and prints, per record, `current` or
-  `stale` and what changed: `solid "belt bed" changed`, `masses "gate" changed: 0.2 to 0.3`, `the motion
+  `stale` and what changed: `solid "belt bed" changed`, `massRanges "gate" changed: [0.2, 0.2] to [0.3, 0.3]`, `the motion
   "lift" is no longer in the source`, `parameter "squeeze" changed: 20 to 15`, `the trial definition changed at
   materials.tread.friction.value`. Plain facts. It does not say whether to run anything again, and it decides from
   what each record's answer depends on, never from file bytes. It ends with how long it took, the build included:

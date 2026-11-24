@@ -7,6 +7,7 @@ import copy
 import io
 import json
 import math
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,7 +17,7 @@ from frc_design_kernel import DesignError
 from frc_design_kernel.builder import placement
 from frc_design_kernel.builder.manifest import manifest
 from frc_design_kernel.cli import main
-from frc_design_kernel.measure import mass, summary
+from frc_design_kernel.measure import mass, records
 from frc_design_kernel.status import status
 
 from .helpers import load_data
@@ -289,7 +290,9 @@ class Inertia(unittest.TestCase):
 
 
 class Records(unittest.TestCase):
-    """The pose records carry mass, so an edit to any weight must show in status and be measured again on a carry."""
+    """The mass job record carries mass, so an edit to any weight must show in status and be measured again on a carry."""
+
+    JOB = [{"kind": "mass", "pose": "stowed"}]
 
     @classmethod
     def setUpClass(cls):
@@ -298,7 +301,7 @@ class Records(unittest.TestCase):
         cls.folder = tempfile.TemporaryDirectory()
         with contextlib.redirect_stdout(io.StringIO()):
             assert main(["measure", str(cls.path), "--out", cls.folder.name, "--workers", "1", "--pose", "stowed"]) == 0
-        cls.record = json.loads((Path(cls.folder.name) / "measurements.json").read_text(encoding="utf-8"))
+        cls.record = json.loads((Path(cls.folder.name) / records.FOLDER / "mass.pose.stowed.json").read_text(encoding="utf-8"))
 
     @classmethod
     def tearDownClass(cls):
@@ -311,42 +314,51 @@ class Records(unittest.TestCase):
         finally:
             self.path.write_text(json.dumps(self.data), encoding="utf-8")
 
+    def carried(self, change=None):
+        """The mass job recorded again, carrying from a copy of the class's records, for the design after change."""
+        with tempfile.TemporaryDirectory() as out:
+            shutil.copytree(Path(self.folder.name) / records.FOLDER, Path(out) / records.FOLDER)
+            entry, = records.record(load_data(design(change)).path, self.JOB, out, workers=1)
+        return entry
+
     def test_the_pose_record_holds_the_ranged_roll_up(self):
         """Catches a measured roll-up that drops the range or the extra mass."""
-        weighed = self.record["poses"][0]["mass"]
-        near(self, weighed["rangeKg"], [4.258, 5.074])
+        near(self, self.record["result"]["rangeKg"], [4.258, 5.074])
 
     def test_control_an_untouched_source_is_current(self):
-        """Control: shows the pose record is current before any weight is edited, and an edited note changes nothing."""
+        """Control: shows the mass record is current before any weight is edited, and an edited note changes nothing."""
         rows = self.after(lambda d: d["extraMass"][0].update(note="Reworded."))
-        self.assertEqual(rows['measures at the pose "stowed"']["state"], "current")
+        self.assertEqual(rows["mass.pose.stowed"]["state"], "current")
 
-    def test_an_extra_mass_edit_makes_the_pose_record_stale(self):
+    def test_an_extra_mass_edit_makes_the_mass_record_stale(self):
         """Catches weight with no solid changing without status seeing it."""
         rows = self.after(lambda d: d["extraMass"][0].update(massKg=ASSUMED(0.8, 0.6, 1.0)))
-        self.assertEqual(rows['measures at the pose "stowed"']["state"], "stale")
-        self.assertIn("extraMass changed", rows['measures at the pose "stowed"']["changes"])
+        self.assertEqual(rows["mass.pose.stowed"]["state"], "stale")
+        self.assertIn("extraMass changed", rows["mass.pose.stowed"]["changes"])
 
-    def test_a_range_edit_alone_makes_the_pose_record_stale(self):
+    def test_a_range_edit_alone_makes_the_mass_record_stale(self):
         """Catches a solid whose range changed but whose nominal mass did not being called current."""
         rows = self.after(lambda d: d["solids"][0].update(massKg=ASSUMED(1.0, 0.8, 1.2)))
-        self.assertEqual(rows['measures at the pose "stowed"']["changes"], ['solid "plate" changed (massRangeKg)'])
+        self.assertEqual(rows["mass.pose.stowed"]["changes"], ['massRanges "plate" changed: [0.9, 1.2] to [0.8, 1.2]'])
 
     def test_a_carry_weighs_again_after_an_extra_mass_edit(self):
         """Catches a carried roll-up that keeps the old weight after an extra mass changed; control: no edit carries it."""
-        same = summary.measure_design(load_data(design()).path, workers=1, poses=["stowed"], motions=[], earlier=self.record)
-        self.assertEqual(same["poses"][0]["checked"]["mass"], "carried")
-        heavier = summary.measure_design(load_data(design(lambda d: d["extraMass"][0].update(massKg=1.0))).path, workers=1, poses=["stowed"],
-                                         motions=[], earlier=self.record)
-        self.assertEqual(heavier["poses"][0]["checked"]["mass"], "measured")
-        self.assertAlmostEqual(heavier["poses"][0]["mass"]["totalKg"], 4.866, places=9)
+        self.assertEqual(self.carried()["action"], "carried")
+        heavier = self.carried(lambda d: d["extraMass"][0].update(massKg=1.0))
+        self.assertEqual(heavier["action"], "measured")
+        self.assertAlmostEqual(heavier["record"]["result"]["totalKg"], 4.866, places=9)
 
     def test_a_carry_weighs_again_after_a_range_edit(self):
         """Catches a carried roll-up that keeps the old range after only a solid's range changed."""
-        wider = summary.measure_design(load_data(design(lambda d: d["solids"][0].update(massKg=ASSUMED(1.0, 0.8, 1.2)))).path, workers=1,
-                                       poses=["stowed"], motions=[], earlier=self.record)
-        self.assertEqual(wider["poses"][0]["checked"]["mass"], "measured")
-        near(self, wider["poses"][0]["mass"]["rangeKg"], [4.158, 5.074])
+        wider = self.carried(lambda d: d["solids"][0].update(massKg=ASSUMED(1.0, 0.8, 1.2)))
+        self.assertEqual(wider["action"], "measured")
+        near(self, wider["record"]["result"]["rangeKg"], [4.158, 5.074])
+
+    def test_extra_mass_sits_at_its_group_volume_so_any_member_shape_is_used(self):
+        """Catches a mass record carried after an unweighed member of a group with extra mass changed shape, which moves the centre."""
+        grown = self.carried(lambda d: next(s for s in d["solids"] if s["group"] == "base" and "massKg" not in s)["shape"]["toMm"].__setitem__(2, 80))
+        self.assertEqual(grown["action"], "measured")
+        self.assertNotEqual(grown["record"]["result"]["groups"]["base"]["centreMm"], self.record["result"]["groups"]["base"]["centreMm"])
 
 
 if __name__ == "__main__":
