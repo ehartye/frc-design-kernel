@@ -77,8 +77,9 @@ class Example(unittest.TestCase):
 
     def test_mass_roll_up(self):
         """Catches mass counted twice, a fixture weighed as robot, or an unweighed solid going unreported."""
-        groups = self.manifest["groups"]
-        self.assertEqual((groups["carriage"]["massKg"], groups["carriage"]["massFrom"]), (1.8, "group massKg"))
+        groups = self.manifest["mass"]["groups"]
+        self.assertEqual((groups["carriage"]["massKg"], groups["carriage"]["from"]), (1.8, "group massKg"))
+        self.assertNotIn("fixtures", groups)
         self.assertAlmostEqual(groups["drive"]["massKg"], 0.65)
         base = sum(s["volumeMm3"] for s in self.manifest["solids"] if s["group"] == "base") * 1e-9 * 2700
         self.assertAlmostEqual(groups["base"]["massKg"], base, places=5)
