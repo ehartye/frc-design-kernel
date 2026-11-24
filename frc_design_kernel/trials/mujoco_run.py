@@ -11,11 +11,14 @@ import math
 from ..errors import DesignError
 from ..motion import matrix as mx
 from ..motion import stages as stage_math
+from ..workers import silent
 from . import drives as drive_math
 from . import air, frames, mujoco_contact
 from .mujoco_scene import quaternion
 from .planar import Recorder, fire, load_force
 from .rules import holds, started
+
+TICK_STEPS = 50             # steps between two words on how far a run is
 
 
 def engine():
@@ -152,9 +155,10 @@ def rough_touched(model, data, scene, pieces, found):
                     found.add(solid)
 
 
-def run(scene, step=None, forces=()):
+def run(scene, step=None, forces=(), tick=silent):
     """Run one MuJoCo scene. Returns the same summary a planar run gives, with two more signals (offPlaneMm and tiltDeg)
-    and touchedRough: the solids whose hulled pieces a piece pressed into during the run."""
+    and touchedRough: the solids whose hulled pieces a piece pressed into during the run. tick hears the number of steps
+    done, every TICK_STEPS."""
     mujoco = engine()
     dt = step or scene["stepS"]
     model, data, pieces, masses = start(mujoco, scene, dt)
@@ -200,6 +204,8 @@ def run(scene, step=None, forces=()):
         mujoco.mj_step(model, data)             # move everything one step under those forces, with MuJoCo's own contact off
         model.opt.disableflags &= ~no_contact
         steps += 1
+        if not steps % TICK_STEPS:
+            tick(steps)
     recorder.sample(float(data.time), signals, steps, dt, force=True)
     iu, iv = ("xyz".index(axis) for axis in scene["axes"])
     return {"outcome": outcome, "endS": float(data.time), "steps": steps, "stepS": dt, "events": events, "measures": recorder.finish(signals, happened),

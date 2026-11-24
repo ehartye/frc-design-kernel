@@ -7,19 +7,16 @@ fixture's numbers, so a lever arm in the wrong unit, a gear applied the wrong wa
 that misses a change shows up as a difference.
 """
 import copy
-import json
 import math
 import tempfile
 import unittest
-from pathlib import Path
 
 from frc_design_kernel import DesignError
 from frc_design_kernel.builder.assembly import build
 from frc_design_kernel.measure import electrical, mass, records, summary
 from frc_design_kernel.source.load import load
-from frc_design_kernel.status import status
 
-from .helpers import load_data
+from .helpers import job_files, load_data, recorded
 
 ASSUMED = lambda value, low, high: {"value": value, "assumed": [low, high]}
 BOX = lambda low, high: {"kind": "box", "fromMm": low, "toMm": high}
@@ -205,9 +202,9 @@ class Sag(unittest.TestCase):
 class Refusals(unittest.TestCase):
     def test_a_motion_with_no_load_has_no_electrical_job(self):
         """Catches an electrical job asked of a motion nothing powers."""
-        path = load_data(bench()).path
+        design = load_data(bench())
         with tempfile.TemporaryDirectory() as folder, self.assertRaises(DesignError) as caught:
-            records.record(path, [{"kind": "electrical", "motion": "nudge by hand"}], folder, workers=1)
+            recorded(design, [{"kind": "electrical", "motion": "nudge by hand"}], folder)
         self.assertIn("nudge by hand", str(caught.exception))
 
     def test_a_battery_is_checked(self):
@@ -225,74 +222,32 @@ class Refusals(unittest.TestCase):
 
 
 class Records(unittest.TestCase):
-    """One electrical job per motion, recorded and judged current or stale from what it uses."""
+    """One electrical job per motion, recorded."""
 
-    @classmethod
-    def setUpClass(cls):
-        cls.path = load_data(bench()).path
-        cls.folder = tempfile.TemporaryDirectory()
-        cls.entries = records.record(cls.path, [RAISE], cls.folder.name, workers=1)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.folder.cleanup()
-
-    def held(self):
-        return json.loads((Path(self.folder.name) / records.FOLDER / "electrical.raise.json").read_text(encoding="utf-8"))
-
-    def after(self, change):
-        self.path.write_text(json.dumps(bench(change)), encoding="utf-8")
-        try:
-            return {row["record"]: row for row in status(self.path, self.folder.name)["records"]}["electrical.raise"]
-        finally:
-            self.path.write_text(json.dumps(bench()), encoding="utf-8")
-
-    def test_the_job_file_holds_its_inputs_used_block_and_result(self):
-        """Catches an electrical record that a judging tool or the status command cannot read."""
-        held = self.held()
+    def test_the_job_file_holds_its_question_and_its_result(self):
+        """Catches an electrical record that a judging tool cannot read."""
+        with tempfile.TemporaryDirectory() as folder:
+            recorded(load_data(bench()), [RAISE], folder)
+            held = job_files(folder)["electrical.raise"]
         self.assertEqual((held["schema"], held["id"]), (records.SCHEMA, "electrical.raise"))
         self.assertEqual(held["job"], {"kind": "electrical", "motion": "raise", "samples": 32})
-        self.assertEqual(held["inputs"]["rules"], {"samples": 32})
-        self.assertEqual(sorted(held["inputs"]["solids"]), ["arm bar"])
-        for key in ("start", "joints", "drives", "battery", "durationS", "alsoRunning", "extraLoad", "masses", "massRanges", "groupMasses",
-                    "extraMass", "unweighed", "groups"):
-            self.assertIn(key, held["used"])
         self.assertEqual(held["result"], measured())
 
-    def test_a_current_record_is_carried(self):
-        """Catches an electrical job measured again with nothing changed."""
-        again = records.record(self.path, [RAISE], self.folder.name, workers=1)
-        self.assertEqual(again[0]["action"], "carried")
-        self.assertEqual(self.entries[0]["action"], "measured")
-
-    def test_a_moved_solids_mass_makes_the_record_stale(self):
-        """Catches an electrical record left current after the weight it lifts changed (acceptance 11)."""
-        row = self.after(lambda d: solid(d, "arm bar").update(massKg=ASSUMED(2.0, 1.8, 2.4)))
-        self.assertEqual(row["state"], "stale")
-        self.assertIn('"arm bar"', " ".join(row["changes"]))
-
-    def test_the_batterys_resistance_makes_the_record_stale(self):
-        """Catches an electrical record left current after the pack changed (acceptance 11)."""
-        row = self.after(lambda d: d["battery"].update(resistanceOhm=ASSUMED(0.02, 0.015, 0.035)))
-        self.assertEqual(row["state"], "stale")
-        self.assertIn("resistanceOhm", " ".join(row["changes"]))
-
-    def test_the_motor_the_duration_and_what_else_runs_make_the_record_stale(self):
-        """Catches an electrical record that misses a change to a motor, the motion's time or the drives beside it."""
-        for change in (lambda d: d["motors"]["small"].update(ohm=ASSUMED(0.05, 0.045, 0.07)),
+    def test_another_battery_another_motor_or_a_heavier_arm_gives_another_answer(self):
+        """Catches an electrical result that leaves out the battery, the motor or the weight it lifts."""
+        plain = measured()
+        for change in (lambda d: solid(d, "arm bar").update(massKg=ASSUMED(2.0, 1.8, 2.4)),
+                       lambda d: d["battery"].update(resistanceOhm=ASSUMED(0.02, 0.015, 0.035)),
+                       lambda d: d["motors"]["small"].update(ohm=ASSUMED(0.05, 0.045, 0.07)),
                        lambda d: d["motions"]["raise"].update(durationS=ASSUMED(0.5, 0.3, 0.7)),
                        lambda d: d["motions"]["raise"].update(alsoRunning=[{"drive": "wheels", "atLimit": True}]),
                        lambda d: d["drives"]["pivot"].update(gear=70)):
-            self.assertEqual(self.after(change)["state"], "stale")
+            self.assertNotEqual(measured(change), plain)
 
-    def test_control_notes_and_weight_the_motion_does_not_move_leave_the_record_current(self):
-        """Control: a note, or the mass of a solid the motion does not move, changes nothing the record uses (acceptance 11)."""
-        for change in (lambda d: d["battery"].update(note="Another pack note."),
-                       lambda d: solid(d, "arm bar").update(note="Another note."),
-                       lambda d: d["motions"]["raise"].update(note="Another note."),
-                       lambda d: solid(d, "base plate").update(massKg=7.0)):
-            row = self.after(change)
-            self.assertEqual((row["state"], row["changes"]), ("current", []))
+    def test_control_a_note_and_weight_the_motion_does_not_move_give_the_same_answer(self):
+        """Control: a note, or the mass of a solid the motion does not move, changes no figure."""
+        for change in (lambda d: d["battery"].update(note="Another pack note."), lambda d: solid(d, "base plate").update(massKg=7.0)):
+            self.assertEqual(measured(change), measured())
 
 
 class MeasureCommand(unittest.TestCase):

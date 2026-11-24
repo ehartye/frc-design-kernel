@@ -108,7 +108,7 @@ motion, how close each pair of solids comes over the whole stroke; for every pos
 connected to the base, and the mass with its centre; for every motion its motors drive, the torque, current and
 motor voltage of each drive and the battery's voltage under them all. The closeness is proven, not sampled at fixed steps: the
 library knows how fast each solid can move, so it knows what cannot happen between two samples. A stopped run keeps
-the jobs it finished, and `measure --carry` measures only the rest.
+the jobs it finished.
 
 Trials are data in the same file. Run them with:
 
@@ -123,14 +123,17 @@ every assumed range. A best guess with a range is a complete input. Where the ou
 campaign asks whether an adjustment the robot is built with (a slot, a spring, a setpoint) covers it, and reports the
 settings that pass at each end. See [DESIGN.md](DESIGN.md) section 13.
 
-After a change to the source, ask which records it touched:
+While working on one thing, measure one thing:
 
 ```
-python -m frc_design_kernel status swing-arm.json out
+python -m frc_design_kernel measure swing-arm.json --out out --motion raise
+python -m frc_design_kernel measure swing-arm.json --focus arm --motion raise
+python -m frc_design_kernel try swing-arm.json --out out --trial NAME
 ```
 
-`status` prints, per record, `current` or `stale` and what changed. `measure --motion NAME` and `try --trial NAME`
-run again only the part you name.
+`--motion NAME` measures and writes that motion alone. `--focus SOLID` measures only the pairs with that solid in them
+and prints them without writing, so it never replaces a full record. `try --trial NAME` runs that trial and any it
+starts after. What is asked is measured every time: the library never works out what an edit changed.
 
 To measure game pieces on their own, with no design source:
 
@@ -151,8 +154,11 @@ assembly = kernel.build(kernel.load("swing-arm.json"))
 halfway = assembly.at_motion("raise", 0.5)      # {solid name: placed shape}
 kernel.export(assembly, "out")
 
-from frc_design_kernel.measure import clearance
+from frc_design_kernel.measure import clearance, records, run
 result = clearance.along(assembly, "raise", min_gap=1.0)    # plain data: rows per pair, counts, closest
+
+with run.Bench(assembly.design, workers=4, progress=print) as bench:      # worker processes, and where they are
+    records.record(bench, [{"kind": "clearance", "motion": "raise", "minGapMm": 1.0}], "out")
 ```
 
 A fuller example, with an imported part and a custom shape, is in [examples/lifter](examples/lifter).

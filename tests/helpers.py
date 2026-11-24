@@ -47,3 +47,16 @@ def load_data(data, files=None):
     path = Path(keep.name) / "design.json"
     path.write_text(json.dumps(data), encoding="utf-8")
     return load(path)
+
+
+def recorded(design, jobs, folder, workers=1, report=None, **options):
+    """Measure jobs of a loaded design into folder with one bench; returns the entries."""
+    from frc_design_kernel.measure import records, run      # the CAD kernel is needed only here
+    with run.Bench(design, workers, **options) as bench:
+        return records.record(bench, jobs, folder, report)
+
+
+def job_files(folder):
+    """{job id: the job file as data} for every job file in a folder."""
+    from frc_design_kernel.measure import records
+    return {path.stem: json.loads(path.read_text(encoding="utf-8")) for path in sorted((Path(folder) / records.FOLDER).glob("*.json"))}

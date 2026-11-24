@@ -42,7 +42,11 @@ Short rules for people and coding agents who change this library. The reasons ar
 - Custom trial code never replaces the control, the ranges or the half-step repeat.
 - Physical inputs belong in the design source with their source (`measured` or `assumed` with a range), in physical
   units. Numbers that only one engine understands go under that engine's own heading.
-- Records say what they used. A new measure or trial output must carry a `used` block the status command can check.
+- What is asked is measured, every time. Nothing works out what changed to decide what to measure or try, or whether
+  an earlier answer stands: no fingerprints, no lists of what an answer used, no deciding from an earlier record. A record
+  keeps the question, the answer and the library version, and no date. A measurement of only part of a job is returned
+  and never written over a full record.
+- A measure or engine that can take more than a moment says how far it is through the meter it is given.
 - A new built-in shape is better than a custom shape that two projects both wrote.
 
 ## Git

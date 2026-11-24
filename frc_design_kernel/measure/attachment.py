@@ -1,32 +1,22 @@
 """At a pose: what touches what, what hangs together, what is not connected to the base, and which fixtures float.
 
 Two solids "touch" when their surfaces are within a gap the caller chooses. A mount joins two solids whatever the gap,
-and is measured: how far apart its two solids really are, and how far the stated point is from each. Given an
-earlier result, the touching gaps and mount distances of solids that did not change are carried from it (see carry).
+and is measured: how far apart its two solids really are, and how far the stated point is from each.
 """
 from ..errors import DesignError
 from ..kernel import props
 from ..kernel.between import distance, vertex
-from . import carry, scene as scenes
+from ..workers import silent
+from . import scene as scenes
 from .pairs import box_gap, near_pairs
 from .sets import Sets
 
 
-def touching_pairs(scene, names, gap, plan=None):
-    """[(a, b, gap in mm)] for every pair of the named solids whose surfaces are within gap.
-
-    plan, when given, carries the pairs of two unchanged solids from an earlier result instead of measuring them.
-    """
-    boxes = {name: scene.boxes[name] for name in names}
+def touching_pairs(scene, near, gap, meter=silent):
+    """[(a, b, gap in mm)] for every one of the near pairs whose surfaces are within gap."""
     found = []
-    for a, b in near_pairs(boxes, gap):
-        if plan is not None and a not in plan.changed and b not in plan.changed:
-            plan.tally["pairsCarried"] += 1
-            if (a, b) in plan.gaps:
-                found.append((a, b, plan.gaps[(a, b)]))
-            continue
-        if plan is not None:
-            plan.tally["pairsMeasured"] += 1
+    for done, (a, b) in enumerate(near):
+        meter(done, len(near) + 1)
         measured = distance(scene.start[a], scene.start[b])
         if measured <= gap:
             found.append((a, b, measured))
@@ -55,7 +45,7 @@ def mount_ends(mount, scene, members):
     return [m for m in others if reach[m] <= min(reach.values()) + 1e-6]
 
 
-def measured_mounts(assembly, scene, robot, measure=True, plan=None):
+def measured_mounts(assembly, scene, robot, measure=True):
     """One row per mount and solid it holds: the real gap between the two solids and the point's distance to each."""
     rows = []
     for mount in assembly.data["mounts"]:
@@ -64,13 +54,7 @@ def measured_mounts(assembly, scene, robot, measure=True, plan=None):
         point = vertex(mount["atMm"])
         for end in mount_ends(mount, scene, [m for m in assembly.members(mount["group"]) if m in robot]):
             row = {"group": mount["group"], "member": end, "on": mount["on"], "atMm": mount["atMm"]}
-            held = plan.mounts.get((end, mount["on"], carry.point(mount["atMm"]))) if plan is not None else None
-            if measure and held and end not in plan.changed and mount["on"] not in plan.changed:
-                plan.tally["mountsCarried"] += 1
-                row.update({key: held[key] for key in ("gapMm", "pointToMemberMm", "pointToOnMm")})
-            elif measure:
-                if plan is not None:
-                    plan.tally["mountsMeasured"] += 1
+            if measure:
                 row.update(gapMm=distance(scene.start[end], scene.start[mount["on"]]),
                            pointToMemberMm=distance(point, scene.start[end]), pointToOnMm=distance(point, scene.start[mount["on"]]))
             rows.append(row)
@@ -115,7 +99,7 @@ def fixtures_off_floor(scene, fixtures, gap, floor_z):
             if not grounded or not resting.together(name, grounded[0])]
 
 
-def at_pose(assembly, pose=None, gap=0.0, floor_z=0.0, ignore=(), base=None, contacts=(), absent=(), pairs=True, earlier=None):
+def at_pose(assembly, pose=None, gap=0.0, floor_z=0.0, ignore=(), base=None, contacts=(), absent=(), pairs=True, meter=silent):
     """What is attached to what with every solid held at a named pose (None is as drawn).
 
     gap is how near two surfaces must be to count as touching. ignore names solids to leave out altogether (a game
@@ -124,27 +108,25 @@ def at_pose(assembly, pose=None, gap=0.0, floor_z=0.0, ignore=(), base=None, con
 
     pairs=False skips the full list of touching pairs and measures only what the connected sets need; "touching"
     and "heldByMountOnly" are then None, and everything else is the same. It is much quicker on a detailed scene.
-    earlier is an earlier result at the same pose: the touching gaps and mount distances of unchanged solids are
-    carried from it, and "checked" says how many were measured and how many carried.
+    meter hears how many of the pairs near enough to touch are done; the last count is for the mounts, sets and fixtures.
     """
     scene = scenes.for_pose(assembly, pose, absent)
     kept = [name for name in scene.names if name not in set(ignore)]
     robot = [name for name in kept if not assembly.solids[name].fixture]
     fixtures = [name for name in kept if assembly.solids[name].fixture]
-    placed = carry.at_pose(assembly, pose, absent)
-    inputs = {"touchGapMm": float(gap), "solids": {name: placed[name] for name in robot}}
-    plan = carry.touching_plan(earlier, inputs) if pairs else None
-    touching = touching_pairs(scene, robot, gap, plan) if pairs else None
+    near = near_pairs({name: scene.boxes[name] for name in robot}, gap)
+    touching = touching_pairs(scene, near, gap, meter) if pairs else None
     by_touch, held = Sets(robot), Sets(robot)
     for a, b, _ in touching or ():
         by_touch.join(a, b)
         held.join(a, b)
     if not pairs:
         join_near(scene, robot, gap, held)
+    meter(len(near), len(near) + 1)
     for a, b in contacts:
         if a in held.parent and b in held.parent:
             held.join(a, b)
-    mounts = measured_mounts(assembly, scene, set(robot), measure=pairs, plan=plan)
+    mounts = measured_mounts(assembly, scene, set(robot), measure=pairs)
     for row in mounts:
         held.join(row["member"], row["on"])
     frame = base_set(held, base)
@@ -157,11 +139,12 @@ def at_pose(assembly, pose=None, gap=0.0, floor_z=0.0, ignore=(), base=None, con
         for name in members:
             other, away = nearest(scene, name, frame) if frame else (None, None)
             loose.append({"solid": name, "group": assembly.solids[name].group, "nearest": other, "gapMm": away})
+    off_floor = fixtures_off_floor(scene, fixtures, gap, floor_z)
+    meter(len(near) + 1, len(near) + 1)
     return {"pose": pose, "touchGapMm": float(gap), "floorZMm": float(floor_z), "ignored": sorted(set(ignore) & set(scene.names)),
             "robotSolids": len(robot), "baseSolids": len(frame), "connectedSets": held.groups(),
             "notConnectedToBase": sorted(loose, key=lambda r: r["solid"]),
             "heldByMountOnly": sorted(set(frame) - set(core)) if pairs else None,
             "touching": [{"pair": [a, b], "gapMm": measured} for a, b, measured in touching] if pairs else None,
             "mounts": mounts,
-            "fixtures": len(fixtures), "fixturesOffFloor": fixtures_off_floor(scene, fixtures, gap, floor_z),
-            "inputs": inputs, "checked": plan.tally if plan is not None else None}
+            "fixtures": len(fixtures), "fixturesOffFloor": off_floor}

@@ -1,37 +1,25 @@
 """The measurement records: one file per job, DIR/measurements/<job id>.json, written whole as each job finishes.
 
-record() answers a list of jobs (see jobs). A job whose file is current, meaning its job, its inputs and its used
-block are what the design gives now, is carried: not measured and not written again. Every other job is measured,
-carrying from its earlier file what it can, and its file is replaced the moment the job finishes. So a stopped run
-keeps every job it finished, and the next run measures only the rest. check() says the same without measuring.
+A record holds the question, the answer and the library version. Every job asked is measured, whatever files are
+there, and its file is replaced the moment it finishes, so a stopped run keeps every job it finished. A clearance
+limited to named solids is only part of an answer: it is returned and never written.
 """
-import contextlib
 import json
 import os
-from dataclasses import dataclass, field
+from contextlib import closing
 from pathlib import Path
 
 from ..errors import DesignError
 from ..version import generator
-from . import carry, clearance, jobs as kinds, run, summary
+from . import jobs as kinds
+from .run import Ask
 
-SCHEMA = "frc-design-kernel/measurement-job@1"
+SCHEMA = "frc-design-kernel/measurement-job@2"
 FOLDER = "measurements"
 
 
 def path_of(folder, name):
     return Path(folder) / FOLDER / f"{name}.json"
-
-
-def read_record(path):
-    """A job record, None when there is none, or {} for a file that is not a job record in this format."""
-    if not path.is_file():
-        return None
-    try:
-        held = json.loads(path.read_text(encoding="utf-8"))
-    except ValueError:
-        return {}
-    return held if isinstance(held, dict) and held.get("schema") == SCHEMA else {}
 
 
 def write_record(path, record):
@@ -43,7 +31,8 @@ def write_record(path, record):
 
 
 def requested(data, jobs):
-    """[(id, normalized job)] for a list of jobs; refuses an unknown kind or field, a missing name, or two jobs with one id."""
+    """[(id, normalized job)] for a list of jobs; refuses an unknown kind or field, a missing name, a solid that is not in
+    the design, or two jobs with one id."""
     out, seen = [], {}
     for number, job in enumerate(jobs, 1):
         try:
@@ -54,182 +43,75 @@ def requested(data, jobs):
         if name in seen:
             raise DesignError("", f'jobs {seen[name]} and {number} have the same id "{name}"', 'Give one of them its own "id"')
         seen[name] = number
+        try:
+            kinds.present(data, found)
+        except DesignError as problem:
+            raise problem.under(f'job "{name}"') from None
         out.append((name, found))
     return out
 
 
-def shown(value):
-    return json.dumps(value) if not isinstance(value, str) else value
+def limited(data, asked, focus):
+    """The named solids a measurement is limited to, checked, or None. Only a clearance can be limited."""
+    if focus is None:
+        return None
+    known = [solid["name"] for solid in data["solids"] + data["fixtures"]]
+    for name in focus:
+        if name not in known:
+            raise DesignError("", f'there is no solid named "{name}"', f"Known solids: {', '.join(sorted(known))}")
+    for name, job in asked:
+        if job["kind"] != "clearance":
+            raise DesignError(f'job "{name}"', f"only a clearance can be limited to named solids, not {job['kind']}", "Ask for it whole, or leave it out")
+    return tuple(sorted(set(focus)))
 
 
-def table_changes(what, old, new):
-    found = []
-    for name in sorted(set(old) | set(new)):
-        if name not in new:
-            found.append(f'{what} "{name}" is no longer there')
-        elif name not in old:
-            found.append(f'{what} "{name}" is new')
-        elif carry.plain(old[name]) != carry.plain(new[name]):
-            found.append(f'{what} "{name}" changed' + ("" if what == "solid" else f": {shown(old[name])} to {shown(new[name])}"))
-    return found
+def each(bench, asked, focus=None):
+    """Yield (index, record) for each requested job as it finishes."""
+    made = generator()
+    with closing(bench.answers([Ask(job, {"job": name}, focus) for name, job in asked])) as given:
+        for index, found in given:
+            name, job = asked[index]
+            counts, result = kinds.finish(job, found)
+            yield index, {"schema": SCHEMA, "generator": made, "id": name, "job": job, **({"focus": list(focus)} if focus else {}),
+                          **({"counts": counts} if counts is not None else {}), "result": result}
 
 
-def changes(held, job, inputs, used):
-    """What differs between a stored job record and the job as the design gives it now, as plain statements; [] when current."""
-    before = held.get("job") or {}
-    found = [f"the job's {key} changed: {shown(before.get(key))} to {shown(job.get(key))}"
-             for key in sorted(set(before) | set(job)) if carry.plain(before.get(key)) != carry.plain(job.get(key))]
-    if found:
-        return found
-    if carry.plain(held["inputs"]["rules"]) != carry.plain(inputs["rules"]):
-        found.append("the rules changed")
-    found += table_changes("solid", held["inputs"]["solids"], inputs["solids"])
-    for key in sorted(set(held["used"]) | set(used)):
-        old, new = held["used"].get(key), used.get(key)
-        if carry.plain(old) != carry.plain(new):
-            found += table_changes(key, old, new) if isinstance(old, dict) and isinstance(new, dict) else [f"{key} changed"]
-    if (held.get("checked") or {}).get("pairsNotMeasured"):
-        found.append("only part of it was measured (a focus)")
-    return found
+def entry(record, **more):
+    return {"id": record["id"], "kind": record["job"]["kind"], **more, "record": record}
 
 
-def drawn(assembly, job, name):
-    """(inputs, used) of a job asked for, with a problem in it named by the job's id."""
-    try:
-        return kinds.drawn_on(assembly, job)
-    except DesignError as problem:
-        raise problem.under(f'job "{name}"') from None
-
-
-def state_row(name, job, state, found):
-    return {"record": name, "kind": job["kind"], "file": f"{FOLDER}/{name}.json", "state": state, "changes": found}
-
-
-def check(source, jobs, folder):
-    """For each job asked, whether its record in folder is current, stale (and why) or missing. Measures nothing."""
-    from ..builder.assembly import build
-    from ..source.load import load
-    assembly, rows = build(load(source)), []
-    for name, job in requested(assembly.data, jobs):
-        held = read_record(path_of(folder, name))
-        found = ["there is no record"] if held is None else [f"it is not a {SCHEMA} record"] if not held else changes(held, job, *drawn(assembly, job, name))
-        rows.append(state_row(name, job, "missing" if held is None else "stale" if found else "current", found))
-    return rows
-
-
-def stored(assembly, folder):
-    """For every job record in folder, whether it is current for the design as built now, or stale and why."""
-    data, rows = assembly.data, []
-    for path in sorted((Path(folder) / FOLDER).glob("*.json")):
-        held, name = read_record(path), path.stem
-        job = held.get("job") or {"kind": None}
-        target = "motion" if "motion" in job else "pose"
-        if not held:
-            found = [f"it is not a {SCHEMA} record"]
-        elif job.get(target) is not None and job[target] not in data[f"{target}s"]:
-            found = [f'the {target} "{job[target]}" is no longer in the source']
-        else:
-            try:
-                found = changes(held, job, *kinds.drawn_on(assembly, job))
-            except DesignError as problem:
-                found = [problem.problem]
-        rows.append(state_row(name, job, "stale" if found else "current", found))
-    return rows
-
-
-@dataclass
-class Pending:
-    """A job to be measured: what it is, what it draws on, its tasks, and the answers back so far."""
-    index: int
-    name: str
-    job: dict
-    inputs: dict
-    used: dict
-    tasks: list = field(default_factory=list)
-    parts: dict = field(default_factory=dict)
-    shared: tuple = None        # for a clearance along a motion: (solids present, contact pairs, the carry plan)
-
-
-def planned(source, assembly, item, earlier, focus, workers):
-    """Cut a job into its tasks: shares for a clearance along a motion, one task for any other kind."""
-    job = {key: value for key, value in item.job.items() if key != "id"}
-    contacts = item.used.get("contacts")
-    if job["kind"] == "clearance" and "motion" in job:
-        names = tuple(kinds.present(assembly, job))
-        pairs = clearance.declared(contacts, set(names))
-        chosen = carry.plan(earlier, item.inputs, pairs, focus, earlier is not None)
-        item.shared = (names, pairs, chosen)
-        sent = dict(job, contacts=contacts, plan=chosen.job(), inputsKnown=True)
-        count = 0 if chosen.counts is not None else run.shares_for(len(names), workers)
-        item.tasks = [(str(source), sent, (first, count)) for first in range(count)]
-    else:
-        sent = dict(job, earlier=earlier, focus=focus, **({"contacts": contacts} if contacts is not None else {}))
-        item.tasks = [(str(source), sent, None)]
-
-
-def answered(item):
-    """The job's answer from its tasks' answers."""
-    if item.shared is None:
-        return item.parts[0]
-    names, pairs, chosen = item.shared
-    job = item.job
-    head = clearance.header("motion", job["motion"], job["minGapMm"], job["depth"], pairs, job["absent"], job["includeStill"], job["displace"] or None)
-    parts = [item.parts[index] for index in sorted(item.parts)]
-    return clearance.finished([carry.carried_part(names, chosen), *parts], head, item.inputs, chosen)
-
-
-def written(folder, item, made):
-    """Store a finished job's record, and return it."""
-    checked, counts, result = kinds.finish(item.job, answered(item))
-    record = {"schema": SCHEMA, "generator": made, "id": item.name, "job": item.job, "inputs": item.inputs, "used": item.used,
-              "checked": checked, **({"counts": counts} if counts is not None else {}), "result": result}
-    write_record(path_of(folder, item.name), record)
-    return record
-
-
-def record(source, jobs, folder, workers=None, carry=True, focus=None, report=None):
-    """Answer jobs about a design source and keep each answer as its own file in folder/measurements, written as it finishes.
-
-    With carry, a job whose file is current is carried as it is, and every other job carries from its file what it
-    can; without it every job is measured afresh. focus names solids whose clearance pairs are measured again even
-    so (without carry, only those, and the record says so). report, when given, is called with each entry as its job
-    is carried or finished. Returns one entry per job, in job order: {"id", "kind", "action": "carried" | "measured",
-    "file", "record"}.
-    """
-    workers = run.default_workers() if workers is None else max(1, int(workers))
-    assembly = run.assembly_for(source)
-    focus = summary.known_solids(assembly, focus)
-    asked, pending, made = requested(assembly.data, jobs), [], generator()
-    entries = [None] * len(asked)
-    (Path(folder) / FOLDER).mkdir(parents=True, exist_ok=True)
-
-    def done(index, name, job, action, held):
-        entries[index] = {"id": name, "kind": job["kind"], "action": action, "file": f"{FOLDER}/{name}.json", "record": held}
-        if report:
-            report(entries[index])
-
-    for index, (name, job) in enumerate(asked):
-        inputs, used = drawn(assembly, job, name)
-        held = (read_record(path_of(folder, name)) or None) if carry else None
-        if held is not None and not (focus and job["kind"] == "clearance") and not changes(held, job, inputs, used):
-            done(index, name, job, "carried", held)
-            continue
-        item = Pending(index, name, job, inputs, used)
-        same = held is not None and held["job"]["kind"] == job["kind"]
-        earlier = kinds.earlier_form(held) if same else ({} if carry and job["kind"] == "clearance" else None)
-        planned(source, assembly, item, earlier, focus, workers)
-        pending.append(item)
-    for item in [item for item in pending if not item.tasks]:
-        done(item.index, item.name, item.job, "measured", written(folder, item, made))
-    tasks, owners = [], []
-    for item in pending:
-        for slot, task in enumerate(item.tasks):
-            owners.append((item, slot))
-            tasks.append(task)
-    with contextlib.closing(run.completed(tasks, workers)) as answers:
-        for index, part in answers:
-            item, slot = owners[index]
-            item.parts[slot] = part
-            if len(item.parts) == len(item.tasks):
-                done(item.index, item.name, item.job, "measured", written(folder, item, made))
+def collected(found, size, report, made):
+    """The entries of a run in job order, each passed to report as it is made. An error raised in report stops the run."""
+    entries = [None] * size
+    with closing(found):
+        for index, record in found:
+            entries[index] = made(record)
+            if report:
+                report(entries[index])
     return entries
+
+
+def answers(bench, jobs, focus=None, report=None):
+    """Measure jobs and return one entry per job, in job order: {"id", "kind", "record"}. Nothing is written.
+
+    focus names solids: only the pairs with one of them in it are measured. Each record then has "focus", and its
+    counts say under "notInFocus" how many pairs were left out.
+    """
+    asked = requested(bench.design.data, jobs)
+    focus = limited(bench.design.data, asked, focus)
+    return collected(each(bench, asked, focus), len(asked), report, entry)
+
+
+def record(bench, jobs, folder, report=None):
+    """Measure jobs and keep each answer as its own file in folder/measurements, written as it finishes.
+
+    report, when given, is called with each entry as its job finishes; an error raised there stops the run, and what
+    was finished is kept. Returns one entry per job, in job order: {"id", "kind", "file", "record"}.
+    """
+    asked = requested(bench.design.data, jobs)
+
+    def written(held):
+        write_record(path_of(folder, held["id"]), held)
+        return entry(held, file=f"{FOLDER}/{held['id']}.json")
+
+    return collected(each(bench, asked), len(asked), report, written)

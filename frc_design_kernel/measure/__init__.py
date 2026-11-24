@@ -5,9 +5,8 @@
     attachment    what touches what at a pose, what is not connected to the base, measured mounts, floating fixtures
     mass          mass and centre of mass per group and for the whole robot
     compression   how deep a solid presses into a ball or ring
-    run           sharing clearance work between worker processes
-    carry         each solid's identity, and which pairs to measure again and which to carry from an earlier result
-    summary       all of the above for one design source, as one record
+    run           a bench: one built design to measure, alone or with worker processes, and where the work is
+    records       jobs measured on a bench, each answer kept as its own file or returned
 
 Supporting modules: scene (solids set up for measuring), pairs (broad phase), search (the adaptive proof),
 proofs (exact shortcuts for straight slides), sets (connected sets).

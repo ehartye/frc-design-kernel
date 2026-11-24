@@ -18,8 +18,8 @@ class Design:
     data: dict
     sha256: str
     custom_used: dict    # {custom code name: [names of the solids or trials that use it]}
-    raw: dict            # the source as written (trial and subsystem files read in), for asking which parameters something used
     files: tuple         # every source file read: the top file, then each subsystem file in the order listed
+    field: Path | None   # the folder of field models the caller gave, for the parts named by "field"
 
     @property
     def folder(self):
@@ -30,6 +30,11 @@ class Design:
 
     def solids(self, fixtures=False):
         return self.data["fixtures" if fixtures else "solids"]
+
+
+    def part_file(self, part):
+        """The file a part is read from: in the field folder for a field part, else from the design's own folder."""
+        return self.field / part["field"] if "field" in part else self.folder / part["file"]
 
 
 def not_a_number(text):
@@ -45,13 +50,32 @@ def read_json(path):
         raise DesignError(f"{path.name} line {problem.lineno}", f"is not valid JSON ({problem.msg})", "Look for a missing comma, quote or bracket near that line") from None
 
 
+def check_field(design, name, where):
+    """A field part is a plain file name in the folder of field models the caller gave; nothing else is reachable."""
+    if Path(name).name != name or any(mark in name for mark in "/\\:") or name in (".", ".."):
+        raise DesignError(where, f'the field file "{name}" is not a plain file name', "Name a file of the field folder itself, with no folders in it")
+    if design.field is None:
+        raise DesignError(where, f'the part is the field file "{name}", and no field folder was given',
+                          "Give the folder of field models: load(path, field=FOLDER), or --field FOLDER on the command line")
+    if not design.field.is_dir():
+        raise DesignError(where, f"the field folder {design.field} does not exist", "Give the folder that holds the field models")
+    target = (design.field / name).resolve()
+    if target.parent != design.field.resolve():
+        raise DesignError(where, f'the field file "{name}" leads outside the field folder', "Keep the field model itself in the field folder")
+    if not target.is_file():
+        raise DesignError(where, f'the field file "{name}" does not exist', f"Put it in the field folder, {design.field}")
+
+
 def check_files(design):
-    """Every file the source names must exist beside it, inside its folder."""
+    """Every file the source names must exist beside it, inside its folder; or, for a field part, in the field folder."""
     for section in ("solids", "fixtures"):
         for i, solid in enumerate(design.data[section]):
             if "part" not in solid:
                 continue
             where = schema.step(section, i, solid)
+            if "field" in solid["part"]:
+                check_field(design, solid["part"]["field"], where)
+                continue
             target = (design.folder / solid["part"]["file"]).resolve()
             if not target.is_relative_to(design.folder.resolve()):
                 raise DesignError(where, f'the part file "{solid["part"]["file"]}" is outside the design folder', "Keep part files beside the design source")
@@ -95,12 +119,13 @@ def read_subsystems(raw, folder):
     return parts
 
 
-def load(path, parameters=None):
+def load(path, parameters=None, field=None):
     """Read, check and expand the design source at path. Raises DesignError for the first problem found.
 
     parameters replaces the values of named parameters, so a variant of the design can be built without editing
     the file. Everything worked out from those parameters follows. A top file that lists subsystem files is merged
-    with them into one design; which file an entry is written in changes nothing in the result.
+    with them into one design; which file an entry is written in changes nothing in the result. field is the folder
+    of field models, for parts named by "field"; a design with none needs no folder.
     """
     path = Path(path)
     raw = read_json(path)
@@ -112,7 +137,8 @@ def load(path, parameters=None):
     files = (path, *(target for _, _, target in parts))
     sha256 = hashlib.sha256(b"".join(file.read_bytes() for file in files)).hexdigest()
     with subsystems.attributed(origins):
-        design = Design(path=path, data=data, sha256=sha256, custom_used=checks.check_all(data), raw=subsystems.merged(raw, parts), files=files)
+        design = Design(path=path, data=data, sha256=sha256, custom_used=checks.check_all(data), files=files,
+                        field=None if field is None else Path(field))
         check_files(design)
     subsystems.settle(data)
     return design

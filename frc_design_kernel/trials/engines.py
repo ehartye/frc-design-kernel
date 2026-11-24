@@ -4,6 +4,7 @@
     mujoco   3D rigid bodies through MuJoCo, an optional extra that is only imported when a trial names it
 """
 from ..version import generator
+from ..workers import silent
 from . import planar, scene as planar_scene
 
 NAMES = ("planar", "mujoco")
@@ -19,12 +20,12 @@ def build(assembly, name, case, handed=None):
     return scene
 
 
-def run(scene, step=None, forces=()):
-    """One run of a scene on the engine that built it."""
+def run(scene, step=None, forces=(), tick=silent):
+    """One run of a scene on the engine that built it. tick hears the number of steps done, now and then."""
     if scene.get("engine") == "mujoco":
         from . import mujoco_run
-        return mujoco_run.run(scene, step, forces)
-    return planar.run(scene, step, forces)
+        return mujoco_run.run(scene, step, forces, tick)
+    return planar.run(scene, step, forces, tick)
 
 
 def stamp(name):

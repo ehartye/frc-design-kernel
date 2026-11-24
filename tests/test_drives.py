@@ -11,18 +11,15 @@ import json
 import tempfile
 import time
 import unittest
-from pathlib import Path
 
 from frc_design_kernel import DesignError
 from frc_design_kernel.builder import placement
 from frc_design_kernel.builder.assembly import build
 from frc_design_kernel.builder.manifest import manifest
 from frc_design_kernel.cli import main
-from frc_design_kernel.measure import records
 from frc_design_kernel.motion import matrix as mx
-from frc_design_kernel.status import status
 
-from .helpers import load_data
+from .helpers import job_files, load_data, recorded
 
 ASSUMED = lambda value, low, high: {"value": value, "assumed": [low, high]}
 BOX = lambda low, high: {"kind": "box", "fromMm": low, "toMm": high}
@@ -260,53 +257,23 @@ class ChainedMotions(unittest.TestCase):
 
 
 class ChainedRecords(unittest.TestCase):
-    """A chained motion's records hold the start it resolved to, never the name of the motion it starts after."""
+    """A chained motion is measured from where the earlier motion ends, and its record names only itself."""
 
-    JOBS = [{"kind": "clearance", "motion": "tip", "minGapMm": 1.0}, {"kind": "clearance", "motion": "set", "minGapMm": 1.0}]
+    JOBS = [{"kind": "clearance", "motion": "tip", "minGapMm": 1.0, "nearMm": 1e6}]
 
-    @classmethod
-    def setUpClass(cls):
-        cls.path = load_data(chained()).path
-        cls.folder = tempfile.TemporaryDirectory()
-        records.record(cls.path, cls.JOBS, cls.folder.name, workers=1)
+    def held(self, change=None):
+        with tempfile.TemporaryDirectory() as folder:
+            recorded(load_data(chained(change)), self.JOBS, folder)
+            return job_files(folder)["clearance.motion.tip"]
 
-    @classmethod
-    def tearDownClass(cls):
-        cls.folder.cleanup()
-
-    def after(self, change):
-        self.path.write_text(json.dumps(chained(change)), encoding="utf-8")
-        try:
-            return {row["record"]: row for row in status(self.path, self.folder.name)["records"]}
-        finally:
-            self.path.write_text(json.dumps(chained()), encoding="utf-8")
-
-    def test_the_record_holds_the_resolved_start_and_the_joint_commands(self):
-        """Catches a record that keeps the earlier motion's name, so it would go stale by name (acceptance 14)."""
-        held = json.loads((Path(self.folder.name) / records.FOLDER / "clearance.motion.tip.json").read_text(encoding="utf-8"))
-        self.assertEqual(sorted(held["used"]["start"]), ["arm", "carriage", "wrist"])
-        self.assertLess(mx.gap(tuple(held["used"]["start"]["carriage"]), mx.translation((0, 0, 300))), 1e-9)
-        self.assertEqual(held["used"]["joints"], {"arm": {"kind": "rotation", "from": 95.0, "to": 50.0}})
-        self.assertNotIn("raise after set", json.dumps([held["job"], held["inputs"], held["used"]]))
-
-    def test_an_earlier_motion_whose_end_moves_makes_the_later_one_stale(self):
-        """Catches a chained motion left current after the place it starts from moved (acceptance 14)."""
-        rows = self.after(lambda d: d["motions"]["set"]["moves"]["carriage"][0].update(travelMm=[0, 0, 250]))
-        self.assertEqual(rows["clearance.motion.tip"]["state"], "stale")
-        self.assertIn('start "carriage" changed', " ".join(rows["clearance.motion.tip"]["changes"]))
-
-    def test_an_earlier_motion_changed_on_the_way_but_not_at_its_end_leaves_the_later_one_current(self):
-        """Control: the later motion decides from where the earlier one ends, never from how it got there (acceptance 14)."""
+    def test_the_record_is_the_same_however_the_earlier_motion_gets_there(self):
+        """Catches a record that keeps the earlier motion's name or its way there, and a chained start that ignores where it ends."""
+        plain = self.held()
+        self.assertNotIn("raise after set", json.dumps(plain))
         bent = {"kind": "path", "curve": "straight", "throughMm": [[0, 0, 0], [80, 0, 150], [0, 0, 300]]}
-        rows = self.after(lambda d: d["motions"]["set"]["moves"].update(carriage=[bent]))
-        self.assertEqual(rows["clearance.motion.set"]["state"], "stale")       # the earlier motion itself did change
-        self.assertEqual((rows["clearance.motion.tip"]["state"], rows["clearance.motion.tip"]["changes"]), ("current", []))
-
-    def test_a_command_that_ends_elsewhere_makes_the_record_stale(self):
-        """Catches a joint command change that the record does not see."""
-        rows = self.after(lambda d: d["motions"]["tip"]["drive"]["pivot"].update(by=-40))
-        self.assertEqual(rows["clearance.motion.tip"]["state"], "stale")
-        self.assertIn('joints "arm" changed', " ".join(rows["clearance.motion.tip"]["changes"]))
+        self.assertEqual(self.held(lambda d: d["motions"]["set"]["moves"].update(carriage=[bent])), plain)
+        lower = self.held(lambda d: d["motions"]["set"]["moves"]["carriage"][0].update(travelMm=[0, 0, 250]))
+        self.assertNotEqual(lower["result"], plain["result"])
 
 
 class CommandLine(unittest.TestCase):

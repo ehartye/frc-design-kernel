@@ -138,7 +138,7 @@ class Calibration(unittest.TestCase):
         trial["measures"] = {}
         trial["control"] = {"change": {"piece.start.velocityMps": [5, 5]}, "note": "Thrown clear of the block, it never comes to rest on it."}
         solids = bench({})["solids"] + [{"name": "thing", "group": "bench", "shape": shape}]
-        return campaign.run_campaign(load_data(bench({"sit": trial}, materials=GRIPPY, solids=solids)).path)["trials"]["sit"]
+        return campaign.run_campaign(load_data(bench({"sit": trial}, materials=GRIPPY, solids=solids)))["trials"]["sit"]
 
     def test_a_round_trough_is_wedged_and_the_piece_sits_in_it(self):
         """Catches a round cut being filled in, or a result on its exact flat facets being called a hulled surface."""
@@ -188,8 +188,8 @@ class Calibration(unittest.TestCase):
 
     def test_the_same_method_and_record_surround_a_3d_trial(self):
         """Catches the 3D engine escaping the control, the half-step repeat or the record's engine stamp and assumptions."""
-        path = load_data(bench({"roll": rolling("mujoco")}, materials=GRIPPY)).path
-        trial = campaign.run_campaign(path)["trials"]["roll"]
+        loaded = load_data(bench({"roll": rolling("mujoco")}, materials=GRIPPY))
+        trial = campaign.run_campaign(loaded)["trials"]["roll"]
         self.assertEqual((trial["result"], trial["engine"]["name"], trial["control"]["rejected"], trial["stepComparison"]["converged"]),
                          ("passed", "mujoco", True, True))
         self.assertRegex(trial["engine"]["version"], r"^\d+\.\d+")

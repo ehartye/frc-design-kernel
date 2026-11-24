@@ -15,7 +15,7 @@ from ..builder import placement
 from ..errors import DesignError
 from ..motion import matrix as mx
 from ..source.sourced import span
-from . import carry, scene as scenes
+from . import scene as scenes
 
 KG_MM2 = 1e-6       # kg mm^2 in kg m^2
 ZERO = (0.0, 0.0, 0.0)
@@ -88,7 +88,7 @@ def roll_up(assembly, pose=None, absent=(), places=None):
 
     places ({group: transform}) stands in for the pose, for a point along a motion. Centres are of the nominal masses.
     """
-    figures = carry.figures(assembly)
+    figures = assembly.figures
     places = placement.at_pose(assembly.data, pose) if places is None else places
     found = weights(assembly, absent)
     out = {"pose": pose, **totals(found)}
@@ -138,7 +138,7 @@ def balance(assembly, groups, places, found=None):
     sum of each mass times its point, so it over the mass is the centre of mass at that end. found is weights(assembly)
     when the caller already has it.
     """
-    figures, found = carry.figures(assembly), weights(assembly) if found is None else found
+    figures, found = assembly.figures, weights(assembly) if found is None else found
     kg, moment, unweighed = [0.0, 0.0, 0.0], [ZERO, ZERO, ZERO], []
     for group in groups:
         if group not in found:
@@ -162,7 +162,7 @@ def inertia(assembly, groups, axis, point_mm, pose=None, places=None, found=None
     for group in groups:
         if group not in assembly.data["groups"]:
             raise DesignError("", f'there is no group named "{group}"', f"Known groups: {', '.join(assembly.data['groups'])}")
-    figures = carry.figures(assembly)
+    figures = assembly.figures
     places = placement.at_pose(assembly.data, pose) if places is None else places
     line, point, found = mx.unit(axis), tuple(point_mm), weights(assembly) if found is None else found
     parts, unweighed = [], []

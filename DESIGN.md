@@ -57,8 +57,8 @@ library that a robot project and a tooling plugin can both import.
 frc_design_kernel/
   __init__.py        the public functions: load, build, export
   __main__.py        python -m frc_design_kernel
-  cli.py             the validate, build, measure, screen, try, status and piece-geometry commands
-  status.py          which records are current, which are stale, and why
+  cli.py             the validate, build, measure, screen, try and piece-geometry commands
+  workers.py         worker processes: answers as they finish, and a count from inside each task
   errors.py          DesignError: where, what is wrong, how to fix it
   version.py         library version and commit, for information
   motor.py           the DC motor model, shared by the trials and the electrical measure
@@ -82,14 +82,13 @@ frc_design_kernel/
     checks.py        cross-references: names exist, no loops, no double mass
     motions.py       drives and motions: motor solids, joints, one cause per motion, no loop of chained starts
     sourced.py       a physical input's number and the range it may lie in
-    uses.py          which parameters something depends on
     subsystems.py    what a subsystem file holds, and naming its file in a problem
     load.py          files to checked, plain design
 
   kernel/            thin wrappers over the CAD kernel (OCP). Few lines each.
     shapes.py        box (sharp or rounded), cylinder, cone, sphere, torus, prism, tube
     booleans.py      union, difference, intersection
-    props.py         volume, bounds, validity, solid count, centre of volume
+    props.py         volume, bounds, validity, solid count, centre and second moments of volume
     between.py       the gap between two shapes, shared volume, facing contact area
     section.py       a solid cut by a plane: its outline as segments and arcs
     split.py         a solid with no construction to read, split into convex pieces at its own faces
@@ -106,7 +105,6 @@ frc_design_kernel/
     custom.py        the escape hatch: load, check and report custom code
     placement.py     who is carried by whom; chained starts and drive commands; transforms per group
     assembly.py      the built design: solids as drawn, placed at a pose or along a motion
-    identity.py      enough of a solid's identity to tell later whether it changed
     manifest.py      the manifest
     export.py        write the STEP files and the manifest
 
@@ -126,10 +124,10 @@ frc_design_kernel/
     symmetry.py      what kind of shape a solid is, read from its faces
     compression.py   how deep a solid presses into a ball or ring
     piece_geometry.py  each piece's shape measured on its own: bounds, symmetry, hull, bore
-    run.py           sharing work between worker processes, handed back as each piece finishes
-    jobs.py          the kinds of measuring job: fields, file names, what each draws on, how each is answered
-    records.py       one file per job, written as it finishes; carried while current
-    summary.py       the jobs the measure command asks, and what each kind of job uses besides shapes
+    run.py           a bench: one loaded design to measure, alone or with worker processes, and where the work is
+    jobs.py          the kinds of measuring job: fields, file names, how each is answered
+    records.py       jobs measured on a bench, each answer kept as its own file or returned
+    summary.py       the jobs the measure command asks, and the contacts the design declares
   trials/            the try layer. Reads an Assembly and trial data; writes results. See section 13.
     inputs.py        a trial's case and its physical inputs with their sources
     assumptions.py   what the planar engine cannot see, with stable ids
@@ -154,9 +152,9 @@ frc_design_kernel/
     mujoco_run.py    run that model and report it like a planar run (the only module that imports MuJoCo)
 ```
 
-**Import direction.** `motion` and `motor` import nothing from the rest. `source` imports `motion` (to check
+**Import direction.** `motion`, `motor` and `workers` import nothing from the rest. `source` imports `motion` (to check
 operations). `kernel` imports only OCP and the error type. `builder` imports `source`, `motion` and `kernel`.
-`measure` imports `builder`, `motion`, `motor`, `kernel` and `source`; `trials` does too. Nothing imports upward,
+`measure` imports `builder`, `motion`, `motor`, `kernel`, `source` and `workers`; `trials` does too. Nothing imports upward,
 and nothing imports in a circle. A test enforces the no-circle rule.
 
 ## 4. The design source
@@ -248,8 +246,23 @@ the build refuses and names the entry.
  "place": [{"kind": "translation", "travelMm": [120, 0, 40]}], "massKg": 1.1}
 ```
 
-The file path is relative to the design source. The part is placed, never changed: the build checks that its volume
-is the same after placement. The manifest records the file and its SHA-256 fingerprint.
+The file path is relative to the design source and stays inside its folder. The part is placed, never changed: the
+build checks that its volume is the same after placement. The manifest records the file and its SHA-256 fingerprint.
+
+**Field parts.** A model that several designs share, such as a field element, can live in one folder outside them
+all. The part names it by its plain file name, and whoever loads the design gives the folder:
+
+```json
+{"name": "ramp", "part": {"field": "ramp.step", "solid": "Ramp deck"}}
+```
+
+```python
+kernel.load("design.json", field="path/to/field-models")     # or --field DIR on the command line
+```
+
+Only a file in that folder itself can be named (no folders, no `..`, no absolute path), and nothing else outside the
+design's own folder is reachable. Loaded without the folder, a design with a field part is refused by name. A part has
+`file` or `field`, one of them.
 
 **Repeating.** `each` makes one entry into several. This replaces the "for left and right" loops in hand-written
 builders:
@@ -388,11 +401,12 @@ in configurability." So what the built robot can change is design data too:
 
 `kind` is `mechanical` (a slot, shim or spacer), `spring` (a preload or rate) or `setpoint` (a speed, voltage or
 position set in software). `input` is a design parameter (`parameters.NAME`) or a path into a trial. A mechanical
-adjustment is always a design parameter, so the solids move with it: `measure --extremes` builds and measures the
-design at both ends of each such adjustment, so clearance is known across the range. Only mechanical adjustments are
-measured (a setpoint or a spring moves no solid), only the pairs with a solid that end moves (`moves`), shared between
-the same workers as the rest of `measure`, and only the motions and poses `--motion` and `--pose` name. A trial lists the adjustments
-that apply to it under `adjustments`; the campaign then asks whether they cover its uncertain inputs (section 13.3).
+adjustment is always a design parameter, so the solids move with it: `measure --extremes` builds the design at both
+ends of each such adjustment and measures every motion and pose there in full, shared between the same workers as the
+rest of `measure`, so clearance is known across the range. `--adjustment NAME` measures one adjustment alone. Only
+mechanical adjustments are measured (a setpoint or a spring moves no solid). With `--motion` or `--pose` only those are
+measured at the ends, and the answer is printed, not written. A trial lists the adjustments that apply to it under
+`adjustments`; the campaign then asks whether they cover its uncertain inputs (section 13.3).
 
 ### 4.5d Interactions and what solids are made of
 
@@ -493,9 +507,7 @@ starts at its own placement at the end of that motion, the earlier motion's own 
   earlier motion moved some other way (by typed moves, through poses, or another drive) has its value read from
   its placement.
 - **Known by where it is, never by name.** A chained start is kept as the placement it works out to, with arithmetic
-  noise in the last digits removed. Records of the later motion hold that placement and the joint values (section
-  12.4), not the name of the earlier motion. Changing how the earlier motion gets to its end, without changing where
-  it ends, leaves the later motion's records current.
+  noise in the last digits removed. How the earlier motion gets to its end makes no difference to the later one.
 - A chain that loops back on itself is refused, naming every motion in the loop. A chain is worked out once per
   motion, so a long chain costs one working-out per link.
 
@@ -565,7 +577,7 @@ Each subsystem file (`frc-design-kernel/subsystem@1`, schema `source/subsystem.s
   of the subsystem entries; a subsystem file holds none of the whole-design ones. Each section has one definition,
   in `design.schema.json`, which the subsystem schema refers to.
 - **Merged on load.** The library reads the top file, then each subsystem file in the order listed, and joins their
-  sections into one design. Everything after loading (the build, the measures, the trials, `status`) sees only the
+  sections into one design. Everything after loading (the build, the measures, the trials) sees only the
   merged design.
 - **A name is defined once.** A group, solid, motion, pose, drive, adjustment, interaction or extra mass defined in
   two files is refused, and the message names both files. A solid's name is checked after its `each` rows are
@@ -578,9 +590,9 @@ Each subsystem file (`frc-design-kernel/subsystem@1`, schema `source/subsystem.s
 - **Paths are relative to the top file.** Subsystem files, part files (`part.file`) and custom code
   (`custom/<name>.py`) are all found from the top file's folder, wherever the subsystem file sits. Each subsystem file
   must be inside that folder and listed once.
-- **Where an entry lives changes nothing measured.** Identities and `used` blocks come from the merged design. Solids
-  are known by name and shape, so their order does not matter. Mounts, contacts and extra masses have no order that
-  means anything, so the library keeps them sorted. Moving an entry to another file leaves every record current.
+- **Where an entry lives changes nothing measured.** Solids are known by name, so their order does not matter. Mounts,
+  contacts and extra masses have no order that means anything, so the library keeps them sorted. Moving an entry to
+  another file gives the same records.
 - **Problems name the file.** A problem in a subsystem file is reported as `subsystem "subsystems/carriage.json"
   solids[2] "carriage plate" ...`, with the entry's place in that file.
 - **The source hash covers every file.** `sha256` (`sourceSha256` in records) is the hash of the top file's bytes
@@ -858,7 +870,9 @@ Each row of the result:
 - Pairs that boxes prove far apart get no row. They are counted under `counts`.
 
 Inputs that are data, not looked up from anywhere: `min_gap`; `contacts` (pairs meant to touch, left out and
-counted); `absent` (solids taken out of the scene, such as a cover removed before a part is lifted out); `depth`.
+counted); `absent` (solids taken out of the scene, such as a cover removed before a part is lifted out); `depth`; and
+`focus` (solids to limit the measurement to: only the pairs with one of them in it are measured, and the rest are
+counted under `notInFocus`).
 
 `clearance.at_pose` asks the same of a still pose and lists only the pairs closer than `min_gap`.
 
@@ -879,25 +893,56 @@ counted); `absent` (solids taken out of the scene, such as a cover removed befor
 `attachment` takes its own inputs as data: the touching `gap`, the `floor_z`, solids to `ignore` (a game piece, a
 gauge), a `base` solid, and declared `contacts`. Without a `base`, the largest connected set is the base.
 
-### 12.3 Workers
+### 12.3 The bench, its workers and where the work is
 
-`measure/run.py` shares measuring work between worker processes and does no measuring itself. A clearance along a
-motion is dealt out in shares of its pairs; rows come back in pair order, so the result is the same for any worker
-count (tested). Every other job is one task. Tasks come back as each one finishes, so a job is stored as soon as its
-last task is in. The caller chooses the count. The default is half the machine's cores.
+```python
+from frc_design_kernel.measure import records, run
+with run.Bench(kernel.load("design.json"), workers=4, progress=print) as bench:
+    records.record(bench, jobs, "out")                          # measured and written
+    records.answers(bench, [lift], focus=["hook"])              # only pairs with the hook: returned, never written
+```
+
+A **bench** (`measure/run.py`) is one loaded design, ready to be measured. It does no measuring itself. The design is
+built once in each process that measures, the first time that process is asked something, and the worker processes
+stay for the next asking. `bench.assembly` is the design as built in the caller's process. A clearance along a motion
+is dealt out in shares of its pairs; rows come back in pair order, so the result is the same for any worker count
+(tested). Every other job is one task. A job is done as soon as its last task is in. The caller chooses the worker
+count; the default is half the machine's cores.
+
+**Every asking is measured.** Nothing is kept from one asking to the next, and no file is read to decide anything.
+The one thing shared inside one asking: a pair that keeps its relative pose is measured once per process for all the
+motions of that asking (12.6b).
+
+**Stopping early.** An error raised in a `report` callback (or closing the generator `bench.answers` gives) stops the
+run at once: what was finished is kept, tasks not started are dropped, and worker processes are ended rather than
+waited for.
+
+**Progress.** `progress`, when given to the bench, is called in the caller's thread with where the work is, at most
+every `every_s` seconds (0.5) from each process, and once more as each task ends:
+
+```json
+{"job": "clearance.motion.lift", "process": 8124, "processDone": 1200, "processOf": 6757, "done": 4810, "of": 27028}
+```
+
+`done` of `of` is the whole job, over every process working on it; `processDone` of `processOf` is the share of the one
+that spoke. They are pairs for a clearance or an attachment (for a pose, the pairs near enough to measure), and one
+question for any other job. At an adjustment's end the event also has `adjustment` and `setting`. A worker that is
+stuck is a count that stops rising. The counts never reach a record. On the invented design of 12.4 they cost nothing
+that can be measured (under 1 % of a run, which is less than two runs differ).
 
 ### 12.4 The records: one file per job
 
 Every measurement is a **job**: one question about a design, given as plain data. A tool that judges a design asks
-for the jobs it needs, and the library keeps each answer as its own file:
+for the jobs it needs, one or many, and the library keeps each answer as its own file:
 
 ```python
-from frc_design_kernel.measure import records
-records.record("design.json", [
-    {"kind": "clearance", "motion": "lift", "minGapMm": 1.0, "includeStill": True},
-    {"kind": "reach", "motion": "lift", "pair": ["hook", "bar"], "withinMm": 2.0, "window": [0.9, 1.0]},
-    {"kind": "indentation", "motion": "squeeze", "piece": "ball", "contact": "roller", "maxDepthMm": 4.0},
-], "out", workers=4)
+from frc_design_kernel.measure import records, run
+with run.Bench(kernel.load("design.json"), workers=4) as bench:
+    records.record(bench, [
+        {"kind": "clearance", "motion": "lift", "minGapMm": 1.0, "includeStill": True},
+        {"kind": "reach", "motion": "lift", "pair": ["hook", "bar"], "withinMm": 2.0, "window": [0.9, 1.0]},
+        {"kind": "indentation", "motion": "squeeze", "piece": "ball", "contact": "roller", "maxDepthMm": 4.0},
+    ], "out")
 ```
 
 writes `out/measurements/clearance.motion.lift.json`, `out/measurements/reach.lift.hook.bar.json` and
@@ -917,7 +962,7 @@ writes `out/measurements/clearance.motion.lift.json`, `out/measurements/reach.li
 `contacts` is `"declared"` (the source's declared contacts for that motion, or those declared for every motion at a
 pose, each with both solids present) or a list of pairs. A job with `displace` is a control (12.6b); it names its
 own `contacts`, usually `[]`. A field the kind does not have, a missing one, or a motion, pose or solid that is not
-in the design is refused, naming the job by its place in the list.
+in the design is refused before anything is measured, naming the job by its place in the list or its id.
 
 **File names.** A job's id is its file name: the kind, then what it is about, each name in lower case with anything
 else turned into a dash: `clearance.motion.lift`, `clearance.pose.raised`, `clearance.drawn`,
@@ -928,134 +973,64 @@ digits, dots, dashes and underscores). Two jobs with the same id in one list are
 **One job file:**
 
 ```json
-{"schema": "frc-design-kernel/measurement-job@1",
+{"schema": "frc-design-kernel/measurement-job@2",
  "generator": {"library": "frc-design-kernel", "version": "...", "commit": "..."},
  "id": "indentation.squeeze.ball.roller",
  "job": {"kind": "indentation", "motion": "squeeze", "piece": "ball", "contact": "roller", "maxDepthMm": 4.0,
          "absent": [], "depth": 9},
- "inputs": {"rules": {"maxDepthMm": 4.0, "depthLimit": 9},
-            "solids": {"ball": "3f9c0d2a71b84e65", "roller": "a07e5b1c9d2f3846"}},
- "used": {},
- "checked": {"measured": "whole"},
  "result": {"motion": "squeeze", "piece": "ball", "contact": "roller", "deepestMm": 2.0, "t": 1.0, "...": "..."}}
 ```
 
-- `job` is the question with every field filled in.
-- `inputs.rules` are the caller's numbers the answer depends on; `inputs.solids` the identity (12.4a) of every solid
-  the answer depends on: every solid present for a clearance, a withdrawal or an attachment (the ignored ones left
-  out), the two named solids for a reach or an indentation, and for a mass the solids whose shape the roll-up uses
-  (those with a mass, and every member of a group with a lump mass or with extra mass, which sits at the centre of
-  its group's volume).
-- `used` holds the other design facts the answer depends on: for every job along a motion, the motion's resolved
-  `start` (each group's whole placement at `t` = 0, carriers included, as 12 numbers, groups as drawn left out) and
-  its `joints` (each commanded joint, by its group: `kind`, and the values it goes `from` and `to`), so a chained start
-  is known by where it is and never by the motion it starts after, and a renamed drive changes nothing; a
-  clearance's declared `contacts`; an attachment's
-  `contacts`, `mounts` (notes left out), `fixtures` and a digest of which group each solid is in; a mass's `masses`,
-  `massRanges`, `groupMasses` (each as value, low, high), `extraMass` (notes left out of the comparison),
-  `unweighed` and the same group digest. A change to a range alone, or to any weight with no solid, makes it stale.
-  An electrical job's are in 12.7.
-- `checked` says what this run did: for a clearance, the pairs measured and carried (12.4a); for an attachment, its
-  touching pairs and mounts measured and carried; for the others `{"measured": "whole"}`.
+- `job` is the question with every field filled in, the caller's numbers among them.
 - A clearance also has `counts`: every pair, under exactly one of `declaredContacts`, `bothStill`, `farApart`,
-  `fixedFarApart`, `measured` and `notInFocus`.
-- `result` is the measure's own answer (12.1, 12.2), without the parts above.
+  `fixedFarApart`, `measured` and `notInFocus` (0 in a file).
+- `result` is the measure's own answer (12.1, 12.2, 12.7).
+- There is no date. The same figures write the same bytes, so a run that finds nothing new changes no file.
 
 **What a clearance file keeps.** Only the rows of pairs that needed more than the broad phase to settle: a pair
 closer than the gap, a pair not settled, and a pair whose proven floor (`lowerBoundMm`) is under the gap plus
 `nearMm`. A pair proven farther than that is counted under `measured`, not stored. `closest` is the closest kept row,
 or `null` when none is kept. With the default `nearMm` of 0 a file holds the failures and their witnesses only; a
-tool that wants near misses on a page asks for a band. On a carry a pair with no stored row is counted again by the
-broad phase, which is cheap, so a carried file still equals a fresh one. On an invented design of 228 solids, 74
-motions and 8 poses, the 106 jobs a judging tool asks for take 1.3 MB, most of it the solid identities.
+tool that wants near misses on a page asks for a band. On an invented design of 228 solids, 74 motions and 8 poses,
+the 106 jobs a judging tool asks for take 0.37 MB.
 
 **Written as each job finishes.** A job's file is written whole the moment its job is done: into a temporary file
 beside it, then moved into place. A run is partial when a job asked for has no file; there is no flag and no file
 rewritten as a whole. A stopped or failed run keeps every job it finished.
 
-**Carried while current.** `record()` reads each job's file first. A job is **current** when its file's `job`,
-`inputs` and `used` are what the design gives now, and it was measured whole (not under a focus alone). A current
-job is carried: not measured and not written again, so its file's bytes do not change. Any other job is measured,
-carrying from its earlier file what it can (12.4a), and its file is replaced. `carry=False` measures every job
-afresh. `records.check(source, jobs, folder)` says, without measuring, which of the jobs asked are current, stale
-(with what changed) or missing. Files of jobs that are not asked for are left alone.
+**Asked is measured.** `record()` measures every job it is asked, every time, whatever files are there, and replaces
+each job's file. Files of jobs that are not asked for are left alone. It returns one entry per job, in job order:
+`{"id", "kind", "file", "record"}`, and calls `report(entry)`, when given, as each job finishes. Asking for one job, or
+the jobs of one motion, is the same call with a shorter list.
 
-`record()` returns one entry per job, in job order: `{"id", "kind", "action": "carried" | "measured", "file",
-"record"}`, and calls `report(entry)`, when given, as each job is carried or finished.
+**Limited to named solids.** `records.answers(bench, jobs, focus=[...])` measures only the pairs with one of the named
+solids in them. Only a clearance can be limited. The answer is returned and never written, so it cannot stand in for a
+full record: each record in the entries has `focus`, the names, and its counts say under `notInFocus` how many pairs
+were left out. Without `focus`, `answers` measures jobs in full and returns them without writing them.
 
 **The command.**
 
 ```
 python -m frc_design_kernel measure SOURCE --out DIR [--min-gap MM] [--touch-gap MM] [--floor-z MM]
                                                      [--ignore SOLID] [--workers N] [--depth N] [--near MM]
-                                                     [--motion NAME] [--pose NAME] [--extremes]
-                                                     [--carry] [--focus SOLID]
+                                                     [--motion NAME] [--pose NAME] [--field DIR]
+                                                     [--extremes] [--adjustment NAME]
+python -m frc_design_kernel measure SOURCE --focus SOLID [--motion NAME] [--pose NAME] ...
 ```
 
 records a clearance job along every motion, an electrical job for every motion that commands a drive or lists one
 under `alsoRunning`, and a clearance, an attachment and a mass job as drawn and at every pose (only those named with `--motion` and `--pose`), into `DIR/measurements/`. It prints one line per job as it
-finishes, with numbers and counts, not verdicts, and then how many it wrote and how many were carried. `--extremes`
-also writes `DIR/adjustments.json` (section 4.5c).
+finishes, with numbers and counts, not verdicts, and then how many it wrote. `--extremes` also measures every
+adjustment's ends and writes `DIR/adjustments.json` (section 4.5c); `--adjustment NAME` measures only that adjustment's
+ends and puts them into the file, keeping the others. `--focus` measures only the clearance of the pairs with that
+solid in them, prints it and writes nothing.
 
-### 12.4a Measuring again only what changed
+### 12.4a Nothing here works out what changed
 
-A pair's clearance depends only on its two solids, where each stands along the motion (or at the pose), and the
-rules it was measured under. So every clearance result (`clearance.along`, `clearance.at_pose`, each
-`run.clearances` job, each clearance job file) records its `inputs`:
-
-```json
-"inputs": {"rules": {"minGapMm": 1.0, "depthLimit": 9, "includeStill": true, "nearMm": 0.0},
-           "solids": {"arm": "3f9c0d2a71b84e65", "post": "a07e5b1c9d2f3846"}}
-```
-
-(`nearMm` is a rule of a job file only.) Each solid's identity is a short digest of figures the build already
-produces: its volume, the centre of its volume, its second moments of volume about that centre and its bounding box
-as drawn; its group's whole placement along that motion or at that pose (carriers included); and any `displace`
-shift. A solid absent from the case has no entry. At a pose the rules are the gap alone. No file bytes, names,
-notes, status words or versions enter it, so a renamed design, a renamed solid or an edited note changes no
-identity. The one limit: two different shapes with the same volume, centre, second moments and box would be taken
-for the same solid.
-
-Given an earlier result of the same question (`earlier=`, the job field `"earlier"`, or the job's file), only these
-are measured:
-
-- every pair with a solid whose identity changed, a new solid, or a solid named in `focus`;
-- every pair whose declared contact changed (`measuredPairs`).
-
-Every other pair is carried: its earlier row, if it had one, under its current names, and its place in `counts`
-worked out as a full measurement would put it (contact, both still, or by the broad phase: far, fixed and far, or
-measured), so the merged result equals a full measurement of the design as it is now. A renamed solid is found by
-its identity alone and its rows are carried under the new name. A result with nothing to measure is not handed to a
-worker at all. Every pair is measured when the rules differ, when the earlier result records no inputs, or when it
-was only part measured.
-
-Each result says what it did in `checked`:
-
-```json
-"checked": {"measuredSolids": ["arm"], "measuredPairs": [], "pairsMeasured": 7, "pairsCarried": 21,
-            "pairsNotMeasured": 0, "renamed": {}}
-```
-
-`measuredSolids` is `null` when every pair was measured. `pairsMeasured` counts the pairs looked at now, including
-those that boxes proved far apart (`counts.measured` is only the pairs that needed more than the boxes). `focus`
-without an earlier result measures only the focus solids' pairs and leaves the rest out (`pairsNotMeasured`); such
-a result is never carried from.
-
-Attachment, mass, reach, indentation, withdrawal and electrical jobs are carried whole when current. A stale attachment still
-carries from its earlier file: the touching gaps and mount distances of pairs of unchanged solids are copied, only
-pairs and mounts with a changed solid are measured, and the sets, loose solids and fixtures are worked out again
-from them. Its `checked` gives `pairsMeasured`, `pairsCarried`, `mountsMeasured` and `mountsCarried`, or
-`{"measured": "whole"}` when nothing could be carried (such as across a new touching gap). The others are measured
-whole when stale.
-
-`measure --carry` carries from the job files already in `DIR/measurements/` (it refuses when there is no such
-folder); `--focus SOLID` measures that solid's pairs again as well, or, without `--carry`, only those. Both print,
-for each clearance measured, how many pairs were measured and how many carried.
-
-On a design of about 230 solids, 74 motions and 75 poses, the decision costs well under a second beyond the build
-(about 3 s); one solid moved measures its pairs along all 74 motions in about 12 s with four workers, and its pairs,
-touching gaps and mounts at a pose in about 0.2 s, where a whole pose takes about 35 s for clearance and 40 s for
-attachment.
+The library does not decide what to measure or try, or whether an earlier answer still stands, from anything that
+changed. It keeps no fingerprint of a solid, no list of what an answer used and no state of a record, and no earlier
+record decides anything. What is asked is measured, every time. A tool that keeps results and wants to know how old
+they are keeps its own dates.
 
 ### 12.5 For tools that only know the three old operations
 
@@ -1080,12 +1055,15 @@ good or bad, and nothing says which engine to use.
 | Not rigid | The involved solids whose `material` is compliant or flexible, with what was declared. |
 | Echoed | `approach` and `targetOffPlane`, as declared. |
 
+It also states what a 3D engine would need settled in the whole design (section 15.2), under `readyFor3d`. That is
+advice for an author who is thinking of a fuller trial.
+
 ### 12.6b For other tools
 
 - `attachment.at_pose(..., pairs=False)` gives the connected sets, loose solids and fixtures off the floor without
   the full list of touching pairs, measuring only what the sets need. It is much quicker on a detailed scene.
-- A pair that keeps its relative pose is measured once per process and remembered by the two solids and where each
-  stands, so the same pair in another motion costs nothing.
+- A pair that keeps its relative pose is measured once per process and asking, and remembered by the two solids and
+  where each stands, so the same pair in another motion of that asking costs nothing.
 
 - `clearance.along(..., displace={solid: [dx, dy, dz]})` and the job field `"displace"` shift named solids for one
   question, with no second source file: a control that shows a check can report an interference.
@@ -1139,8 +1117,7 @@ A `custom` shape is refused, because it needs a design folder and its code (sect
 | `hullMm`, `hullToleranceMm` | The corners of a convex hull that holds the whole solid, and how far it was grown (below). |
 | `bore` | A hole straight through, by the one rule below, or `null`. |
 
-`used` gives the library version and the meshing the hull was made with. The `status` command does not read this
-record: there is no design source to compare it with.
+`used` gives the library version and the meshing the hull was made with.
 
 **Exit codes.** 0 when every shape was measured. 1 when any shape failed: the file is still written, and each failed
 shape gets one line on stderr, `Error: where: problem. Fix: fix`. 1 also when the file is missing, cannot be read
@@ -1217,7 +1194,7 @@ a disc with a hole drilled off its centre is not a body of revolution (`general`
 - **Weight limits and electrical budgets.** The library states the mass and its range, the currents and the bus
   voltage; comparing them with a limit or a minimum is a judging tool's work.
 - **Electrical physics beyond the bus.** Heat, a breaker's trip curve and how long a current lasts (decision 24).
-- **Progress lines, receipts and advice text.**
+- **Progress lines, receipts and advice text.** Where a run is comes as data (12.3); what to show of it is a caller's work.
 - **Line-of-sight checks** and the advisory test for a solid that turns about its own axis. They can be added as
   measures when a second project needs them.
 
@@ -1272,19 +1249,10 @@ under the high current.
 peaks came at once, and a motor's winding current is counted as drawn from the bus in full (decision 24). Efficiency
 divides the torque whichever way the load turns the gear.
 
-**One job file** (`electrical.<motion>`; `job`, `inputs`, `checked` as in 12.4):
+**One job file** (`electrical.<motion>`; see 12.4):
 
 ```json
 {"job": {"kind": "electrical", "motion": "raise", "samples": 32},
- "inputs": {"rules": {"samples": 32}, "solids": {"arm bar": "1f0e9a2b3c4d5e6f"}},
- "used": {"start": {}, "joints": {"arm": {"kind": "rotation", "from": 0.0, "to": 30}},
-          "masses": {"arm bar": 2.0}, "massRanges": {"arm bar": [2.0, 2.0]}, "groupMasses": {}, "extraMass": [],
-          "unweighed": [], "groups": "9a8b7c6d5e4f3a2b",
-          "drives": {"pivot": {"motor": {"ktNmPerA": [0.02, 0.019, 0.021], "ohm": [0.05, 0.045, 0.06], "keVsPerRad": [0.02, 0.019, 0.021]},
-                               "gear": 60, "count": 1, "efficiency": [0.9, 0.85, 0.95], "limits": {"supplyLimitA": 40},
-                               "joint": {"group": "arm", "kind": "rotation", "axis": [0, -1, 0], "originMm": [0, 0, 500], "travel": [-10, 120]}}},
-          "durationS": [0.5, 0.4, 0.7], "extraLoad": {}, "alsoRunning": [],
-          "battery": {"openCircuitV": [12.6, 12.2, 12.9], "resistanceOhm": [0.02, 0.015, 0.03]}},
  "result": {"motion": "raise", "profile": "triangle: ...", "samples": 32, "durationS": {"value": 0.5, "range": [0.4, 0.7]},
             "drives": {"pivot": {"group": "arm", "kind": "rotation", "moved": ["arm"], "count": 1, "change": 30.0,
                                  "load": {"unit": "N m", "gravity": {...}, "acceleration": {...}, "extra": {...}, "hold": {...}, "peak": {...}},
@@ -1295,15 +1263,6 @@ divides the torque whichever way the load turns the gear.
             "bus": {"loadA": {...}, "openCircuitV": [12.6, 12.2, 12.9], "resistanceOhm": [0.02, 0.015, 0.03], "volts": {...}},
             "conservative": "conservative: each drive's peak current is added ..."}}
 ```
-
-**What it uses** (`used`): the motion's resolved `start` and `joints` (12.4); the moved groups' weights (`masses`,
-`massRanges`, `groupMasses`, `extraMass`, `unweighed`, the group digest); each drive in the load (its motor's
-figures, `gear`, `count`, `efficiency`, `limits`, and a commanded drive's `joint`); `durationS`, `extraLoad` and
-`alsoRunning`; and the battery's two figures. `inputs.solids` holds the identities of the moved groups' robot
-solids. Each sourced figure is kept as (value, low, high) and notes are left out, so a note edit, or the weight of a
-solid the motion does not move, leaves the record current, and a changed mass, range, motor, gear, duration, drive
-beside it or battery figure makes it stale. The result names each drive, so a renamed drive does too. The job takes
-a few milliseconds beyond the build, so it is carried whole or measured whole.
 
 **What it does not say.** Whether the bus is high enough, or a current low enough, is for a tool that judges. The
 library compares nothing with a minimum.
@@ -1416,9 +1375,23 @@ anything runs; `--estimate` prints it and stops; `--max-steps` refuses a larger 
 runs made, the steps run and the seconds spent. How long a campaign ought to take is a judgement that lives
 elsewhere; the library reports the numbers.
 
+**Progress.** `run_campaign(design, ..., progress=...)` hears where the campaign is from inside every run, worker
+processes included, at most every `every_s` seconds (0.5) from each process:
+
+```json
+{"trial": "seat", "run": "nominal", "process": 8124, "step": 41000, "ofSteps": 120000,
+ "trialRunsDone": 2, "trialRunsAtMost": 11, "runsDone": 13, "runsAtMost": 40}
+```
+
+`ofSteps` is the most the run can take (a run that reaches a stop event ends early), and `runsAtMost` the most the
+campaign can. `report(name, trial)` hears each trial's part of the record as it finishes; an error raised there stops
+the campaign and ends the worker processes.
+
 ### 13.5 The record
 
-`try SOURCE --out DIR` writes `DIR/trials.json`, schema `frc-design-kernel/trial-campaign@2`. Per trial:
+`try SOURCE --out DIR` writes `DIR/trials.json`, schema `frc-design-kernel/trial-campaign@3`: the library version, the
+design's name and file, what the campaign cost, the custom code used, and the trials. There is no date and no
+fingerprint of the source, so the same figures write the same bytes. Per trial:
 
 - `engine`: the engine's name and version.
 - `definition`: the trial with the pieces, materials, motors and drives it drew on, as run.
@@ -1427,7 +1400,6 @@ elsewhere; the library reports the numbers.
   unstated.
 - `saw`: the section plane, the section taken of the piece, each solid that was cut and how many segments and arcs
   it gave, and any surface that was typed in.
-- `used`: what the trial depended on, for the status command (section 14).
 - `result`, `findings`; the `nominal` run with a **replayable trace** and contact rows per surface; `stepComparison`;
   `control`; `ranges` (per input: held or flipped, and between which values); `grid`; `sensitivity`.
 - `handForward`: the nominal inputs, the range each input held over, the marginal edges, the sensitivity order, the
@@ -1440,8 +1412,10 @@ elsewhere; the library reports the numbers.
   `turnDeg` and `atS` have one entry per kept point. Only the turn in the plane is fitted, and a turn made standing
   still shows as `maxTurnDeviationDeg` rather than being written.
 
-The same source gives the same record. `try --trial NAME` runs only that trial (and any it starts after) and puts
-the result into an existing `trials.json`, keeping the rest.
+The same source gives the same record. `try --trial NAME` runs that trial and any it starts after, in the same run,
+every time it is asked, and puts the results into an existing `trials.json`, leaving the other trials there as they
+are. A trial that starts after another always starts from the end that one reached in this run, never from a saved
+result.
 
 ### 13.6 The escape hatch for trials
 
@@ -1483,40 +1457,12 @@ Not expressible yet, each a known gap and not a place for project code to hide:
 - A rope, winch or spring between bodies.
 - Anything in three dimensions.
 
-## 14. Records say what they used
+## 14. Working in stages
 
 The intended way of working is in stages: arrange and measure, then planar trials, then a fuller check on the
-settled layout. When a later stage finds a problem, the author changes the design source and comes back up, running
-again only what the change touched. To make that possible:
-
-- Every measurement job record carries its `inputs` (its rules and the identity of each solid its answer depends
-  on) and a `used` block (the other design facts it depends on: contacts, mounts, fixtures, masses, and for an
-  electrical load its drives, the battery and what runs beside it), sections 12.4 and 12.7.
-  Every trial record carries a `used` block: the solids it drew on, each with its group, kind, volume, bounding box
-  as drawn and mass; the motions it follows, as their resolved stages (so a chained start counts by where it is),
-  and the pose; the parameters its numbers were worked out from, with their values.
-- `python -m frc_design_kernel status SOURCE DIR` works those out again from the source as it is now, for every job
-  file under `DIR/measurements/` and every trial in `DIR/trials.json`, and prints, per record, `current` or
-  `stale` and what changed: `solid "belt bed" changed`, `massRanges "gate" changed: [0.2, 0.2] to [0.3, 0.3]`, `the motion
-  "lift" is no longer in the source`, `parameter "squeeze" changed: 20 to 15`, `the trial definition changed at
-  materials.tread.friction.value`. Plain facts. It does not say whether to run anything again, and it decides from
-  what each record's answer depends on, never from file bytes. It ends with how long it took, the build included:
-  0.4 s on the 228-solid design of section 12.4, and about 2 s expected on a design whose build reads a large STEP
-  file. `status()` returns the same as `seconds`.
-- A design's name and every `note` are outside all identities. Renaming a design or editing a note makes nothing
-  stale.
-- A targeted rerun is one command: `measure --motion NAME` or `--pose NAME`, and `try --trial NAME`. Each writes
-  only its own records and keeps the rest.
-- `measure --carry` goes further: a current job is not measured at all, and inside every stale clearance it
-  measures only the pairs whose solids, placements, rules or declared contacts changed, carries the rest, and says
-  which (section 12.4a). It decides from figures the build already produces, so the decision takes seconds and a
-  rename or a note measures nothing.
-
-A clearance along a motion, a withdrawal and an attachment use every solid present: any of them may be the obstacle
-or the support. A reach or an indentation uses its two named solids, and a mass the solids it weighs. A trial uses
-only the solids its plane cut.
-
-`status` also prints the facts a 3D engine would need settled (section 15).
+settled layout. When a later stage finds a problem, the author changes the design source and comes back up. Whoever
+runs the library chooses what to run: one job, one motion, the pairs with one solid, one adjustment's ends, one trial,
+or everything. What is asked is run, every time (12.4a). The library never works out which parts an edit touched.
 
 ## 15. When to go beyond planar, and what planar hands on
 
@@ -1544,7 +1490,7 @@ trials with no re-authoring.
    the same solids.
 4. **Drives are declared on solids**: this solid turns about this axis, driven by this motor through this gear.
 5. **Assumptions have ids.** A trial's list is the list of things a fuller engine should test.
-6. **Readiness is reported as plain facts** by `status`: trial solids that are concave with no convex breakdown to
+6. **Readiness is reported as plain facts** by `screen`, as advice: trial solids that are concave with no convex breakdown to
    be had from how they were built; solids with no mass; moving groups that are not one hinge or one slider (they
    would have to be driven along a path); drives not tied to a solid; trial surfaces that were typed in; and pieces
    whose shape is not a ball, a cylinder, a tube or a sharp box (`piecesNotPrimitive`), a box with rounded edges

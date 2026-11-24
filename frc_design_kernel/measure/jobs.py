@@ -1,20 +1,15 @@
-"""Measuring jobs: the kinds of question, their fields, their file names, what each draws on, and how each is answered.
+"""Measuring jobs: the kinds of question, their fields, their file names, and how each is answered.
 
 A job is one question about a design, given as plain data: {"kind": "reach", "motion": "lift", "pair": [a, b],
-"withinMm": 3}. Its rules (the caller's numbers) and the identities of the solids its answer depends on are its
-"inputs"; the other design facts it depends on are its "used" block (see summary). Two jobs with equal inputs and
-used blocks have equal answers, so a job whose record has both unchanged is carried whole, and a clearance whose
-solids partly changed measures only the pairs that did (see carry).
-
-Every kind is a row of KINDS: its target (a motion or a pose) and its fields with their defaults. A new kind adds a
-row there and a branch in drawn_on, perform and finish.
+"withinMm": 3}. Every kind is a row of KINDS: its target (a motion or a pose) and its fields with their defaults. A
+new kind adds a row there and a branch in perform and finish.
 """
 import hashlib
 import re
 
-from ..builder import placement
 from ..errors import DesignError
-from . import approach, attachment, carry, clearance, compression, electrical, mass, summary
+from ..workers import silent
+from . import approach, attachment, clearance, compression, electrical, mass, scene as scenes, summary
 from .search import DEFAULT_DEPTH
 
 REQUIRED = "required"
@@ -113,75 +108,52 @@ def named_solids(job):
             *(job[key] for key in ("piece", "contact", "base") if job.get(key) is not None)]
 
 
-def present(assembly, job):
+def present(data, job):
+    """The solids of the design present for a job, sorted; refuses a job that names a solid the design does not have."""
+    names = {solid["name"] for solid in data["solids"] + data["fixtures"]}
     for name in named_solids(job):
-        if name not in assembly.solids:
-            raise DesignError("", f'the job names the solid "{name}", which is no longer in the design', "Name a solid of the design")
-    return sorted(set(assembly.solids) - set(job["absent"]))
+        if name not in names:
+            raise DesignError("", f'names the solid "{name}", which is not in the design', "Name a solid of the design")
+    return sorted(names - set(job.get("absent", ())))
 
 
-def drawn_on(assembly, job):
-    """(inputs, used) of a normalized job on a built design: its rules and solid identities, and the other facts it uses."""
-    if job["kind"] == "electrical":
-        return summary.used_by_electrical(assembly, job["motion"], job["samples"])
-    kind, names, data = job["kind"], present(assembly, job), assembly.data
-    if "motion" in job:
-        solids = carry.along(assembly, job["motion"], job["absent"], job.get("displace") or None)
-    else:
-        solids = carry.at_pose(assembly, job["pose"], job["absent"])
-    used = placement.described(data, job["motion"]) if "motion" in job else {}
-    if kind == "clearance" and "motion" in job:
-        rules = dict(clearance.rules(job["minGapMm"], job["depth"], job["includeStill"]), nearMm=job["nearMm"])
-        used["contacts"] = [list(pair) for pair in summary.resolved_contacts(data, job, set(names))]
-    elif kind == "clearance":
-        rules = {"minGapMm": job["minGapMm"]}
-        used = {"contacts": [list(pair) for pair in summary.resolved_contacts(data, job, set(names))]}
-    elif kind == "reach":
-        rules, solids = {"withinMm": job["withinMm"], "window": job["window"], "depthLimit": job["depth"]}, {n: solids[n] for n in sorted(job["pair"])}
-    elif kind == "indentation":
-        rules, solids = {"maxDepthMm": job["maxDepthMm"], "depthLimit": job["depth"]}, {n: solids[n] for n in sorted({job["piece"], job["contact"]})}
-    elif kind == "withdrawal":
-        rules = {}
-    elif kind == "attachment":
-        rules = {key: job[key] for key in ("touchGapMm", "floorZMm", "base", "pairs")} | {"ignored": job["ignore"]}
-        kept = [name for name in names if name not in set(job["ignore"])]
-        solids, used = {name: solids[name] for name in kept}, summary.used_by_attachment(assembly, job, kept)
-    else:
-        rules, used = {}, summary.used_by_mass(assembly, names)
-        solids = {name: solids[name] for name in summary.weighed(assembly, names)}
-    return {"rules": rules, "solids": solids}, used
-
-
-def earlier_form(held):
-    """A stored job record as the measuring functions take an earlier result to carry from, or None for kinds that carry whole."""
-    kind = held["job"]["kind"]
+def perform(assembly, job, focus=None, meter=silent):
+    """Answer one whole job (every kind but a clearance along a motion, which is shared). meter hears how far it is."""
+    kind, data = job["kind"], assembly.data
+    contacts = summary.resolved_contacts(data, job, set(present(data, job))) if "contacts" in job else ()
     if kind == "clearance":
-        return {**held["result"], "inputs": held["inputs"], "checked": held["checked"], "counts": held["counts"]}
+        return clearance.at_pose(assembly, job["pose"], job["minGapMm"], contacts, job["absent"], focus, meter)
     if kind == "attachment":
-        fixtures = set(held["used"]["fixtures"])
-        return {"inputs": {"touchGapMm": held["inputs"]["rules"]["touchGapMm"],
-                           "solids": {name: value for name, value in held["inputs"]["solids"].items() if name not in fixtures}},
-                "touching": held["result"]["touching"], "mounts": held["result"]["mounts"]}
-    return None
-
-
-def perform(assembly, job):
-    """Answer one job that is not shared between workers (every kind but a clearance along a motion)."""
-    kind, earlier = job["kind"], job.get("earlier")
-    if kind == "clearance":
-        return clearance.at_pose(assembly, job["pose"], job["minGapMm"], job["contacts"], job["absent"], focus=job.get("focus"), earlier=earlier)
+        return attachment.at_pose(assembly, job["pose"], job["touchGapMm"], job["floorZMm"], job["ignore"], job["base"], contacts,
+                                  job["absent"], job["pairs"], meter)
+    meter(0, 1)
     if kind == "reach":
-        return approach.reach(assembly, job["motion"], job["pair"], job["withinMm"], tuple(job["window"]), job["absent"], job["depth"])
-    if kind == "indentation":
-        return compression.indentation(assembly, job["motion"], job["piece"], job["contact"], job["maxDepthMm"], job["absent"], job["depth"])
-    if kind == "withdrawal":
-        return approach.withdrawn(assembly, job["motion"], job["absent"])
-    if kind == "attachment":
-        return attachment.at_pose(assembly, job["pose"], job["touchGapMm"], job["floorZMm"], job["ignore"], job["base"], job["contacts"],
-                                  job["absent"], job["pairs"], earlier)
-    if kind == "electrical":
-        return electrical.measured(assembly, job["motion"], job["samples"])
-    return mass.roll_up(assembly, job["pose"], job["absent"])
+        found = approach.reach(assembly, job["motion"], job["pair"], job["withinMm"], tuple(job["window"]), job["absent"], job["depth"])
+    elif kind == "indentation":
+        found = compression.indentation(assembly, job["motion"], job["piece"], job["contact"], job["maxDepthMm"], job["absent"], job["depth"])
+    elif kind == "withdrawal":
+        found = approach.withdrawn(assembly, job["motion"], job["absent"])
+    elif kind == "electrical":
+        found = electrical.measured(assembly, job["motion"], job["samples"])
+    else:
+        found = mass.roll_up(assembly, job["pose"], job["absent"])
+    meter(1, 1)
+    return found
+
+
+def perform_share(assembly, job, share, focus=None, memo=None, meter=silent):
+    """One share of a clearance along a motion."""
+    scene = scenes.for_motion(assembly, job["motion"], job["absent"], job["displace"] or None)
+    contacts = clearance.declared(summary.resolved_contacts(assembly.data, job, set(scene.names)), scene.names)
+    return clearance.share_of(scene, job["minGapMm"], contacts, job["depth"], share, job["includeStill"], memo, None if focus is None else set(focus), meter)
+
+
+def combined(data, job, focus, parts):
+    """The answer of a clearance along a motion, from its shares."""
+    names = present(data, job)
+    contacts = clearance.declared(summary.resolved_contacts(data, job, set(names)), names)
+    head = clearance.header("motion", job["motion"], job["minGapMm"], job["depth"], contacts, job["absent"], job["includeStill"], job["displace"] or None, focus)
+    return clearance.combine(parts, head)
 
 
 def kept(row, min_gap, near):
@@ -195,17 +167,12 @@ def stored_clearance(found, near):
     rows = [row for row in found["pairs"] if kept(row, found["minGapMm"], near)]
     with_gap = [r for r in rows if r["gapMm"] is not None]
     closest = min(with_gap, key=lambda r: (r["gapMm"], -r["overlapMm3"], r["pair"])) if with_gap else None
-    result = {key: value for key, value in found.items() if key not in ("inputs", "checked", "counts")}
+    result = {key: value for key, value in found.items() if key not in ("counts", "focus")}
     result.update(pairs=rows, nearMm=near,
                   closest=closest and {"pair": closest["pair"], "gapMm": closest["gapMm"], "t": closest["t"], "overlapMm3": closest["overlapMm3"]})
-    return found["checked"], found["counts"], result
+    return found["counts"], result
 
 
 def finish(job, found):
-    """(checked, counts or None, result) of a job's answer, as its record stores them."""
-    if job["kind"] == "clearance":
-        return stored_clearance(found, job.get("nearMm", 0.0))
-    if job["kind"] == "attachment":
-        result = {key: value for key, value in found.items() if key not in ("inputs", "checked")}
-        return found["checked"] or {"measured": "whole"}, None, result
-    return {"measured": "whole"}, None, found
+    """(counts or None, result) of a job's answer, as its record stores them."""
+    return stored_clearance(found, job.get("nearMm", 0.0)) if job["kind"] == "clearance" else (None, found)

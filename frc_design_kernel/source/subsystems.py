@@ -34,16 +34,6 @@ def check_present(data, parts):
             raise DesignError("subsystems", f'no subsystem file holds any "{key}"', f'Add "{key}" to the subsystem file they belong to')
 
 
-def merged(raw, parts):
-    """The top file with every subsystem file's sections joined in, as written: for asking which parameters something used."""
-    out = dict(raw)
-    for _, body, _ in parts:
-        for key in SECTIONS:
-            if key in body:
-                out[key] = out.get(key, []) + body[key] if isinstance(body[key], list) else {**out.get(key, {}), **body[key]}
-    return out
-
-
 def placed(problem, origins):
     """The same problem, its place given in the subsystem file that holds the entry, when one does."""
     found = PLACE.match(problem.where or "")

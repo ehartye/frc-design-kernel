@@ -617,12 +617,15 @@
         "part": {
           "type": "object",
           "required": [
-            "file",
             "solid"
           ],
           "additionalProperties": false,
           "properties": {
             "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "field": {
               "type": "string",
               "minLength": 1
             },

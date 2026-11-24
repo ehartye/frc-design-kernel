@@ -162,15 +162,6 @@ def at_motion(data, motion, t):
     return {group: stages.at(listed, t) for group, listed in motion_stages(data, motion).items()}
 
 
-def described(data, motion):
-    """What a record of a motion uses besides the solids' identities: each group's resolved start (carriers included),
-    as 12 numbers, and each commanded joint's kind and values, by its group. No motion or drive name is kept, so a
-    chained start is known by where it is, never by the motion it starts after."""
-    start = {group: list(placed) for group, placed in sorted(at_motion(data, motion, 0.0).items()) if not mx.is_identity(placed)}
-    found = {command["group"]: {"kind": command["kind"], "from": command["from"], "to": command["to"]} for command in commands(data, motion).values()}
-    return {"start": start, "joints": dict(sorted(found.items()))}
-
-
 def sampled(data, motion, steps):
     """A motion as steps + 1 still placements, for tools that only know translation, rotation and gravity-drop.
 
