@@ -774,7 +774,7 @@ good or bad, and nothing says which engine to use.
 | Piece symmetry | `sphere`, `body of revolution` (with its axis), `prismatic` or `general`, read from the faces of the piece's 3D shape. A ring is a body of revolution, not a sphere. |
 | Section constancy | Each meeting solid is cut at the centre plane and at four more levels across the piece's width (plus `marginMm`). The largest difference between a section and the centre section is given in mm, with the level; levels where the solid is not cut at all (it ends inside the width); and in words which faces change across the plane: a cone or taper, a dome, a sloped face, a round face lying across. |
 | Sideways hold | At each `pieceAtMm`, the gap from the piece to the nearest guide on each side along the plane's normal, or none (unguided). The probe is the piece's shadow pushed out sideways. |
-| Mechanism in the plane | For each motion named, the moving groups whose hinge is not square to the plane, whose slide crosses it, or whose path or poses leave it. |
+| Mechanism in the plane | For each motion named, the moving groups whose hinge, or whose path's turn, is not square to the plane, whose slide crosses it, or whose path or poses leave it. |
 | Pieces at once | The number the interaction declares. |
 | Squeeze ratio | When a drawn piece solid and a motion are named: the deepest any meeting solid presses into the piece along that motion (the compression measure), divided by the piece's thickness, and where. |
 | Not rigid | The involved solids whose `material` is compliant or flexible, with what was declared. |
