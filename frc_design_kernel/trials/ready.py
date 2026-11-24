@@ -65,6 +65,6 @@ def report(assembly):
     typed = [{"trial": name, "surface": s.get("name", "surface"), "drive": s.get("drive")} for name, trial in data["trials"].items()
              for s in trial["surfaces"] if "solid" not in s]
     return {"trialSolids": cut, "concaveWithNoBreakdown": concave, "solidsWithNoMass": sorted(weightless),
-            "groupsNotOneHingeOrSlider": paths, "drivesNotOnASolid": sorted(name for name, drive in data["drives"].items() if not drive.get("turns")),
+            "groupsNotOneHingeOrSlider": paths, "drivesNotOnASolid": sorted(name for name, drive in data["drives"].items() if "radiusMm" in drive and not drive.get("turns")),
             "surfacesNotFromSolids": typed,
             "piecesNotPrimitive": sorted(name for name, piece in data["pieces"].items() if piece["shape"]["kind"] not in ("sphere", "cylinder", "tube", "box"))}

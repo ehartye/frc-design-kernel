@@ -55,6 +55,12 @@ def pose_rows(assembly):
     return rows
 
 
+def motion_rows(data):
+    """Each motion as written, and for a motion that commands drives, what each command works out to: its group, the
+    joint values it goes from and to, and the motor turns that takes."""
+    return {name: {**entry, "commands": placement.commands(data, name)} if "drive" in entry else entry for name, entry in data["motions"].items()}
+
+
 def manifest(assembly, pose=None, files=None):
     """The manifest of an assembly exported at a pose (None is as drawn)."""
     design, data = assembly.design, assembly.data
@@ -76,7 +82,7 @@ def manifest(assembly, pose=None, files=None):
         "mounts": data["mounts"],
         "contacts": data["contacts"],
         "poses": pose_rows(assembly),
-        "motions": data["motions"],
+        "motions": motion_rows(data),
         "parameters": data["parameters"],
         "parts": assembly.parts,
         "custom": assembly.custom,

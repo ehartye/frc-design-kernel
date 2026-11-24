@@ -7,7 +7,7 @@ import math
 import unittest
 
 from .test_mujoco import one_run
-from .trial_cases import ENGINES, ASSUMES, G, MEASURED, PANEL, bench
+from .trial_cases import ENGINES, ASSUMES, G, MEASURED, MOTOR_SOLID, PANEL, bench
 
 HAVE = importlib.util.find_spec("mujoco") is not None
 BOX = lambda low, high: {"kind": "box", "fromMm": low, "toMm": high}
@@ -24,6 +24,7 @@ def rig(axis=(0, 1, 0), motor=False):
     drive = {"radiusMm": 25, "turns": [{"solid": "roller", "axis": list(axis)}]}
     command = {"mode": "imposed", "speedMps": 1.0}
     if motor:
+        solids.append(MOTOR_SOLID)
         drive.update(motor="small", motorSolid="motor", gear=2.0, inertiaKgM2=MEASURED(2e-4), statorLimitA=40)
         command = {"mode": "speed", "setpointMps": 1.0, "band": 0.05, "busV": 12.0, "startMps": 1.0}
     return {"solids": solids, "drives": {"spin": drive}, "motors": MOTOR, "materials": {"panel": PANEL, "slick": SLICK}}, command

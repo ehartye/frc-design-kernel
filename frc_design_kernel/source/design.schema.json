@@ -252,14 +252,20 @@
       "type": "object",
       "additionalProperties": {
         "type": "object",
-        "required": [
-          "radiusMm"
-        ],
+        "required": [],
         "additionalProperties": false,
         "properties": {
           "motor": {
             "type": "string",
             "minLength": 1
+          },
+          "motorSolid": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The placed solid that is the motor, weighed like any solid."
+          },
+          "joint": {
+            "$ref": "#/$defs/joint"
           },
           "count": {
             "$ref": "#/$defs/number"
@@ -745,15 +751,121 @@
         "$ref": "#/$defs/ops"
       }
     },
+    "joint": {
+      "type": "object",
+      "required": [
+        "group",
+        "kind",
+        "axis",
+        "travel"
+      ],
+      "additionalProperties": false,
+      "description": "The one movement a drive gives a group: a turn about a line or a slide along an axis, from the group as drawn.",
+      "properties": {
+        "group": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "rotation",
+            "slide"
+          ]
+        },
+        "axis": {
+          "$ref": "#/$defs/vector"
+        },
+        "originMm": {
+          "$ref": "#/$defs/vector"
+        },
+        "perOutputTurn": {
+          "$ref": "#/$defs/number",
+          "description": "A slide's travel in mm for one turn of the gear's output: a lead, or a pulley's circumference."
+        },
+        "travel": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/number"
+          },
+          "description": "[low, high] joint values the joint can reach: degrees for a rotation, mm for a slide, from the group as drawn."
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
     "motion": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "from": {
-          "type": "string"
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "required": [
+                "after"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "after": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          ],
+          "fix": "Give a pose name, or {\"after\": \"<motion>\"} to start where that motion ends"
         },
         "to": {
           "type": "string"
+        },
+        "drive": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Drive commands: each drive's joint goes to a value, or changes by one.",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "to"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "to": {
+                    "$ref": "#/$defs/number"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "by"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "by": {
+                    "$ref": "#/$defs/number"
+                  }
+                }
+              }
+            ],
+            "fix": "Give {\"to\": joint value} or {\"by\": joint change}: degrees for a rotation, mm for a slide"
+          }
+        },
+        "by": {
+          "enum": [
+            "hand",
+            "spring",
+            "gravity",
+            "piece"
+          ],
+          "description": "What moves the typed geometry of a motion no motor drives."
         },
         "moves": {
           "$ref": "#/$defs/groupOps"
@@ -763,6 +875,66 @@
           "minItems": 2,
           "items": {
             "type": "string"
+          }
+        },
+        "durationS": {
+          "$ref": "#/$defs/sourced"
+        },
+        "alsoRunning": {
+          "type": "array",
+          "description": "Drives that run at the same time without being part of the motion, as electrical load.",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "drive",
+                  "currentA"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "drive": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "currentA": {
+                    "$ref": "#/$defs/sourced"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "drive",
+                  "atLimit"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "drive": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "atLimit": {
+                    "const": true
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            ],
+            "fix": "Give {\"drive\": name, \"currentA\": amps} or {\"drive\": name, \"atLimit\": true}"
+          }
+        },
+        "extraLoad": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "{drive: load} beyond gravity and acceleration at that drive's joint: N m about a rotation, N along a slide.",
+          "additionalProperties": {
+            "$ref": "#/$defs/sourced"
           }
         },
         "note": {

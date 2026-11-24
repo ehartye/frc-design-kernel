@@ -9,6 +9,7 @@ import copy
 import io
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -171,7 +172,7 @@ class JointRefusals(unittest.TestCase):
         self.refused(lambda d: d["motions"]["raise arm"].update(alsoRunning=[{"drive": "drivetrain", "atLimit": True}]), '"raise arm"', '"drivetrain"')
         self.refused(lambda d: d["motions"]["raise arm"].update(alsoRunning=[{"drive": "pivot", "atLimit": True}]), '"raise arm"', '"pivot"')
         self.refused(lambda d: d["motions"]["raise arm"].update(extraLoad={"lift": ASSUMED(1.0, 0.5, 2.0)}), '"raise arm"', '"lift"')
-        self.refused(lambda d: d["drives"]["lift"].pop("statorLimitA") or d["motions"]["raise arm"].update(alsoRunning=[{"drive": "lift", "atLimit": True}]),
+        self.refused(lambda d: (d["drives"]["lift"].pop("statorLimitA"), d["motions"]["raise arm"].update(alsoRunning=[{"drive": "lift", "atLimit": True}])),
                      '"raise arm"', '"lift"', "limit")
         build(load_data(bench(lambda d: d["motions"]["raise arm"].update(alsoRunning=[{"drive": "lift", "atLimit": True}],
                                                                          extraLoad={"pivot": ASSUMED(1.0, 0.5, 2.0)}))))     # control
@@ -237,6 +238,19 @@ class ChainedMotions(unittest.TestCase):
             load_data(bench(lambda d: d["motions"].update(lonely={"from": {"after": "lonely"}, "by": "hand", "moves": {"arm": [SWING(1)]}})))
         with self.assertRaisesRegex(DesignError, '"nowhere"'):
             load_data(bench(lambda d: d["motions"]["lift"].update({"from": {"after": "nowhere"}})))
+
+    def test_a_long_chain_costs_one_working_out_per_link(self):
+        """Catches a chain whose cost doubles with each link: each start and each joint value working the earlier motion out again."""
+        def steps(d):      # two drives on the arm take turns, so each link reads its joint value from the placement before it
+            d["drives"]["pivot two"] = copy.deepcopy(d["drives"]["pivot"])
+            for k in range(1, 41):
+                d["motions"][f"step {k}"] = {"from": {"after": f"step {k - 1}" if k > 1 else "raise arm"}, "drive": {("pivot", "pivot two")[k % 2]: {"by": -2}},
+                                             "durationS": 0.1}
+        data = load_data(bench(steps)).data
+        began = time.perf_counter()
+        self.assertAlmostEqual(placement.commands(data, "step 40")["pivot"]["to"], 15.0)      # step 40 commands "pivot"
+        self.assertLess(mx.gap(placement.at_motion(data, "step 40", 1.0)["arm"], mx.rotation(PIVOT, [0, -1, 0], 15)), 1e-6)
+        self.assertLess(time.perf_counter() - began, 1.0)
 
     def test_a_chained_motion_must_still_end_at_its_stated_pose(self):
         """Catches "to" going unchecked once a motion starts after another."""

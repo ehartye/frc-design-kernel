@@ -48,7 +48,7 @@ commit. That record is information for the reader. Nothing checks it or refuses 
 
 ## A short example
 
-A design source is one JSON file. This one is a base with a post and a swinging arm:
+A design source is one JSON file. This one is a base with a post and an arm that a geared motor swings:
 
 ```json
 {
@@ -64,15 +64,28 @@ A design source is one JSON file. This one is a base with a post and a swinging 
      "shape": {"kind": "tube", "section": "round", "fromMm": [0, 0, 6], "toMm": [0, 0, "=post_top"],
                "outerDiameterMm": 30, "wallMm": 2}},
     {"name": "arm", "group": "arm", "massKg": 0.3,
-     "shape": {"kind": "box", "fromMm": [0, -10, "=post_top"], "toMm": [200, 10, "=post_top + 20"]}}
+     "shape": {"kind": "box", "fromMm": [0, -10, "=post_top"], "toMm": [200, 10, "=post_top + 20"]}},
+    {"name": "shoulder motor", "group": "base", "massKg": 0.5,
+     "shape": {"kind": "cylinder", "fromMm": [0, 20, "=post_top - 40"], "toMm": [0, 70, "=post_top - 40"], "radiusMm": 25}}
   ],
+  "motors": {"small motor": {"ktNmPerA": {"value": 0.018, "assumed": [0.016, 0.02]},
+                             "ohm": {"value": 0.1, "assumed": [0.08, 0.12]},
+                             "keVsPerRad": {"value": 0.018, "assumed": [0.016, 0.02]}}},
+  "drives": {"shoulder": {"motor": "small motor", "motorSolid": "shoulder motor", "gear": 60,
+                          "joint": {"group": "arm", "kind": "rotation", "axis": [0, -1, 0],
+                                    "originMm": [0, 0, "=post_top"], "travel": [0, 100]}}},
   "poses": {
     "down": {},
     "up": {"arm": [{"kind": "rotation", "originMm": [0, 0, "=post_top"], "axis": [0, -1, 0], "travelDeg": 90}]}
   },
-  "motions": {"raise": {"through": ["down", "up"]}}
+  "motions": {"raise": {"from": "down", "to": "up", "drive": {"shoulder": {"to": 90}},
+                        "durationS": {"value": 0.6, "assumed": [0.4, 0.9]}}}
 }
 ```
+
+The motor is a solid like any other, so it is weighed and has a place. The motion is a motor command: the shoulder
+joint goes to 90 degrees, and the library works out where the arm is at every point of the stroke. A motion that no
+motor makes says what does, with `"by": "hand"`, `"spring"`, `"gravity"` or `"piece"`, and is written as moves.
 
 Check it, then build it:
 

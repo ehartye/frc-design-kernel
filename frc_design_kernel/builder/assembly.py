@@ -94,7 +94,7 @@ def build_solid(entry, where, group, custom, parts, fixture):
 def build(design):
     """Build every solid of a loaded design. Raises DesignError, naming the entry, for anything that cannot be built."""
     data = design.data
-    placement.check_motion_ends(data)
+    placement.check_motions(data)
     custom, parts = CustomShapes(design), Parts(design.folder)
     solids = {}
     for section in ("solids", "fixtures"):
