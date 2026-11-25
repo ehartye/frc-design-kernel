@@ -2,7 +2,7 @@
   "bale": {
     "shape": {"tube": {"inside": "3 in", "outside": "5 in", "length": {"is": "9 1/4 in", "src": "drawings sheet 8"}}},
     "mass": "0.7 to 0.9 lb", "stiff": true, "still_one_if": "it looks about like a bale",
-    "made_of": {"text": "pressed straw"}, "src": "manual 5.6"
+    "made_of": "pressed straw", "part": "hd-101", "src": "manual 5.6"
   },
   "pumpkin": {
     "shape": {"ball": {"diameter": "8 1/2 in +/- 1/4"}}, "mass": "6.4 oz +/- 0.3", "stiff": false, "src": "manual 5.6",

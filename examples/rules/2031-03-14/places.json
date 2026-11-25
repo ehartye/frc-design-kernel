@@ -1,15 +1,15 @@
 {
   "robot_preload": {
     "alliance": "each", "holds": {"bale": "= 3 * limits.preload.bale"}, "starts": {"bale": "= robot_preload.holds.bale"},
-    "says": "Each robot may start with {limits.preload.bale}. One not loaded goes to a stall.", "no_geometry": "On the robots.", "src": "manual 4.3"
+    "says": "Each robot may start with {limits.preload.bale}. One not loaded goes to a stall.", "no_geometry": "It needs none: it is wherever the robots are.", "src": "manual 4.3"
   },
   "near_bales": {
     "alliance": "each", "spots": {"row": 4, "step": ["0 in", "= near_bales.apart"], "first": {"at": ["90 in", "66 in"]}}, "apart": "48 in",
     "starts": {"bale": {"each": "spot", "is": 1}}, "gives": [{"piece": "bale", "by": "field", "to": "robot", "how": "from the carpet"}], "src": "drawings sheet 5"
   },
   "centre_bales": {
-    "spots": {"row": 6, "step": ["0 in", "36 in"], "first": {"at": ["= size.length / 2", "= size.width / 2 - 5 * centre_bales.spots.step.y / 2"]}},
-    "starts": {"bale": 6}, "gives": [{"piece": "bale", "by": "field", "to": "robot", "how": "from the carpet"}], "src": "drawings sheet 5"
+    "spots": {"row": 6, "step": ["0 in", "36 in"], "names": ["a", "b", "c", "d", "e", "f"], "first": {"at": ["= size.length / 2", "= size.width / 2 - 5 * centre_bales.spots.step.y / 2"]}},
+    "starts": {"bale": {"each": "spot", "is": 1}}, "gives": [{"piece": "bale", "by": "field", "to": "robot", "how": "from the carpet"}], "src": "drawings sheet 5"
   },
   "patch": {
     "alliance": "each", "at": ["150 in", "= tags.t3.at.y + 12 * patch.hole"], "hole": "3 in", "starts": {"pumpkin": "left over"},
@@ -33,7 +33,7 @@
     "then": {"to": "cellar", "of": "theirs", "how": "rolls through"}, "src": "manual 3.5"
   },
   "cellar": {
-    "alliance": "each", "holds": {"bale": 8}, "no_geometry": "Under the barn, off the field.",
+    "alliance": "each", "holds": {"bale": 8}, "no_geometry": "Off the field, and no drawing gives it.",
     "takes": [{"piece": "bale", "by": ["field"], "how": "rest", "counts": "it came out of a barn"}],
     "gives": [{"piece": "bale", "by": "human", "to": "stall", "how": "carried"}], "then": {"to": "stall", "of": "mine", "how": "carried"}, "src": "manual 3.5"
   },
@@ -67,7 +67,7 @@
   },
   "hooks": {
     "alliance": "each", "symmetry": "mirror", "spots": {"left": {"at": ["20 in", "200 in"], "faces": "45 deg"}, "right": {"at": ["20 in", "240 in"], "faces": "315 deg"}},
-    "starts": {"hoop": 2}, "gives": [{"piece": "hoop", "by": "human", "to": "rack", "how": "thrown"}], "src": "manual 3.9"
+    "starts": {"hoop": {"each": "spot", "is": 1}}, "gives": [{"piece": "hoop", "by": "human", "to": "rack", "how": "thrown"}], "src": "manual 3.9"
   },
   "spare_hoops": {"at": ["= silo.at.x", "= silo.at.y"], "starts": {"hoop": 4}, "says": "On top of the silo, {high} up.", "high": "= silo.shape.cylinder.length", "src": "manual 3.9"},
   "vine": {"at": ["= size.length / 2", "20 in"], "starts": {"pumpkin": 2}, "src": "drawings sheet 5"},

@@ -1,4 +1,4 @@
-"""The fields of every record: their names, and the values that they hold (RULES.md)."""
+"""The fields of every record: their names, and the values that they hold."""
 import unittest
 
 from .rules_cases import Checked, example, rename
@@ -51,6 +51,31 @@ class FieldNames(Checked):
         self.accepted(lambda d: d["robot"]["limits"]["air"].update(relief="115 psi"))
         self.accepted(lambda d: [d["field"]["guardrail"].update(paint_width="2 in"), d["game"]["accuracy"].update(checked=True)])
 
+    def test_official_texts_are_plain(self):
+        """Catches an official text written as {"text": ...}, or as a number, which a program would have to unwrap in some seasons only."""
+        for place, name in [(lambda d: d["field"]["size"], "surface"), (lambda d: d["field"]["tags"], "measured"), (lambda d: d["pieces"]["bale"], "made_of"), (lambda d: d["pieces"]["bale"], "part"),
+                            (lambda d: d["robot"]["limits"]["start"], "overhang"), (lambda d: d["robot"]["limits"]["bumpers"], "cover"), (lambda d: d["robot"]["limits"]["radio"], "part")]:
+            for bad in [{"text": "so"}, 3, ["so"]]:
+                self.refused(lambda d: place(d).update({name: bad}), name, "words")
+            self.accepted(lambda d: place(d).pop(name))
+
+    def test_official_values(self):
+        """Catches an official value of the wrong kind: a size that is a mass, a price in pounds, a time in inches."""
+        for place, name, bad in [(lambda d: d["field"]["lines"]["coach_line"], "from_wall", "3 lb"), (lambda d: d["field"]["zones"]["fold"], "wide", "3 s"), (lambda d: d["field"]["zones"]["fold"], "deep", 3),
+                                 (lambda d: d["field"]["solids"]["ramp"], "wide", "3 s"), (lambda d: d["field"]["solids"]["ramp"], "tall", "3 deg"), (lambda d: d["conduct"]["G92"], "longest", "5 in"),
+                                 (lambda d: d["conduct"]["G92"], "apart", "5 s"), (lambda d: d["robot"]["limits"]["bumpers"]["numbers"], "height", "3 s"), (lambda d: d["robot"]["limits"]["bumpers"]["numbers"], "stroke", 2),
+                                 (lambda d: d["robot"]["limits"]["bumpers"]["backing"], "tall", "3 lb"), (lambda d: d["robot"]["limits"]["price"], "part", "3 lb"), (lambda d: d["robot"]["limits"]["radio"], "rate", "3 A")]:
+            self.refused(lambda d: place(d).update({name: bad}), f".{name}", "holds")
+        self.accepted(lambda d: d["field"]["solids"]["ramp"].update(wide="24 in", tall="= ramp.shape.prism.tall"))
+
+    def test_bumper_parts_are_records(self):
+        """Catches a slip in a bumper's padding, backing or numbers, or one that is no record. Extra values are allowed in each."""
+        bumpers = lambda d: d["robot"]["limits"]["bumpers"]
+        self.refused(lambda d: rename(bumpers(d)["numbers"], "stroke", "strokes"), "limits.bumpers.numbers", '"stroke"')
+        for name in ("padding", "backing", "numbers"):
+            self.refused(lambda d: bumpers(d).update({name: "3 in"}), f"limits.bumpers.{name}", "object")
+            self.accepted(lambda d: bumpers(d)[name].update(layers=2, note={"text": "any"}, src="manual R93"))
+
     def test_guardrail_and_accuracy_may_be_left_out(self):
         """Catches a game refused because its manual prints no guardrail or no tolerance. A part of either may be missing too."""
         self.accepted(lambda d: [d["field"].pop("guardrail"), d["game"].pop("accuracy")])
@@ -61,7 +86,7 @@ class FieldNames(Checked):
     def test_an_extra_text_that_is_not_written_as_text(self):
         """Catches words in an extra field, which a program could take for a number that failed to read."""
         self.refused(lambda d: d["places"]["barn"].update(hue="red"), "places.json barn.hue", '{"text": ...}')
-        self.refused(lambda d: d["field"]["size"].update(surface="carpet"), "field.json size.surface", "text")
+        self.refused(lambda d: d["field"]["size"].update(colour="green"), "field.json size.colour", "text")
         self.refused(lambda d: d["places"]["barn"].update(note_size="14 by 10"), "barn.note_size")
         self.refused(lambda d: d["places"]["barn"].update(frame={"hue": "red"}), "barn.frame.hue")
 

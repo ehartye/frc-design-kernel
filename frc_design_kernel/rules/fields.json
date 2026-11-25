@@ -1,171 +1,1670 @@
 {
-  "about": "What RULES.md names, as data: the one list that the reader checks with. A test checks that both name the same things.",
+  "means": [
+    "One folder holds one edition of a game's rules, in nine files.",
+    "A person or an agent reads it instead of the manual, and a program reads the same numbers from it.",
+    "Every number is written once.",
+    "All nine files must be there.",
+    "Each is one JSON object.",
+    "IDs start with a letter and use letters, digits and underscores, and an ID is used once in the folder; in `parts`, once in a group.",
+    "What a program computes from has named fields.",
+    "Everything else is `says`: words that are enough for a reader who never opens the manual.",
+    "Do not give structure to a rule that only people judge.",
+    "Every rule code has a record of its own, with its own `says`.",
+    "A number that a limit holds is named there, not typed.",
+    "If a rule is a whole list in `parts`, its `says` gives the rule and names the group.",
+    "A record may hold more values than are named here.",
+    "Use a name of letters, digits and underscores that says what it is, or add `of`.",
+    "A name that is nearly a known one of that kind of record is refused as a slip.",
+    "An extra value is a number, true or false, {\"text\": \"words\"}, or a list or group of them.",
+    "At the top of game.json, clock.json, field.json, scoring.json and robot.json only known names are allowed.",
+    "A place is both a target and a supply.",
+    "A piece put in one place often comes out of another.",
+    "Follow `takes`, `gives` and `then`, and no piece is lost or made.",
+    "A place that belongs to an alliance but stands at the other end is still written as blue's, where blue's stands.",
+    "A count belongs to the record of one alliance, all its spots together.",
+    "Do not type a count that the spots already make.",
+    "Examples here are invented.",
+    "In this file: `holds` is what a property holds (a form, or a list of words); `needs` names the fields that must be there; `one_of`, exactly one of these; `any_of`, at least one; `act_needs`, at least one of these when there is an `act`; `closed`, no extra values; `placed`, it may have the fields of `placed`; `geometry`, it needs geometry or `no_geometry` when a rule or score names it; `by_piece`, its fields are pieces' IDs; `optional`, a field of a shape that may be left out, where all others must be there; `as`, the form that an example is read as.",
+    "A name is nearly a known one when Python's difflib gives them a ratio of 0.85 or more.",
+    "A group with nothing in it may be left out.",
+    "A cost's `award` needs `to`. `instead_of` names a foul of the same list.",
+    "A pattern makes 1 to 1000 spots.",
+    "Only a state may have `my` or `their` in `when`.",
+    "A weight has one of the names given."
+  ],
   "units": {
-    "length": {"in": 25.4, "ft": 304.8, "mm": 1, "cm": 10, "m": 1000},
-    "mass": {"lb": 0.45359237, "oz": 0.028349523125, "kg": 1, "g": 0.001},
-    "time": {"s": 1, "min": 60},
-    "angle": {"deg": 1}
+    "length": {
+      "means": "Lengths. A program gets them in mm.",
+      "units": {"in": 25.4, "ft": 304.8, "mm": 1, "cm": 10, "m": 1000}
+    },
+    "mass": {
+      "means": "Masses. A program gets them in kg.",
+      "units": {"lb": 0.45359237, "oz": 0.028349523125, "kg": 1, "g": 0.001}
+    },
+    "time": {
+      "means": "Times. A program gets them in s.",
+      "units": {"s": 1, "min": 60}
+    },
+    "angle": {
+      "means": "Angles. A program gets them in degrees.",
+      "units": {"deg": 1}
+    }
   },
-  "joined": {"ft": "in", "min": "s"},
-  "kept": ["A", "V", "W", "Wh", "Ah", "ohm", "psi", "bar", "cfm", "scfm", "uF", "AWG", "mm2", "USD", "Mbit/s", "lb/ft3", "kg/m3", "nm", "Hz", "rpm"],
-  "limit_words": ["at most", "at least", "less than", "more than"],
-  "functions": ["sin", "cos", "tan", "atan2", "sqrt", "abs", "min", "max"],
+  "joined": {
+    "means": "Feet with inches, and minutes with seconds, may be joined: 5 ft 4 3/8 in.",
+    "pairs": {"ft": "in", "min": "s"}
+  },
+  "kept": {"means": "Units that are kept as printed. No others are allowed. A thicker wire has a smaller AWG, so use `thinnest`.", "units": ["A", "V", "W", "Wh", "Ah", "ohm", "psi", "bar", "cfm", "scfm", "uF", "AWG", "mm2", "USD", "Mbit/s", "lb/ft3", "kg/m3", "nm", "Hz", "rpm"]},
+  "forms": {
+    "id": {
+      "means": "The name of a record: it starts with a letter and uses letters, digits and underscores. It is used once in the folder; in `parts`, once in a group.",
+      "examples": [
+        "near_bales"
+      ]
+    },
+    "path": {
+      "means": "The ID and then field names, with no file name. Some begin with a word instead (see `roots`). In a position, `stall.at.x` means the same alliance's stall; to name one from outside, write `stall@red`, and a spot after it. A list's parts are .x, .y and .z; a range's are .low and .high. A tolerance has .low and .high too. A path may end in the name of a variant, and goes on through `is` and `any`. A spot of a pattern is .1, .1.a or its name, after the ID and `.spots`, or after `@` and the alliance.",
+      "examples": [
+        "bale.mass",
+        "barn.opening.bottom",
+        "size.length",
+        "limits.reach.far",
+        "tags.t4.at.x",
+        "total.bale",
+        "judged.late.after_teleop",
+        "parts.wire.main.thinnest",
+        "guardrail.height",
+        "accuracy.decimal",
+        "stall@red.near.at.x",
+        "bale.mass.low"
+      ]
+    },
+    "quantity": {
+      "means": "A number with its unit, as printed. Feet with inches, and minutes with seconds, may be joined.",
+      "as": "value",
+      "examples": [
+        "71 in",
+        "5 ft 4 3/8 in",
+        "1 min 50 s",
+        "17 deg",
+        "-1.50 in"
+      ]
+    },
+    "tolerance": {
+      "means": "A number with a tolerance, in the same unit.",
+      "as": "value",
+      "examples": [
+        "6.4 oz +/- 0.3",
+        "290 in +5 -1"
+      ]
+    },
+    "range": {
+      "means": "Both ends are printed. It has a low and a high, and no one number between.",
+      "as": "value",
+      "examples": [
+        "0.7 to 0.9 lb",
+        "1 to 2"
+      ]
+    },
+    "limit": {
+      "means": "A limit on a quantity or a count.",
+      "as": "value",
+      "examples": [
+        "at most 96 in",
+        "at least 3/8 in",
+        "less than 2 1/4 in",
+        "more than 7 s",
+        "at most 6"
+      ]
+    },
+    "any": {
+      "means": "One of these limits is enough.",
+      "as": "value",
+      "examples": [
+        {"any": [{"deep": "at most 1 in"}, {"wide": "at most 9 in"}]}
+      ]
+    },
+    "formula": {
+      "means": "Worked out from other values: `=` and then paths, numbers and functions. Adding needs the same kind of number, and a bare number only multiplies or divides. An angle needs no conversion. A formula that names a value with variants has the same variants. If two values are equal because one is the other, write a formula. It gives a plain number: from a tolerance the number itself, and from a limit its number without the words.",
+      "as": "value",
+      "examples": [
+        "= size.length / 2",
+        "= pen.side * sin(pen.lean)",
+        "= bale.mass.low * 2"
+      ]
+    },
+    "by": {
+      "means": "A value that depends on a variant: `by` names the kind of variant, and each of its names has a value. One may hold another.",
+      "as": "value",
+      "examples": [
+        {"by": "field", "welded": "612.40 in", "bolted": "611.75 in"},
+        {"by": "event", "regional": 12, "championship": {"by": "match", "qualification": 14, "playoff": 16}}
+      ]
+    },
+    "value": {
+      "means": "A printed value, or an object that says more about it.",
+      "examples": [
+        "71 in",
+        45,
+        true,
+        {"is": "37.5 in", "of": "across the flats"},
+        {"is": "44 in", "src": "drawings sheet 3"},
+        {"is": "9 in", "assumed": "scaled from figure 5-2"},
+        {"is": "36 in", "differs": [{"is": "36.4 in", "src": "drawings sheet 9"}]},
+        {"is": 1, "each": "spot"}
+      ]
+    },
+    "extra": {
+      "means": "A value that is not named here: a number, true or false, or {\"text\": \"words\"}; or a list or group of them; or {\"any\": [...]} of which one is enough.",
+      "examples": [
+        "2 in",
+        3,
+        true,
+        {"text": "any closed foam"},
+        {"is": "2 in", "of": "its radius"},
+        {"wide": "3 in", "deep": "1 in"},
+        ["1 in", "2 in"]
+      ]
+    },
+    "number": {
+      "means": "A count, without quotes; or a limit or range on one; or a formula. In a field that gives the most or the least, a bare number is that limit.",
+      "examples": [
+        2,
+        "at most 6",
+        45,
+        "1 to 2",
+        "= limits.preload.bale * 3"
+      ]
+    },
+    "length": {
+      "means": "A length.",
+      "examples": [
+        "71 in",
+        "= size.width / 2",
+        {"is": "37.5 in", "of": "across the flats"}
+      ]
+    },
+    "mass": {
+      "means": "A mass.",
+      "examples": [
+        "6.4 oz +/- 0.3"
+      ]
+    },
+    "time": {
+      "means": "A time.",
+      "examples": [
+        "12 s",
+        "1 min 50 s"
+      ]
+    },
+    "angle": {
+      "means": "An angle.",
+      "examples": [
+        "17 deg"
+      ]
+    },
+    "flag": {
+      "means": "true or false.",
+      "examples": [
+        true,
+        false
+      ]
+    },
+    "printed unit": {
+      "means": "A number in a unit that is kept as printed.",
+      "as": "A",
+      "examples": [
+        "at most 40 A",
+        "20 A"
+      ]
+    },
+    "lengths": {
+      "means": "A list of lengths.",
+      "examples": [
+        ["7 in", "3 in"]
+      ]
+    },
+    "2 lengths": {
+      "means": "Two lengths.",
+      "as": "point",
+      "examples": [
+        ["54 in", "21 in"]
+      ]
+    },
+    "3 lengths": {
+      "means": "Three lengths.",
+      "as": "point",
+      "examples": [
+        ["22 in", "55 in", "15 in"]
+      ]
+    },
+    "text": {
+      "means": "Words.",
+      "examples": [
+        "Off the carpet on the bar.",
+        "Guides the team."
+      ]
+    },
+    "texts": {
+      "means": "Words, or a list of them.",
+      "examples": [
+        "bumpers",
+        ["bumpers", "battery"],
+        "R90",
+        ["R90", "G99"]
+      ]
+    },
+    "list of texts": {
+      "means": "A list of words.",
+      "examples": [
+        ["No mass is printed."]
+      ]
+    },
+    "says": {
+      "means": "Words in which {height} stands for this record's value and {bale.mass} for another's. A limit prints without its words, so write \"at most {limits.height.max}\". A number that a field holds is named, not typed.",
+      "examples": [
+        "At most {limits.reach.far} out, in the last {endgame.last}."
+      ]
+    },
+    "src": {
+      "means": "Where it is written, or a list. The first word is an ID in `sources`. An ID alone is enough when the source has no sections.",
+      "examples": [
+        "manual 3.2",
+        ["manual 3.2", "drawings sheet 3"],
+        ["manual 3.2", "update3 G94"]
+      ]
+    },
+    "date": {
+      "means": "A date, as year, month and day.",
+      "examples": [
+        "2031-02-04"
+      ]
+    },
+    "differs": {
+      "means": "A list of what other sources say.",
+      "examples": [
+        [{"is": "36.4 in", "src": "drawings sheet 9"}],
+        [{"says": "The text calls it a square.", "src": "manual 3.2"}]
+      ]
+    },
+    "was": {
+      "means": "A list of what it was before.",
+      "examples": [
+        [{"until": "2031-02-04", "is": "104 lb", "src": "update3 R7"}],
+        [{"until": "2031-02-04", "is": "104 lb", "src": "update3 R92"}],
+        [{"until": "2031-02-04", "says": "It was not said.", "src": "update3 R92"}]
+      ]
+    },
+    "word": {
+      "means": "One of a list of words.",
+      "as": "word symmetry",
+      "examples": [
+        "mirror"
+      ]
+    },
+    "words": {
+      "means": "Some of a list of words, or one.",
+      "as": "words takes_by",
+      "examples": [
+        ["robot", "human"],
+        "robot"
+      ]
+    },
+    "point": {
+      "means": "[x, y] or [x, y, z].",
+      "examples": [
+        ["= size.length / 2", "30 in"],
+        ["480 in", "12 in", "40 in"],
+        ["27 in", "40 in"],
+        ["131 in", "150 in", "0 in"]
+      ]
+    },
+    "outline": {
+      "means": "A list of points in the field's frame; or a rectangle, hexagon or circle with its middle at `at`, turned by `faces`. Inside a shape, points are from `at`, along `faces`.",
+      "examples": [
+        {"rectangle": ["54 in", "21 in"]},
+        {"hexagon": {"flats": "40 in", "points": "90 deg"}},
+        {"circle": "40 in"},
+        [["0 in", "0 in"], ["60 in", "0 in"], ["60 in", "18 in"]],
+        {"circle": "46 in"}
+      ]
+    },
+    "shape": {
+      "means": "A shape is drawn around its record's `at`, turned by `faces`, and stands on the height in `at`: that is the height of its lowest point, so a ball at 0 in rests on the carpet. Points of an outline inside a shape are from `at`, along `faces`. If no source gives the height a solid starts at, leave it out of `at` and put that in `unknown`.",
+      "examples": [
+        {"box": ["22 in", "55 in", "15 in"]},
+        {"ball": {"diameter": "14 in"}},
+        {"cylinder": {"diameter": "10 in", "length": "36 in", "axis": "z"}}
+      ]
+    },
+    "shapes": {
+      "means": "A list of shapes, each with its own `at`, which is from the record's and stands the same way. A part's `at` is turned by the record's `faces`; a part has no `faces` of its own.",
+      "examples": [
+        [{"at": ["0 in", "0 in", "0 in"], "box": ["4 in", "40 in", "6 in"]}, {"at": ["0 in", "0 in", "6 in"], "ball": {"diameter": "5 in"}}]
+      ]
+    },
+    "height": {
+      "means": "A height from the carpet, or `none` for no limit.",
+      "examples": [
+        "none",
+        "30 in"
+      ]
+    },
+    "spots": {
+      "means": "Names and where each is; or a row; or a ring.",
+      "examples": [
+        {"near": {"at": ["100 in", "30 in"]}, "far": {"at": ["100 in", "90 in"]}},
+        {"row": 4, "step": ["0 in", "48 in"], "first": {"at": ["90 in", "66 in"]}},
+        {"ring": 6, "around": ["180 in", "110 in"], "step": "60 deg", "first": {"at": ["200 in", "110 in"], "faces": "0 deg"}},
+        {"near": {"at": ["27 in", "40 in"]}, "far": {"at": ["27 in", "90 in"], "faces": "90 deg"}},
+        {"row": 4, "step": ["0 in", "48 in"], "first": {"at": ["27 in", "40 in"]}},
+        {"ring": 3, "around": ["27 in", "40 in"], "step": "120 deg", "names": ["front", "left", "right"], "first": {"a": {"at": ["30 in", "40 in"]}, "b": {"at": ["33 in", "40 in"]}}}
+      ]
+    },
+    "first spot": {
+      "means": "One spot, or several named ones.",
+      "examples": [
+        {"at": ["27 in", "40 in"]},
+        {"a": {"at": ["27 in", "40 in"]}, "b": {"at": ["27 in", "52 in"]}}
+      ]
+    },
+    "starts": {
+      "means": "What is there at the start, by piece. A count belongs to the record of one alliance, all its spots together; for one spot, write {\"each\": \"spot\", \"is\": 1}. Do not type a count that the spots already make. `left over` is the total less everything that other places start with.",
+      "examples": [
+        {"bale": 17},
+        {"bale": "left over"},
+        {"bale": {"each": "spot", "is": 1}}
+      ]
+    },
+    "by piece": {
+      "means": "A number for each piece.",
+      "examples": [
+        {"bale": 30},
+        {"bale": 1, "pumpkin": 2}
+      ]
+    },
+    "piece count": {
+      "means": "How many of a piece.",
+      "examples": [
+        60
+      ]
+    },
+    "hold limit": {
+      "means": "A number for each piece, or one number.",
+      "examples": [
+        {"bale": 1, "pumpkin": 2},
+        2
+      ]
+    },
+    "cap": {
+      "means": "The most, for each alliance in a match: a number; or a number for each `spot`, `alliance` or ID, with `when` if it is only at some times.",
+      "examples": [
+        5,
+        {"each": "barn", "is": 1},
+        {"each": "spot", "is": 1},
+        {"each": "alliance", "is": 2, "when": ["auto"]}
+      ]
+    },
+    "circuits": {
+      "means": "A number, `any` for no limit, or an object that says what is counted.",
+      "examples": [
+        1,
+        "any",
+        {"is": 3, "of": "altogether"}
+      ]
+    },
+    "on": {
+      "means": "For each kind of device, how many of this load one device may run. A kind that is left out may not run it; `any` is no limit.",
+      "examples": [
+        {"controller": 2, "relay": 1},
+        {"relay": "any", "pneumatics": {"is": 1, "of": "each channel"}}
+      ]
+    },
+    "timer": {
+      "means": "From and to, as the match timer counts down.",
+      "examples": [
+        ["1:15", "0:50"]
+      ]
+    },
+    "variants": {
+      "means": "Each kind of variant, and its names. The first is used when a question names none.",
+      "examples": [
+        {"field": ["welded", "bolted"], "gate": ["low_gate", "high_gate"]}
+      ]
+    },
+    "when": {
+      "means": "A list of periods, windows, states and variants that must all be true. `not` may go in front, and `my` or `their` in front of a state; a state with no such word is mine. An empty list is always.",
+      "examples": [
+        ["teleop", "lit"],
+        ["not endgame"],
+        ["their lit"],
+        ["qualification"]
+      ]
+    },
+    "list of whens": {
+      "means": "A list of `when` lists, and any one is enough.",
+      "examples": [
+        [["auto"], ["market", "not lit"], ["endgame"]],
+        [["auto"], ["market", "not lit"]]
+      ]
+    },
+    "conditions": {
+      "means": "[who, how, what], which reads as English. Only the listed words are used. How is one of `measures` or `compares`. Who is `my`, `their` or `either` and then robot, bumpers, person, alliance or an ID from `counts`; or `the piece`, or `the` and a piece's ID. What is `my`, `their` or `any` and then an ID; `carpet`; a number, formula or value by variant; `every robot`; or a list, which may hold words for a part that has no ID. A list of conditions that must all be true. {\"any\": [...]} needs one, and {\"all\": [...], \"when\": [...]} groups some at a time.",
+      "examples": [
+        [["my bumpers", "partly in", "my yard"]],
+        [{"any": [["my bumpers", "partly in", "my paddock"], ["my bumpers", "fully in", "my lane"]]}],
+        [{"all": [["my bumpers", "beyond", "any centre"]], "when": ["early"]}],
+        [["my bumpers", "partly in", "my yard"], ["my robot", "not touching", ["carpet", "the base of my mast"]]],
+        [["my loft_points", "at least", 12]],
+        [{"any": [["the piece", "through", "my stall"], ["my robot", "touching", "carpet"]]}],
+        [{"all": [["their robot", "above", "my swing"]], "when": ["endgame"]}]
+      ]
+    },
+    "must not": {
+      "means": "true, or the conditions that make it wrong.",
+      "examples": [
+        true,
+        [["either bumpers", "partly in", "their yard"]]
+      ]
+    },
+    "award": {
+      "means": "An award's ID.",
+      "examples": [
+        "hang"
+      ]
+    },
+    "awards": {
+      "means": "A list of awards.",
+      "examples": [
+        ["hang", "park"]
+      ]
+    },
+    "foul": {
+      "means": "A foul's ID.",
+      "examples": [
+        "minor"
+      ]
+    },
+    "fouls": {
+      "means": "A list of fouls.",
+      "examples": [
+        ["yellow_card", "red_card"]
+      ]
+    },
+    "places": {
+      "means": "A list of places.",
+      "examples": [
+        ["barn", "loft"]
+      ]
+    },
+    "piece": {
+      "means": "A piece's ID.",
+      "examples": [
+        "bale"
+      ]
+    },
+    "pieces": {
+      "means": "A piece's ID, or a list.",
+      "examples": [
+        "bale",
+        ["bale", "hoop"]
+      ]
+    },
+    "things": {
+      "means": "An ID, with `my`, `their` or `any` in front if each alliance has one and bare if not; or a list of them.",
+      "examples": [
+        "any loft",
+        ["my fold"],
+        "loft"
+      ]
+    },
+    "things touched": {
+      "means": "`their robot`, or IDs with `my`, `their` or `any` in front; or a list.",
+      "examples": [
+        "their robot",
+        ["any knot", "their robot"]
+      ]
+    },
+    "touchable": {
+      "means": "A list of IDs with `my`, `their` or `any` in front, or bare if it belongs to neither alliance, or words for a part that has no ID.",
+      "examples": [
+        ["my bar", "pieces", "the uprights, with bumpers"]
+      ]
+    },
+    "given to": {
+      "means": "An ID, `floor` or `robot`.",
+      "examples": [
+        "robot",
+        "floor",
+        "barn"
+      ]
+    },
+    "goes to": {
+      "means": "The ID of a place or a zone, or `out` when it leaves play. A piece that falls on the floor goes to the zone where it falls.",
+      "examples": [
+        "cellar",
+        "out"
+      ]
+    },
+    "period": {
+      "means": "A period's ID.",
+      "examples": [
+        "teleop"
+      ]
+    },
+    "after period": {
+      "means": "A time after a period's end. The field's name is `after_` and the period's ID.",
+      "examples": [
+        "2 s"
+      ]
+    },
+    "people": {
+      "means": "Each kind of person, by ID, and `together` for limits on several kinds at once.",
+      "examples": [
+        {"coach": {"says": "Guides the team.", "most": 1}, "together": [{"of": ["driver", "feeder"], "most": 3}]}
+      ]
+    },
+    "several people": {
+      "means": "A list of kinds of people.",
+      "examples": [
+        ["driver", "feeder"]
+      ]
+    },
+    "who": {
+      "means": "A list of `robot`, people from game.json, or `anyone`.",
+      "examples": [
+        ["robot", "feeder"],
+        ["anyone"]
+      ]
+    },
+    "loads": {
+      "means": "A list of the IDs of loads in `parts`.",
+      "examples": [
+        ["lantern"]
+      ]
+    },
+    "longer than": {
+      "means": "A term that has a time, or a time.",
+      "examples": [
+        "momentary",
+        "10 s"
+      ]
+    },
+    "cost": {
+      "means": "A list, and all of it adds up. Each is a foul ID or an object.",
+      "examples": [
+        ["minor", {"foul": "yellow_card", "again": "event"}],
+        ["minor", {"foul": "major", "again": "match", "instead_of": "minor"}, {"award": "loft_rp", "to": "their alliance"}, {"deny": ["hang"], "if": "it hangs there"}, {"either": ["yellow_card", "red_card"]}, {"words": "the match does not start"}],
+        []
+      ]
+    },
+    "record": {
+      "means": "One record of a kind.",
+      "as": "record accuracy",
+      "examples": [
+        {"decimal": "0.4 in", "angle": "2 deg"}
+      ]
+    },
+    "records": {
+      "means": "Records of a kind, by ID.",
+      "as": "records foul",
+      "examples": [
+        {"minor": {"points_to_them": 3, "src": "manual 5.10"}}
+      ]
+    },
+    "list of": {
+      "means": "A list of things of a kind.",
+      "as": "list of points",
+      "examples": [
+        [{"when": ["auto"], "points": 7}]
+      ]
+    },
+    "tags": {
+      "means": "What all the tags share, and each tag by ID.",
+      "examples": [
+        {"family": "36h11", "black": "5 1/2 in", "panel": "9 in", "t1": {"at": ["0 in", "150 in", "50 in"], "faces": "0 deg", "tilt": "0 deg"}}
+      ]
+    },
+    "limits": {
+      "means": "The limits that a season has, by the names in `limits`.",
+      "examples": [
+        {"reach": {"far": "at most 1 ft 2 in", "sides": 1}}
+      ]
+    },
+    "parts": {
+      "means": "Groups of records. A group may have `about`.",
+      "examples": [
+        {"power": {"about": {"allow": "only", "one_of": true}, "panel": {"name": "Panel", "number": 1, "src": "manual R98"}}}
+      ]
+    }
+  },
   "files": {
-    "game": {"section": 4, "fields": {
-      "name": "text", "season": "number", "edition": "text", "sources": "records source", "variants": "variants", "frame": "record frame", "people": "people", "accuracy": "record accuracy"}},
-    "clock": {"section": 6, "fields": {
-      "periods": "records period", "windows": "records window", "states": "records state"}},
-    "field": {"section": 7, "fields": {
-      "size": "record size", "symmetry": "word symmetry", "guardrail": "record guardrail", "zones": "records zone", "lines": "records line", "solids": "records solid",
-      "passages": "records passage", "equipment": "records equipment", "hangs": "records hang", "tags": "tags"}},
-    "pieces": {"section": 8, "records": "piece"},
-    "places": {"section": 9, "records": "place"},
-    "scoring": {"section": 10, "fields": {
-      "total": "record total", "counts": "records count", "awards": "records award", "judged": "records judged", "fouls": "records foul"}},
-    "conduct": {"section": 12, "records": "conduct"},
-    "robot": {"section": 13, "fields": {
-      "limits": "limits", "parts": "parts", "rules": "records rule"}},
-    "terms": {"section": 14, "records": "term"}
+    "game": {
+      "means": "Edition, sources, what changes a number (`variants`), where positions are measured from, people. Everyone needs it.",
+      "fields": {
+        "name": {"holds": "text", "means": "The game's name."},
+        "season": {"holds": "number", "means": "The season's year."},
+        "edition": {"holds": "text", "means": "Which edition of the manual this folder holds, and its date."},
+        "sources": {"holds": "records source", "means": "Every document that a value comes from, by a short ID. The first word of each `src` is one of these IDs."},
+        "variants": {"holds": "variants", "means": "The kinds of field, event and match, and anything that a team chooses, such as a gate's height: what a value may depend on (`by`). A question that names none gets the first of each."},
+        "frame": {"holds": "record frame", "means": "Where positions are measured from, and which way each axis goes."},
+        "people": {"holds": "people", "means": "Each kind of person on a team's side, by ID. `together` limits several kinds at once."},
+        "accuracy": {"holds": "record accuracy", "means": "How near the real field is to the numbers."}
+      }
+    },
+    "clock": {
+      "means": "Periods, windows (spans of time with a name), states (things that are true for a while). For strategy, rehearsal and controls.",
+      "fields": {
+        "periods": {"holds": "records period", "means": "The parts of a match, in order."},
+        "windows": {"holds": "records window", "means": "Spans of time with a name. Windows may overlap."},
+        "states": {"holds": "records state", "means": "Things that are true for a while."}
+      }
+    },
+    "field": {
+      "means": "Size, zones, lines, solids, ways through, things robots hang on, vision tags. For every design phase and vision.",
+      "fields": {
+        "size": {"holds": "record size", "means": "The size of the field."},
+        "symmetry": {"holds": "word symmetry", "means": "How red's side is made from blue's, unless a record has its own."},
+        "guardrail": {"holds": "record guardrail", "means": "The wall along the long sides of the field."},
+        "zones": {"holds": "records zone", "means": "Areas of the field that rules or scores name."},
+        "lines": {"holds": "records line", "means": "Lines of the field that rules or scores name."},
+        "solids": {"holds": "records solid", "means": "Things that a robot can run into."},
+        "passages": {"holds": "records passage", "means": "Ways through, over or under something."},
+        "equipment": {"holds": "records equipment", "means": "Lights, station shelves, buttons and the like."},
+        "hangs": {"holds": "records hang", "means": "What robots hang on."},
+        "tags": {"holds": "tags", "means": "The vision tags, by ID, and what they all share."}
+      }
+    },
+    "pieces": {"means": "Each piece: shape, size, mass. For every design phase.", "records": "piece"},
+    "places": {"means": "Everywhere a piece can be: where it starts, comes from, can be put, and goes next. For strategy, rehearsal and concepts.", "records": "place"},
+    "scoring": {
+      "means": "What earns points, what is counted, what fouls cost. For strategy, rehearsal and concepts.",
+      "fields": {
+        "total": {"holds": "record total", "means": "How many of each piece there are in all, by piece."},
+        "counts": {"holds": "records count", "means": "Everything that a condition counts."},
+        "awards": {"holds": "records award", "means": "Everything that earns points or ranking points."},
+        "judged": {"holds": "records judged", "means": "How long after a period an award is still looked at. A piece counted then belongs to the period that ended."},
+        "fouls": {"holds": "records foul", "means": "What a broken rule may cost: fouls and cards."}
+      }
+    },
+    "conduct": {"means": "What robots and people may not do, and what it costs. For strategy, rehearsal and controls. Keyed by rule code, or by an ID when the manual gives no code (setup, cards, the order of placing robots).", "records": "conduct"},
+    "robot": {
+      "means": "What a robot must be. For every design phase and inspection.",
+      "fields": {
+        "limits": {"holds": "limits", "means": "The numbers that a robot must keep to. The names are the same every season, and no other names are allowed. A season with no such rule leaves the name out, and a program reads that as no limit. Each also has `says` where the measuring needs it."},
+        "parts": {"holds": "parts", "means": "Groups of records: what may be used, and how it is wired. An ID is used once in a group."},
+        "rules": {"holds": "records rule", "means": "A record for every construction and inspection rule, keyed by code, each with its own `says`. Numbers come from `limits`, `parts` or the record's own fields."}
+      }
+    },
+    "terms": {"means": "The manual's defined words. Everyone needs it. A word that is already the ID of something else (a zone, a piece) has no term: its `says` is there.", "records": "term"}
   },
-  "roots": ["size", "limits", "tags", "total", "judged", "parts", "guardrail", "accuracy"],
-  "every": {"says": "text", "code": "texts", "src": "src", "unknown": "list of texts", "differs": "differs", "was": "was", "of": "text"},
-  "placed": {"alliance": "word alliance", "symmetry": "word symmetry", "at": "point", "faces": "angle", "spots": "spots", "no_geometry": "text"},
-  "value": {"is": "value", "of": "text", "src": "src", "assumed": "text", "differs": "differs", "was": "was", "each": "text"},
-  "differs": {"is": "value", "says": "text", "src": "src", "of": "text"},
-  "was": {"until": "date", "is": "value", "says": "text", "src": "src", "of": "text"},
+  "roots": {"means": "Words that begin a path in place of an ID: size: The field's size. limits: The robot's limits. tags: The vision tags. total: How many of each piece there are. judged: How long after a period awards count. parts: What may be used. guardrail: The wall along the long sides. accuracy: How near the real field is to the numbers.", "words": ["size", "limits", "tags", "total", "judged", "parts", "guardrail", "accuracy"]},
   "kinds": {
-    "source": {"section": 4, "fields": {"title": "text", "edition": "text", "url": "text"}},
-    "frame": {"section": 4, "fields": {"origin": "text", "x": "text", "y": "text", "z": "text"}},
-    "accuracy": {"section": 4, "fields": {"decimal": "length", "angle": "angle"}},
-    "person": {"section": 4, "fields": {"most": "number"}},
-    "together": {"section": 4, "closed": true, "needs": ["of", "most"], "fields": {"of": "people", "most": "number"}},
-    "period": {"section": 6, "fields": {"lasts": "time", "control": "text"}},
-    "window": {"section": 6, "needs": ["in"], "fields": {"in": "period", "first": "time", "last": "time", "timer": "timer"}},
-    "state": {"section": 6, "fields": {
-      "of": "word state_of", "starts": "text", "needs": "conditions", "lasts": "time", "or_until": "text", "grace": "time", "true": "list of whens"}},
-    "size": {"section": 7, "fields": {"length": "length", "width": "length"}},
-    "guardrail": {"section": 7, "fields": {"height": "length", "gates": "number", "gate_width": "length"}},
-    "zone": {"section": 7, "placed": true, "fields": {"outline": "outline", "edge": "word edge", "height": "height", "for": "word for"}},
-    "line": {"section": 7, "placed": true, "fields": {"from": "point", "to": "point", "for": "word for"}},
-    "solid": {"section": 7, "placed": true, "fields": {"shape": "shape"}},
-    "passage": {"section": 7, "placed": true, "fields": {
-      "kind": "word passage_kind", "width": "length", "height": "length", "rise": "length", "slope": "angle"}},
-    "equipment": {"section": 7, "placed": true, "fields": {}},
-    "hang": {"section": 7, "placed": true, "fields": {
-      "kind": "word hang_kind", "diameter": "length", "width": "length", "may_touch": "touchable", "may_not_touch": "touchable"}},
-    "tags": {"section": 7, "fields": {"family": "text", "black": "length", "panel": "length"}},
-    "tag": {"section": 7, "fields": {"at": "point", "faces": "angle", "tilt": "angle", "panel": "length"}},
-    "spot": {"section": 5, "needs": ["at"], "fields": {"at": "point", "faces": "angle"}},
-    "row": {"section": 5, "closed": true, "needs": ["row", "step", "first"], "fields": {
-      "row": "number", "step": "point", "first": "first spot", "names": "list of texts"}},
-    "ring": {"section": 5, "closed": true, "needs": ["ring", "around", "step", "first"], "fields": {
-      "ring": "number", "around": "point", "step": "angle", "first": "first spot", "names": "list of texts"}},
-    "piece": {"section": 8, "fields": {"shape": "shape", "mass": "mass", "stiff": "flag", "still_one_if": "text"}},
-    "place": {"section": 9, "placed": true, "fields": {
-      "starts": "starts", "holds": "by piece", "opening": "record opening", "post": "record post", "surface": "record surface", "slide": "angle",
-      "takes": "list of take", "gives": "list of give", "then": "record then"}},
-    "opening": {"section": 9, "fields": {
-      "outline": "outline", "slope": "angle", "from": "word opening_from", "bottom": "length", "top": "length", "depth": "length", "lip": "length"}},
-    "post": {"section": 9, "fields": {"tip": "length", "slope": "angle", "diameter": "length", "length": "length"}},
-    "surface": {"section": 9, "fields": {"edge": "length", "size": "lengths", "slope": "angle"}},
-    "take": {"section": 9, "needs": ["piece"], "fields": {
-      "piece": "piece", "by": "words takes_by", "how": "word takes_how", "counts": "text", "score": "award", "most": "cap"}},
-    "give": {"section": 9, "needs": ["piece", "to"], "fields": {"piece": "piece", "by": "words gives_by", "to": "given to", "how": "text"}},
-    "then": {"section": 9, "needs": ["to"], "fields": {"to": "goes to", "of": "word whose", "how": "text"}},
-    "total": {"section": 10, "by_piece": true, "fields": {}},
-    "count": {"section": 10, "fields": {
-      "of": "text", "adds": "awards", "counts": "awards", "when": "when", "smallest_of": "places", "third_largest_of": "places"}},
-    "award": {"section": 10, "fields": {
-      "per": "text", "points": "list of points", "rp": "number", "needs": "conditions", "unless": "awards", "also_needs": "awards",
-      "easier": "record easier", "most": "cap", "when": "when"}},
-    "points": {"section": 10, "needs": ["when", "points"], "fields": {"when": "when", "points": "number"}},
-    "easier": {"section": 10, "needs": ["when", "needs"], "fields": {"when": "when", "needs": "conditions"}},
-    "judged": {"section": 10, "needs": ["awards"], "fields": {"awards": "awards", "or_sooner": "text"}},
-    "foul": {"section": 10, "fields": {"points_to_them": "number"}},
-    "conduct": {"section": 12, "needs": ["says", "cost"], "fields": {
-      "act": "word act", "what": "things touched", "through_pieces": "flag", "whoever_starts": "flag", "piece": "pieces", "into": "things",
-      "limit": "limit", "longer_than": "longer than", "where": "things", "who": "who", "must_not": "must not", "only_if": "conditions",
-      "when": "when", "unless": "texts", "cost": "cost"}},
-    "cost": {"section": 12, "closed": true, "fields": {
-      "foul": "foul", "award": "award", "to": "text", "deny": "awards", "either": "fouls", "words": "text", "if": "text", "again": "word again",
-      "instead_of": "foul", "times": "number", "each": "text", "every": "time", "against": "word against", "next_match": "flag", "when": "when"}},
-    "weight": {"section": 13, "fields": {"max": "mass", "without": "texts"}},
-    "about": {"section": 13, "needs": ["allow"], "fields": {"allow": "word allow", "one_of": "flag"}},
-    "part": {"section": 13, "needs": ["src"], "fields": {
-      "name": "text", "part_numbers": "texts", "number": "number", "kind": "word device", "only_for": "loads", "on": "on",
-      "protection": "A", "each": "circuits", "thinnest": "AWG", "area": "mm2", "for": "text"}},
-    "rule": {"section": 13, "needs": ["says"], "fields": {}},
-    "term": {"section": 14, "fields": {"lasts": "time"}},
-    "extra": {"section": 2, "fields": {}}
+    "every": {
+      "means": "What any record may have.",
+      "fields": {
+        "says": {"holds": "says", "means": "The whole meaning in our own words. Numbers come from the fields: {height} is this record's, {bale.mass} another's. A limit prints without its words: {limits.height.max} prints 4 ft, so write \"at most {limits.height.max}\"."},
+        "code": {"holds": "texts", "means": "The manual's rule code, or a list. Codes change each season, so programs never use them."},
+        "src": {"holds": "src", "means": "Where it is written: \"manual 3.2\", or a list. The first word is an ID in `sources`."},
+        "unknown": {"holds": "list of texts", "means": "A list: what a reader would look for and no source gives. A known fact never goes here."},
+        "differs": {"holds": "differs", "means": "Other sources that say something different. On a whole record each holds `says`."},
+        "was": {"holds": "was", "means": "Earlier values or wording, on a record or on one value."},
+        "of": {"holds": "text", "means": "What is measured, from where to where, when the name does not say."}
+      }
+    },
+    "placed": {
+      "means": "What any record that stands somewhere may have.",
+      "fields": {
+        "alliance": {"holds": "word alliance", "means": "`each`: blue and red each have one. Write blue's; red's is made by the symmetry. Left out, there is one and it belongs to neither."},
+        "symmetry": {"holds": "word symmetry", "means": "This record's own symmetry, if it is not the field's."},
+        "at": {"holds": "point", "means": "Where it is: [x, y] or [x, y, z] in the field's frame. A solid stands on z: it is the height of its lowest point."},
+        "faces": {"holds": "angle", "means": "Which way it looks in plan: 0 deg is +X, 90 deg is +Y, anticlockwise from above. Shapes and outlines are turned by it. 0 deg if left out."},
+        "spots": {"holds": "spots", "means": "Several of the same thing: where each is."},
+        "no_geometry": {"holds": "text", "means": "Why it has no position or shape, in words: no source gives it, or it needs none. `rules check` lists it. A zone, line, solid or hang that a rule or a score names must have an outline, `from` and `to`, a shape, an `at` or `spots`, or this. `unknown` is for anything else that no source gives."}
+      }
+    },
+    "value": {
+      "means": "A value that needs more than its printed form.",
+      "closed": true,
+      "fields": {
+        "is": {"holds": "value", "means": "The value to use."},
+        "of": {"holds": "text", "means": "What is measured, from where to where, when the name does not say."},
+        "src": {"holds": "src", "means": "The source of this value, when it is not the record's."},
+        "assumed": {"holds": "text", "means": "Why this value was chosen, when no source prints it."},
+        "differs": {"holds": "differs", "means": "What other sources say instead. `is` is the one to use."},
+        "was": {"holds": "was", "means": "What the value was before."},
+        "each": {"holds": "text", "means": "What it is counted for each of: `spot`, `alliance` or an ID."}
+      }
+    },
+    "differs": {
+      "means": "What another source says.",
+      "closed": true,
+      "needs": ["src"],
+      "any_of": ["is", "says"],
+      "fields": {
+        "is": {"holds": "value", "means": "The value that the other source gives."},
+        "says": {"holds": "text", "means": "What the other source says, in our own words."},
+        "src": {"holds": "src", "means": "The other source."},
+        "of": {"holds": "text", "means": "What the other source measures."}
+      }
+    },
+    "was": {
+      "means": "What something was before.",
+      "closed": true,
+      "needs": ["until", "src"],
+      "any_of": ["is", "says"],
+      "fields": {
+        "until": {"holds": "date", "means": "The date on which it stopped being so, as 2031-02-04."},
+        "is": {"holds": "value", "means": "The value until then."},
+        "says": {"holds": "text", "means": "What was said until then, in our own words."},
+        "src": {"holds": "src", "means": "Where the change is written."},
+        "of": {"holds": "text", "means": "What was measured."}
+      }
+    },
+    "source": {
+      "means": "A document.",
+      "fields": {
+        "title": {"holds": "text", "means": "Its title."},
+        "edition": {"holds": "text", "means": "Its edition or date."},
+        "url": {"holds": "text", "means": "Where it is published."}
+      }
+    },
+    "frame": {
+      "means": "The field's frame: every position is measured in it.",
+      "fields": {
+        "origin": {"holds": "text", "means": "Where 0, 0, 0 is."},
+        "x": {"holds": "text", "means": "Which way x grows."},
+        "y": {"holds": "text", "means": "Which way y grows."},
+        "z": {"holds": "text", "means": "Which way z grows."}
+      }
+    },
+    "accuracy": {
+      "means": "How near the real field is to the numbers.",
+      "fields": {
+        "decimal": {"holds": "length", "means": "The drawings' tolerance on a length."},
+        "angle": {"holds": "angle", "means": "The drawings' tolerance on an angle."}
+      }
+    },
+    "person": {
+      "means": "A kind of person.",
+      "fields": {
+        "most": {"holds": "number", "means": "The most of them that a team may have."}
+      }
+    },
+    "together": {
+      "means": "A limit on several kinds of people together.",
+      "closed": true,
+      "needs": ["of", "most"],
+      "fields": {
+        "of": {"holds": "several people", "means": "The kinds of people."},
+        "most": {"holds": "number", "means": "The most of them together."}
+      }
+    },
+    "period": {
+      "means": "A part of a match.",
+      "fields": {
+        "lasts": {"holds": "time", "means": "How long it is."},
+        "control": {"holds": "text", "means": "Who controls the robots in it, in words, such as `none` or `drivers`."}
+      }
+    },
+    "window": {
+      "means": "A span of time with a name, inside one period. It has one of `first`, `last` and `timer`.",
+      "needs": ["in"],
+      "one_of": ["first", "last", "timer"],
+      "fields": {
+        "in": {"holds": "period", "means": "The period that it is in."},
+        "first": {"holds": "time", "means": "It is the first so much of the period."},
+        "last": {"holds": "time", "means": "It is the last so much of the period."},
+        "timer": {"holds": "timer", "means": "From and to, as the match timer counts down in that period: [\"1:15\", \"0:50\"]."}
+      }
+    },
+    "state": {
+      "means": "Something that is true for a while.",
+      "fields": {
+        "of": {"holds": "word state_of", "means": "What it is true of."},
+        "starts": {"holds": "text", "means": "What makes it start, in words."},
+        "needs": {"holds": "conditions", "means": "Conditions that must be true for it to start."},
+        "lasts": {"holds": "time", "means": "How long it is true."},
+        "or_until": {"holds": "text", "means": "What ends it sooner, in words."},
+        "grace": {"holds": "time", "means": "Time added after it ends. The state is over, but what `of` or `says` names still counts."},
+        "true": {"holds": "list of whens", "means": "When it is true: a list of `when` lists, and any one is enough."}
+      }
+    },
+    "size": {
+      "means": "The size of the field.",
+      "fields": {
+        "length": {"holds": "length", "means": "Along x, between the faces that look into the field and bound it."},
+        "width": {"holds": "length", "means": "Along y, between the faces that look into the field and bound it."},
+        "surface": {"holds": "text", "means": "What the floor is, in words."}
+      }
+    },
+    "guardrail": {
+      "means": "The wall along the long sides of the field.",
+      "fields": {
+        "height": {"holds": "length", "means": "Carpet to its top."},
+        "gates": {"holds": "number", "means": "How many gates it has in all."},
+        "gate_width": {"holds": "length", "means": "How wide each gate is."}
+      }
+    },
+    "zone": {
+      "means": "An area of the field.",
+      "placed": true,
+      "geometry": true,
+      "fields": {
+        "outline": {"holds": "outline", "means": "Its edge in plan."},
+        "edge": {"holds": "word edge", "means": "Whether the tape is part of it. Left out, it is not said."},
+        "height": {"holds": "height", "means": "How high it reaches from the carpet, or `none` for no limit. Left out, no source gives it."},
+        "for": {"holds": "word for", "means": "`people` when no robot goes there."},
+        "wide": {"holds": "length", "means": "A printed width. `of` says which way."},
+        "deep": {"holds": "length", "means": "A printed depth. `of` says which way."}
+      }
+    },
+    "line": {
+      "means": "A line on the floor.",
+      "placed": true,
+      "geometry": true,
+      "fields": {
+        "from": {"holds": "point", "means": "One end."},
+        "to": {"holds": "point", "means": "The other end."},
+        "for": {"holds": "word for", "means": "`people` when no robot goes there."},
+        "from_wall": {"holds": "length", "means": "A printed distance from the alliance wall."}
+      }
+    },
+    "solid": {
+      "means": "Something that a robot can run into.",
+      "placed": true,
+      "geometry": true,
+      "fields": {
+        "shape": {"holds": "shape", "means": "Its shape, around `at`, turned by `faces`."},
+        "wide": {"holds": "length", "means": "A printed width. `of` says which way."},
+        "tall": {"holds": "length", "means": "A printed height from its foot to its top."}
+      }
+    },
+    "passage": {
+      "means": "A way through, over or under something. `at` is its middle, and `faces` the direction through it.",
+      "placed": true,
+      "fields": {
+        "kind": {"holds": "word passage_kind", "means": "Which way through it is."},
+        "width": {"holds": "length", "means": "How wide the way is."},
+        "height": {"holds": "length", "means": "Carpet to the lowest thing overhead."},
+        "rise": {"holds": "length", "means": "How high a robot climbs to go over."},
+        "slope": {"holds": "angle", "means": "How steep the way over is, from level."}
+      }
+    },
+    "equipment": {
+      "means": "A light, shelf, button or the like.",
+      "placed": true,
+      "fields": {}
+    },
+    "hang": {
+      "means": "Something that robots hang on. `at` is the middle of a bar, the lowest point of a chain, the middle of the bottom of a frame or post.",
+      "placed": true,
+      "geometry": true,
+      "fields": {
+        "kind": {"holds": "word hang_kind", "means": "What it is."},
+        "diameter": {"holds": "length", "means": "How thick the bar, chain or post is."},
+        "width": {"holds": "length", "means": "How wide it is, end to end."},
+        "may_touch": {"holds": "touchable", "means": "What a hanging robot may also touch: IDs, or words for a part that has none."},
+        "may_not_touch": {"holds": "touchable", "means": "What a hanging robot may not touch: IDs, or words for a part that has none."}
+      }
+    },
+    "tags": {
+      "means": "What all the tags share.",
+      "fields": {
+        "family": {"holds": "text", "means": "The family of the tags."},
+        "black": {"holds": "length", "means": "The side of the black square."},
+        "panel": {"holds": "length", "means": "The side of the panel that the tag is on."},
+        "measured": {"holds": "text", "means": "What point of a tag the positions are measured to, in words."}
+      }
+    },
+    "tag": {
+      "means": "One vision tag.",
+      "fields": {
+        "at": {"holds": "point", "means": "Where its point is (`measured` says which point)."},
+        "faces": {"holds": "angle", "means": "Which way it looks in plan."},
+        "tilt": {"holds": "angle", "means": "How far it leans from upright so that it looks downward."},
+        "panel": {"holds": "length", "means": "Its own panel, when it is not like the others."}
+      }
+    },
+    "spot": {
+      "means": "One of several of the same thing.",
+      "needs": ["at"],
+      "fields": {
+        "at": {"holds": "point", "means": "Where it is."},
+        "faces": {"holds": "angle", "means": "Which way it looks in plan."}
+      }
+    },
+    "row": {
+      "means": "Spots in a straight row, numbered from 1 or named by `names`.",
+      "closed": true,
+      "needs": ["row", "step", "first"],
+      "fields": {
+        "row": {"holds": "number", "means": "How many."},
+        "step": {"holds": "point", "means": "From each to the next."},
+        "first": {"holds": "first spot", "means": "The first spot. It may hold several named spots, which makes 1.a, 1.b, 2.a and so on."},
+        "names": {"holds": "list of texts", "means": "Names to use in place of numbers."}
+      }
+    },
+    "ring": {
+      "means": "Spots around a point, numbered from 1 or named by `names`. A ring turns each spot's `faces` too.",
+      "closed": true,
+      "needs": ["ring", "around", "step", "first"],
+      "fields": {
+        "ring": {"holds": "number", "means": "How many."},
+        "around": {"holds": "point", "means": "The point in the middle."},
+        "step": {"holds": "angle", "means": "The angle from each to the next, anticlockwise from above."},
+        "first": {"holds": "first spot", "means": "The first spot. It may hold several named spots, which makes 1.a, 1.b, 2.a and so on."},
+        "names": {"holds": "list of texts", "means": "Names to use in place of numbers."}
+      }
+    },
+    "piece": {
+      "means": "A kind of game piece.",
+      "fields": {
+        "shape": {"holds": "shape", "means": "Its shape."},
+        "mass": {"holds": "mass", "means": "Its mass."},
+        "stiff": {"holds": "flag", "means": "Whether it keeps its shape when pressed."},
+        "still_one_if": {"holds": "text", "means": "What a worn or damaged one must still be like to count, in words."},
+        "made_of": {"holds": "text", "means": "What it is made of, in words."},
+        "part": {"holds": "text", "means": "The maker's part number."}
+      }
+    },
+    "place": {
+      "means": "Somewhere that a piece can be. `at` is the middle of an opening or a surface, the tip of a post, or the middle of where pieces rest.",
+      "placed": true,
+      "fields": {
+        "starts": {"holds": "starts", "means": "What is there at the start: {\"bale\": 17}, or {\"bale\": \"left over\"} for what the other places do not use."},
+        "holds": {"holds": "by piece", "means": "The most it can hold, by piece."},
+        "opening": {"holds": "record opening", "means": "A hole that pieces go through."},
+        "post": {"holds": "record post", "means": "A rod that goes through a piece."},
+        "surface": {"holds": "record surface", "means": "Something to rest on."},
+        "slide": {"holds": "angle", "means": "The slope of a slide behind an opening that people feed pieces down."},
+        "takes": {"holds": "list of take", "means": "Who can put what here, and what it earns."},
+        "gives": {"holds": "list of give", "means": "What comes out, and to where."},
+        "then": {"holds": "record then", "means": "Where a piece goes once taken."}
+      }
+    },
+    "opening": {
+      "means": "A hole that pieces go through.",
+      "fields": {
+        "outline": {"holds": "outline", "means": "Its shape: a circle, a rectangle [width, height] or a hexagon."},
+        "slope": {"holds": "angle", "means": "How the opening's plane stands: 0 deg is flat, 90 deg is upright. In between, it looks upward, toward `faces`."},
+        "from": {"holds": "word opening_from", "means": "The side that pieces come from."},
+        "bottom": {"holds": "length", "means": "Carpet to its lowest edge."},
+        "top": {"holds": "length", "means": "Carpet to its highest edge."},
+        "depth": {"holds": "length", "means": "How far in it goes."},
+        "lip": {"holds": "length", "means": "How far its edge sticks up or out."}
+      }
+    },
+    "post": {
+      "means": "A rod that goes through a piece.",
+      "fields": {
+        "tip": {"holds": "length", "means": "Carpet to its top."},
+        "slope": {"holds": "angle", "means": "How the rod stands from level: 90 deg is upright. In between, it rises toward `faces`."},
+        "diameter": {"holds": "length", "means": "How thick it is."},
+        "length": {"holds": "length", "means": "How long it is."}
+      }
+    },
+    "surface": {
+      "means": "Something to rest on.",
+      "fields": {
+        "edge": {"holds": "length", "means": "Carpet to its edge."},
+        "size": {"holds": "lengths", "means": "Its size: two lengths, along `faces` and across."},
+        "slope": {"holds": "angle", "means": "How it leans: 0 deg is flat."}
+      }
+    },
+    "take": {
+      "means": "Who can put what here.",
+      "needs": ["piece"],
+      "fields": {
+        "piece": {"holds": "piece", "means": "The piece."},
+        "by": {"holds": "words takes_by", "means": "Who puts it here."},
+        "how": {"holds": "word takes_how", "means": "How it must end up."},
+        "counts": {"holds": "text", "means": "What must be true for it to count, in words."},
+        "score": {"holds": "award", "means": "The award that it earns."},
+        "most": {"holds": "cap", "means": "How many earn it."}
+      }
+    },
+    "give": {
+      "means": "What comes out, and to where.",
+      "needs": ["piece", "to"],
+      "fields": {
+        "piece": {"holds": "piece", "means": "The piece."},
+        "by": {"holds": "words gives_by", "means": "Who gives it."},
+        "to": {"holds": "given to", "means": "Where it goes: the place's own alliance's, if that place is for each."},
+        "how": {"holds": "text", "means": "How, in words."}
+      }
+    },
+    "then": {
+      "means": "Where a piece goes once taken.",
+      "needs": ["to"],
+      "fields": {
+        "to": {"holds": "goes to", "means": "Where: an ID, or `out` when it leaves play."},
+        "of": {"holds": "word whose", "means": "Whose: `mine` or `theirs`, as the place's own alliance sees it."},
+        "how": {"holds": "text", "means": "How, in words."}
+      }
+    },
+    "total": {
+      "means": "How many of each piece there are in all.",
+      "by_piece": true,
+      "fields": {}
+    },
+    "count": {
+      "means": "Something that a condition counts. It `adds` the points of awards, `counts` how often awards are earned, takes the `smallest_of` or `third_largest_of` the pieces in some places, or `says` it.",
+      "fields": {
+        "of": {"holds": "text", "means": "Who it is counted for, in words: usually `alliance`."},
+        "adds": {"holds": "awards", "means": "The awards whose points are added up."},
+        "counts": {"holds": "awards", "means": "The awards whose times earned are counted."},
+        "when": {"holds": "when", "means": "Only what is earned then counts."},
+        "smallest_of": {"holds": "places", "means": "The places: it is the fewest pieces in any of them."},
+        "third_largest_of": {"holds": "places", "means": "The places: it is the third largest number of pieces in any of them."}
+      }
+    },
+    "award": {
+      "means": "Something that earns points or ranking points.",
+      "fields": {
+        "per": {"holds": "text", "means": "What it is earned once for each of, in words: `piece`, `robot` or `match`."},
+        "points": {"holds": "list of points", "means": "The points, by when. Of the rows that are true, the one with the most entries in `when` counts (`not lit` is one); two that tie are refused."},
+        "rp": {"holds": "number", "means": "Ranking points."},
+        "needs": {"holds": "conditions", "means": "Conditions that must be true."},
+        "unless": {"holds": "awards", "means": "Awards that cancel this one."},
+        "also_needs": {"holds": "awards", "means": "Awards whose `needs` apply too."},
+        "easier": {"holds": "record easier", "means": "The `needs` that are enough at its `when`."},
+        "most": {"holds": "cap", "means": "A cap on how many are earned."},
+        "when": {"holds": "when", "means": "When it can be earned."}
+      }
+    },
+    "points": {
+      "means": "Points for an award at some time.",
+      "needs": ["when", "points"],
+      "fields": {
+        "when": {"holds": "when", "means": "When these points are earned."},
+        "points": {"holds": "number", "means": "How many."}
+      }
+    },
+    "easier": {
+      "means": "Easier conditions at some times.",
+      "needs": ["when", "needs"],
+      "fields": {
+        "when": {"holds": "when", "means": "When they are enough."},
+        "needs": {"holds": "conditions", "means": "The conditions that are enough then."}
+      }
+    },
+    "judged": {
+      "means": "How long after a period some awards are still looked at. A field named `after_` and a period's ID, such as `after_auto`, holds the time for that period.",
+      "needs": ["awards"],
+      "fields": {
+        "awards": {"holds": "awards", "means": "The awards."},
+        "or_sooner": {"holds": "text", "means": "What ends the looking sooner, in words."},
+        "after_": {"holds": "after period", "means": "`after_` and a period's ID: how long after that period they are still looked at."}
+      }
+    },
+    "foul": {
+      "means": "What a broken rule may cost.",
+      "fields": {
+        "points_to_them": {"holds": "number", "means": "The points that the other alliance gets."}
+      }
+    },
+    "conduct": {
+      "means": "What robots and people may not do. Every rule has `says` and `cost`. A rule that a program computes from has an `act` as well, with `must_not`, `only_if` or `limit`. `who` and `when` may be on any rule.",
+      "needs": ["says", "cost"],
+      "act_needs": ["must_not", "only_if", "limit"],
+      "fields": {
+        "act": {"holds": "word act", "means": "What kind of act it is about."},
+        "what": {"holds": "things touched", "means": "What is touched: `their robot`, or IDs."},
+        "through_pieces": {"holds": "flag", "means": "`true`: contact through a piece counts too."},
+        "whoever_starts": {"holds": "flag", "means": "`true`: it does not matter who starts the contact."},
+        "piece": {"holds": "pieces", "means": "The piece, or a list."},
+        "into": {"holds": "things", "means": "Only launches into this are judged by the rule. Left out, every launch is."},
+        "limit": {"holds": "hold limit", "means": "How many: a number for each piece (`hold`), or a number of robots of one alliance (`cross`)."},
+        "longer_than": {"holds": "longer than", "means": "How long it must last to count: a term or a time."},
+        "where": {"holds": "things", "means": "Where it is about, if it is about keeping pieces somewhere."},
+        "who": {"holds": "who", "means": "Who must obey: `robot` if left out, or a list of `robot`, people from game.json, or `anyone`."},
+        "must_not": {"holds": "must not", "means": "`true`, or the conditions that make it wrong."},
+        "only_if": {"holds": "conditions", "means": "The conditions that make it right."},
+        "when": {"holds": "when", "means": "When the rule applies."},
+        "unless": {"holds": "texts", "means": "Exceptions, in words."},
+        "cost": {"holds": "cost", "means": "What it costs. A rule that costs nothing has an empty list."},
+        "longest": {"holds": "time", "means": "The longest that it may go on, such as one robot keeping another from moving."},
+        "apart": {"holds": "length", "means": "How far apart the robots must be for it to end."}
+      }
+    },
+    "cost": {
+      "means": "One thing that a broken rule costs: a foul ID, or an object with one of `foul`, `award`, `deny`, `either` and `words`. A rule's `cost` is a list, and all of it adds up.",
+      "closed": true,
+      "one_of": ["foul", "award", "deny", "either", "words"],
+      "fields": {
+        "foul": {"holds": "foul", "means": "The foul or card."},
+        "award": {"holds": "award", "means": "An award that is given."},
+        "to": {"holds": "text", "means": "Who the award is given to, in words."},
+        "deny": {"holds": "awards", "means": "Awards that are lost."},
+        "either": {"holds": "fouls", "means": "Fouls, one of which is given."},
+        "words": {"holds": "text", "means": "What happens, when it is none of the others."},
+        "if": {"holds": "text", "means": "Only then, in words."},
+        "again": {"holds": "word again", "means": "Only when it happens again in the same match, phase or event."},
+        "instead_of": {"holds": "foul", "means": "A foul in this list that is then not given."},
+        "times": {"holds": "number", "means": "How many are given."},
+        "each": {"holds": "text", "means": "Once for each of this, in words."},
+        "every": {"holds": "time", "means": "One for each such time that passes while it goes on, and none at the start. For one at once and more as it goes on, the list has both: [\"minor\", {\"foul\": \"minor\", \"every\": \"3 s\"}]."},
+        "against": {"holds": "word against", "means": "Who it counts against, if it is not the one that broke the rule."},
+        "next_match": {"holds": "flag", "means": "`true`: it is given in the next match."},
+        "when": {"holds": "when", "means": "Only at these times."}
+      }
+    },
+    "weight": {
+      "means": "A limit on weight.",
+      "fields": {
+        "max": {"holds": "mass", "means": "The most that it may weigh."},
+        "without": {"holds": "texts", "means": "What is left off the scale."}
+      }
+    },
+    "about": {
+      "means": "What is true of a whole group of parts.",
+      "needs": ["allow"],
+      "fields": {
+        "allow": {"holds": "word allow", "means": "Whether anything else may be used. With no `about`, it is not said."},
+        "one_of": {"holds": "flag", "means": "`true`: one of them is picked."}
+      }
+    },
+    "part": {
+      "means": "Something that may be used, or a row of a wiring table.",
+      "needs": ["src"],
+      "any_of": ["name", "for"],
+      "fields": {
+        "name": {"holds": "text", "means": "What it is called."},
+        "part_numbers": {"holds": "texts", "means": "Its part numbers."},
+        "number": {"holds": "number", "means": "How many there must be."},
+        "kind": {"holds": "word device", "means": "For a device that runs others: what kind of device."},
+        "only_for": {"holds": "loads", "means": "A list of loads: the device may run these and no others, whatever its `kind` allows. A load is a record with `on`, named by its ID."},
+        "on": {"holds": "on", "means": "For a motor or other load: how many one device of each kind may run. A kind that is left out may not run it. `any` is no limit, and {\"is\": 1, \"of\": \"each channel\"} is per channel. With no `on` at all, nothing is said of what runs it."},
+        "protection": {"holds": "A", "means": "The breaker or fuse of a circuit."},
+        "each": {"holds": "circuits", "means": "How many circuits the breaker or fuse may feed: a number, `any`, or an object."},
+        "thinnest": {"holds": "AWG", "means": "The thinnest wire. A thicker wire has a smaller AWG."},
+        "area": {"holds": "mm2", "means": "The thinnest wire's section."},
+        "for": {"holds": "text", "means": "What a row is about, in words."}
+      }
+    },
+    "rule": {
+      "means": "A construction or inspection rule, keyed by its code.",
+      "needs": ["says"],
+      "fields": {}
+    },
+    "term": {
+      "means": "A word that the manual defines.",
+      "fields": {
+        "lasts": {"holds": "time", "means": "How long, when the word is about a time."}
+      }
+    },
+    "extra": {
+      "means": "A value that is not named here.",
+      "fields": {}
+    },
+    "padding": {
+      "means": "The padding. Its sizes are extra values.",
+      "fields": {}
+    },
+    "backing": {
+      "means": "What the padding is backed by.",
+      "fields": {
+        "tall": {"holds": "length", "means": "Its height."}
+      }
+    },
+    "numbers": {
+      "means": "The team numbers on the bumpers.",
+      "fields": {
+        "height": {"holds": "length", "means": "How tall the digits are."},
+        "stroke": {"holds": "length", "means": "How thick the lines of the digits are."}
+      }
+    }
   },
   "limits": {
-    "perimeter": {"size": "length", "bump": "length"},
-    "start": {"height": "length", "where": "conditions"},
-    "height": {"max": "length"},
-    "reach": {"far": "length", "sides": "number"},
-    "weight": {"robot": "record weight", "bumpers": "record weight", "with_bumpers": "record weight", "inspected": "record weight"},
-    "hold": "by piece",
-    "preload": "by piece",
+    "perimeter": {
+      "means": "The outline of the robot without bumpers.",
+      "fields": {
+        "size": {"holds": "length", "means": "The length of a string pulled around it."},
+        "bump": {"holds": "length", "means": "How far a bolt head may stick out of it."}
+      }
+    },
+    "start": {
+      "means": "How a robot stands when the match starts.",
+      "fields": {
+        "height": {"holds": "length", "means": "The tallest it may be."},
+        "where": {"holds": "conditions", "means": "Conditions that are true when the match starts."},
+        "overhang": {"holds": "text", "means": "What may reach beyond the perimeter, in words."}
+      }
+    },
+    "height": {
+      "means": "How tall a robot may be.",
+      "fields": {
+        "max": {"holds": "length", "means": "The tallest it may ever be."}
+      }
+    },
+    "reach": {
+      "means": "How far a robot may reach out.",
+      "fields": {
+        "far": {"holds": "length", "means": "How far beyond the perimeter."},
+        "sides": {"holds": "number", "means": "On how many sides at once."}
+      }
+    },
+    "weight": {
+      "means": "What a robot may weigh: named limits, each with `max` and `without`.",
+      "fields": {
+        "robot": {"holds": "record weight", "means": "The robot."},
+        "bumpers": {"holds": "record weight", "means": "The bumpers."},
+        "with_bumpers": {"holds": "record weight", "means": "The robot with its bumpers."},
+        "inspected": {"holds": "record weight", "means": "All that is brought to inspection."}
+      }
+    },
+    "hold": {
+      "means": "The most pieces that a robot may have at once, by piece.",
+      "by_piece": true,
+      "fields": {}
+    },
+    "preload": {
+      "means": "The most pieces that a robot may start with, by piece.",
+      "by_piece": true,
+      "fields": {}
+    },
     "bumpers": {
-      "low": "length", "high": "length", "out": "length", "hard": "length", "gap": "length", "corner": "value", "tolerance": "length",
-      "padding": "group", "backing": "group", "numbers": "group"},
-    "drive": {"motors": "number"},
-    "price": {},
-    "console": {},
-    "radio": {},
-    "air": {},
-    "battery": {}
+      "means": "What bumpers must be.",
+      "fields": {
+        "low": {"holds": "length", "means": "The bottom of the bumper zone, from the floor."},
+        "high": {"holds": "length", "means": "The top of the bumper zone, from the floor."},
+        "out": {"holds": "length", "means": "Their outside, from the perimeter."},
+        "hard": {"holds": "length", "means": "How far hard parts may be from the perimeter."},
+        "gap": {"holds": "length", "means": "Between segments."},
+        "corner": {"holds": "value", "means": "The padding at a corner: how far out from the corner it must be, or words."},
+        "tolerance": {"holds": "length", "means": "What is allowed on each size at inspection."},
+        "padding": {"holds": "record padding", "means": "The padding."},
+        "backing": {"holds": "record backing", "means": "What the padding is backed by."},
+        "numbers": {"holds": "record numbers", "means": "The team numbers on the bumpers."},
+        "cover": {"holds": "text", "means": "What covers the padding, in words."}
+      }
+    },
+    "drive": {
+      "means": "What drives the robot over the floor.",
+      "fields": {
+        "motors": {"holds": "number", "means": "How many motors may drive it."}
+      }
+    },
+    "price": {
+      "means": "What things may cost.",
+      "fields": {
+        "part": {"holds": "USD", "means": "The most that one part may cost."}
+      }
+    },
+    "console": {
+      "means": "The operator's console: its own numbers.",
+      "fields": {}
+    },
+    "radio": {
+      "means": "The radio.",
+      "fields": {
+        "part": {"holds": "text", "means": "Which radio, in words."},
+        "rate": {"holds": "Mbit/s", "means": "The most data in a second."}
+      }
+    },
+    "air": {
+      "means": "Compressed air: its own numbers.",
+      "fields": {}
+    },
+    "battery": {
+      "means": "The battery: its own numbers.",
+      "fields": {}
+    }
   },
   "shapes": {
-    "box": "3 lengths",
-    "taper": {"bottom": "outline", "top": "outline", "tall": "length"},
-    "cylinder": {"diameter": "length", "length": "length", "axis": "word axis"},
-    "ball": {"diameter": "length"},
-    "ring": {"inside": "length", "outside": "length", "thick": "length"},
-    "tube": {"inside": "length", "outside": "length", "length": "length", "axis": "word axis"},
-    "prism": {"outline": "outline", "tall": "length"},
-    "join": "shapes",
-    "cut": "shapes"
+    "box": {"means": "[along faces, across, up].", "holds": "3 lengths"},
+    "taper": {
+      "means": "A solid whose faces lean.",
+      "fields": {
+        "bottom": {"holds": "outline", "means": "Its outline at the foot."},
+        "top": {"holds": "outline", "means": "Its outline at the top."},
+        "tall": {"holds": "length", "means": "Its height."}
+      }
+    },
+    "cylinder": {
+      "means": "A round bar.",
+      "fields": {
+        "diameter": {"holds": "length", "means": "How thick it is."},
+        "length": {"holds": "length", "means": "How long it is."},
+        "axis": {"holds": "word axis", "means": "Which way it lies; x if left out.", "optional": true}
+      }
+    },
+    "ball": {
+      "means": "A ball.",
+      "fields": {
+        "diameter": {"holds": "length", "means": "How big it is."}
+      }
+    },
+    "ring": {
+      "means": "A ring that lies flat, round in section. Its `thick` is (`outside` - `inside`) / 2.",
+      "fields": {
+        "inside": {"holds": "length", "means": "Across the hole."},
+        "outside": {"holds": "length", "means": "Across the whole."},
+        "thick": {"holds": "length", "means": "How thick the ring itself is."}
+      }
+    },
+    "tube": {
+      "means": "A pipe.",
+      "fields": {
+        "inside": {"holds": "length", "means": "Across the hole."},
+        "outside": {"holds": "length", "means": "Across the whole."},
+        "length": {"holds": "length", "means": "How long it is."},
+        "axis": {"holds": "word axis", "means": "Which way it lies; x if left out.", "optional": true}
+      }
+    },
+    "prism": {
+      "means": "An outline with a height.",
+      "fields": {
+        "outline": {"holds": "outline", "means": "Its outline in plan."},
+        "tall": {"holds": "length", "means": "Its height."}
+      }
+    },
+    "join": {"means": "A list of shapes that make one, each with its own `at`, from the record's, and standing the same way.", "holds": "shapes"},
+    "cut": {"means": "A list of shapes: the first, with the others cut out of it, each with its own `at`, from the record's, and standing the same way.", "holds": "shapes"}
   },
-  "outlines": {"rectangle": "2 lengths", "hexagon": {"flats": "length", "points": "angle"}, "circle": "length"},
-  "may_be_left_out": ["axis"],
-  "acts_need": ["must_not", "only_if", "limit"],
-  "cost_main": ["foul", "award", "deny", "either", "words"],
+  "outlines": {
+    "rectangle": {"means": "[along faces, across].", "holds": "2 lengths"},
+    "hexagon": {
+      "means": "Six equal sides.",
+      "fields": {
+        "flats": {"holds": "length", "means": "Across the flats."},
+        "points": {"holds": "angle", "means": "One direction that a point looks, from `faces`."}
+      }
+    },
+    "circle": {"means": "Its diameter.", "holds": "length"}
+  },
   "words": {
-    "alliance": ["each"],
-    "symmetry": ["mirror", "turn"],
-    "state_of": ["alliance", "robot", "piece", "place", "match"],
-    "edge": ["tape inside", "tape outside"],
-    "height": ["none"],
-    "for": ["people"],
-    "passage_kind": ["under", "over", "between"],
-    "hang_kind": ["bar", "chain", "frame", "post", "ledge"],
-    "starts": ["left over"],
-    "opening_from": ["front", "above", "below"],
-    "takes_by": ["robot", "human", "field"],
-    "takes_how": ["enter", "rest", "surround"],
-    "gives_by": ["human", "field"],
-    "gives_to": ["floor", "robot"],
-    "whose": ["mine", "theirs"],
-    "goes_to": ["out"],
-    "act": ["touch", "launch", "hold", "cross", "feed"],
-    "again": ["match", "phase", "event"],
-    "against": ["robot", "team", "alliance", "person"],
-    "allow": ["only", "examples"],
-    "device": ["controller", "relay", "pneumatics", "own"],
-    "no_limit": ["any"],
-    "axis": ["x", "y", "z"],
-    "who": ["robot", "anyone"],
-    "touched": ["their robot"],
-    "sides": ["my", "their", "either"],
-    "someone": ["robot", "bumpers", "person", "alliance"],
-    "the": ["the"],
-    "the_piece": ["piece"],
-    "owners": ["my", "their", "any"],
-    "groups": ["any", "all"],
-    "what": ["carpet", "every robot"],
-    "measures": ["partly in", "fully in", "fully outside", "beyond", "over", "above", "through", "from", "touching", "not touching", "touching only"],
-    "compares": ["at least", "at most", "exactly"],
-    "state_owners": ["my", "their"]
+    "alliance": {
+      "means": "Whether blue and red each have one.",
+      "words": {
+        "each": {"means": "Blue and red each have one."}
+      }
+    },
+    "symmetry": {
+      "means": "How red's copy is made from blue's, for a field length x width.",
+      "words": {
+        "mirror": {"means": "Point (x, y) becomes (length - x, y), and direction a becomes 180 - a. It also swaps left and right in an outline that is not the same on both sides."},
+        "turn": {"means": "Point (x, y) becomes (length - x, width - y), and direction a becomes a + 180."}
+      }
+    },
+    "state_of": {
+      "means": "What a state is true of.",
+      "words": {
+        "alliance": {"means": "Each alliance has its own."},
+        "robot": {"means": "Each robot has its own."},
+        "piece": {"means": "Each piece has its own."},
+        "place": {"means": "Each place has its own."},
+        "match": {"means": "There is one for the whole match."}
+      }
+    },
+    "edge": {
+      "means": "Whether a zone's tape is part of it.",
+      "words": {
+        "tape inside": {"means": "The tape is part of the zone."},
+        "tape outside": {"means": "The tape is not part of the zone."}
+      }
+    },
+    "height": {
+      "means": "A zone's height, when it is not a quantity.",
+      "words": {
+        "none": {"means": "No limit."}
+      }
+    },
+    "for": {
+      "means": "Who a zone or line is for.",
+      "words": {
+        "people": {"means": "No robot goes there."}
+      }
+    },
+    "passage_kind": {
+      "means": "The kinds of way through.",
+      "words": {
+        "under": {"means": "Below something; its `height` is the room."},
+        "over": {"means": "Over something, with `rise` and `slope`."},
+        "between": {"means": "Between two things, with `width`."}
+      }
+    },
+    "hang_kind": {
+      "means": "The kinds of thing that robots hang on, and what `at` is for each.",
+      "words": {
+        "bar": {"means": "A straight bar; `at` is its middle."},
+        "chain": {"means": "A chain; `at` is its lowest point."},
+        "frame": {"means": "A frame; `at` is the middle of its bottom."},
+        "post": {"means": "A post; `at` is the middle of its bottom."},
+        "ledge": {"means": "An edge to rest or hang on; `at` is its middle."}
+      }
+    },
+    "starts": {
+      "means": "What a place starts with, when it is not a number.",
+      "words": {
+        "left over": {"means": "The total, less everything that other places start with. With `alliance: each`, half of it for each alliance. Only one place may start with what is left over of a piece."}
+      }
+    },
+    "opening_from": {
+      "means": "The side that pieces come to an opening from.",
+      "words": {
+        "front": {"means": "From in front of it."},
+        "above": {"means": "From above it."},
+        "below": {"means": "From below it."}
+      }
+    },
+    "takes_by": {
+      "means": "Who puts a piece in a place.",
+      "words": {
+        "robot": {"means": "A robot."},
+        "human": {"means": "A person."},
+        "field": {"means": "The field itself."}
+      }
+    },
+    "takes_how": {
+      "means": "How a piece must end up.",
+      "words": {
+        "enter": {"means": "It goes in."},
+        "rest": {"means": "It rests on it."},
+        "surround": {"means": "It goes around it."}
+      }
+    },
+    "gives_by": {
+      "means": "Who gives a piece.",
+      "words": {
+        "human": {"means": "A person."},
+        "field": {"means": "The field itself: the piece is picked up, or comes out by itself."}
+      }
+    },
+    "gives_to": {
+      "means": "Where a given piece goes, when it is not an ID.",
+      "words": {
+        "floor": {"means": "The floor."},
+        "robot": {"means": "A robot."}
+      }
+    },
+    "whose": {
+      "means": "Whose place a piece goes to.",
+      "words": {
+        "mine": {"means": "Of the alliance whose place this is."},
+        "theirs": {"means": "Of the other alliance than the one whose place this is."}
+      }
+    },
+    "goes_to": {
+      "means": "Where a piece goes once taken, when it is not an ID.",
+      "words": {
+        "out": {"means": "It leaves play."}
+      }
+    },
+    "act": {
+      "means": "The kinds of act that a program can judge, and the fields that each uses, besides `must_not`, `only_if`, `when` and `unless`.",
+      "words": {
+        "touch": {"means": "Contact that depends on a zone, a time or a thing. Uses `what`, `through_pieces`, `whoever_starts`."},
+        "launch": {"means": "Where a piece may be launched or put by a robot. Uses `piece`, `into`. A rule about throwing only is words."},
+        "hold": {"means": "How many pieces. Uses `limit` (a number for each piece), `longer_than`, `where`."},
+        "cross": {"means": "Where a robot may be, or how many robots. With `limit`, at most that many robots of one alliance may meet `must_not` at once."},
+        "feed": {"means": "How pieces may enter or be kept. Uses `piece`, `who`."}
+      }
+    },
+    "again": {
+      "means": "Within what a rule must be broken again.",
+      "words": {
+        "match": {"means": "In the same match."},
+        "phase": {"means": "In the same part of an event, such as its qualification matches."},
+        "event": {"means": "In the same event."}
+      }
+    },
+    "against": {
+      "means": "Who a cost counts against.",
+      "words": {
+        "robot": {"means": "The robot."},
+        "team": {"means": "The team."},
+        "alliance": {"means": "The alliance."},
+        "person": {"means": "The person."}
+      }
+    },
+    "allow": {
+      "means": "Whether others may be used.",
+      "words": {
+        "only": {"means": "Nothing else may be used."},
+        "examples": {"means": "These are examples; others may be used."}
+      }
+    },
+    "device": {
+      "means": "The kinds of device that run others.",
+      "words": {
+        "controller": {"means": "A motor controller."},
+        "relay": {"means": "A relay."},
+        "pneumatics": {"means": "A pneumatics controller."},
+        "own": {"means": "A controller built into one motor."}
+      }
+    },
+    "no_limit": {
+      "means": "A count with no limit.",
+      "words": {
+        "any": {"means": "No limit."}
+      }
+    },
+    "axis": {
+      "means": "Which way a cylinder or tube lies.",
+      "words": {
+        "x": {"means": "Along `faces`."},
+        "y": {"means": "Across `faces`."},
+        "z": {"means": "Upright."}
+      }
+    },
+    "who": {
+      "means": "Who must obey a rule, besides the people of game.json.",
+      "words": {
+        "robot": {"means": "The robot."},
+        "anyone": {"means": "Whoever does it: the rule names nobody."}
+      }
+    },
+    "touched": {
+      "means": "What is touched, when it is not an ID.",
+      "words": {
+        "their robot": {"means": "A robot of the other alliance."}
+      }
+    },
+    "sides": {
+      "means": "Whose, at the front of who a condition is about. `my` and `their` are always seen from the robot that acts.",
+      "words": {
+        "my": {"means": "Of the one that acts. `my` and `their` are always seen from the robot that acts, so they never change color."},
+        "their": {"means": "Of the other alliance."},
+        "either": {"means": "True if it is true of mine or of theirs."}
+      }
+    },
+    "someone": {
+      "means": "Who a condition is about, after the side, besides an ID from `counts`.",
+      "words": {
+        "robot": {"means": "The robot, bumpers and all. `their robot` is the one touched in a `touch` rule, and any opponent elsewhere."},
+        "bumpers": {"means": "The robot's bumpers."},
+        "person": {"means": "A person."},
+        "alliance": {"means": "The alliance. Only a state, a count or a `to` is of a whole alliance."}
+      }
+    },
+    "the": {
+      "means": "At the front of a piece that a condition is about.",
+      "words": {
+        "the": {"means": "Before `piece` or a piece's ID: the piece that the rule is about."}
+      }
+    },
+    "the_piece": {
+      "means": "The piece that the rule is about.",
+      "words": {
+        "piece": {"means": "The piece, whichever kind."}
+      }
+    },
+    "owners": {
+      "means": "Whose thing, at the front of an ID.",
+      "words": {
+        "my": {"means": "Mine."},
+        "their": {"means": "The other alliance's."},
+        "any": {"means": "Either's, or one that belongs to neither."}
+      }
+    },
+    "groups": {
+      "means": "How conditions are grouped.",
+      "words": {
+        "any": {"means": "One of these is enough."},
+        "all": {"means": "All of these, at the times in `when` if it is given."}
+      }
+    },
+    "what": {
+      "means": "What a condition compares with, besides an ID, a number, a formula or a list.",
+      "words": {
+        "carpet": {"means": "The floor of the field."},
+        "every robot": {"means": "As many as the alliance has in the match."}
+      }
+    },
+    "measures": {
+      "means": "How something stands to a zone, a line or a thing.",
+      "words": {
+        "partly in": {"means": "Any part is in, in plan and below the zone's `height`; and so also when all of it is."},
+        "fully in": {"means": "All of it is in."},
+        "fully outside": {"means": "No part is in."},
+        "beyond": {"means": "Completely past it, on the side away from the robot's own wall."},
+        "over": {"means": "Any part is over it, in plan."},
+        "above": {"means": "All of it is higher than all of that thing."},
+        "through": {"means": "It goes through it."},
+        "from": {"means": "It comes from it."},
+        "touching": {"means": "Touches it; of a list, any one of them."},
+        "not touching": {"means": "Does not touch it; of a list, none of them."},
+        "touching only": {"means": "Touches nothing but these. It need not touch any of them."}
+      }
+    },
+    "compares": {
+      "means": "How a count stands to a number.",
+      "words": {
+        "at least": {"means": "This many or more."},
+        "at most": {"means": "This many or fewer."},
+        "exactly": {"means": "Just this many."}
+      }
+    },
+    "state_owners": {
+      "means": "Whose state, in `when`.",
+      "words": {
+        "my": {"means": "Mine. A state with no word in front is mine, if it is of an alliance; of a robot, piece or place, the one that is judged; of the match, the same for both."},
+        "their": {"means": "The other alliance's."}
+      }
+    },
+    "limit": {
+      "means": "The words in front of a number that make it a limit.",
+      "words": {
+        "at most": {"means": "This or less."},
+        "at least": {"means": "This or more."},
+        "less than": {"means": "Not as much as this."},
+        "more than": {"means": "Over this."}
+      }
+    },
+    "function": {
+      "means": "What a formula may use.",
+      "words": {
+        "sin": {"means": "Sine of an angle, which needs no conversion."},
+        "cos": {"means": "Cosine of an angle."},
+        "tan": {"means": "Tangent of an angle."},
+        "atan2": {"means": "The angle whose tangent is the first over the second."},
+        "sqrt": {"means": "Square root."},
+        "abs": {"means": "Without its sign."},
+        "min": {"means": "The smallest."},
+        "max": {"means": "The largest."}
+      }
+    }
   }
 }

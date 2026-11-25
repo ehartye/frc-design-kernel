@@ -14,10 +14,10 @@ from fractions import Fraction
 
 from ..errors import DesignError, unknown
 from . import fields, quantity, read, values
-from .read import ID, names
+from .read import ID, names, word_list
 
-PLACED = ("zone", "line", "solid", "passage", "equipment", "hang", "place")     # what a position can be given for
-NEED_GEOMETRY = ("zone", "line", "solid", "hang")                               # whoever names one needs to know where it is
+PLACED = tuple(kind for kind, about in names()["kinds"].items() if about.get("placed"))             # what a position can be given for
+NEED_GEOMETRY = tuple(kind for kind, about in names()["kinds"].items() if about.get("geometry"))    # whoever names one needs to know where it is
 PATH = re.compile(r"(?<![\w.@])[A-Za-z][A-Za-z0-9_]*(?:@[a-z]+)?(?:\.[A-Za-z0-9_]+)*(?!\s*\()(?![\w.@])")
 IN_SAYS = re.compile(r"\{([^{}]*)\}")
 WHEN = re.compile(r"(?:not )?(?:(my|their) )?([A-Za-z][A-Za-z0-9_]*)")
@@ -92,7 +92,7 @@ class Words:
             method(field, field.node, field.where)
         if field.name == "says" and isinstance(field.node, str):
             self._says(field)
-        if field.entry.kind == "conduct" and field.name == "act" and not set(names()["acts_need"]) & set(field.entry.data):
+        if field.entry.kind == "conduct" and field.name == "act" and not set(names()["kinds"]["conduct"]["act_needs"]) & set(field.entry.data):
             self.fault(field.entry.where, "has an act with nothing to judge", "Give it must_not, only_if or limit, or leave out the act")
         return self.found
 
@@ -145,7 +145,7 @@ class Words:
 
     holds_starts = holds_by_piece
 
-    def holds_limit(self, field, node, where):
+    def holds_hold_limit(self, field, node, where):
         if values.is_group(node):
             self.holds_by_piece(field, node, where)
 
@@ -159,17 +159,16 @@ class Words:
         self.one(field.name.removeprefix("after_"), self.ids["period"], "period", where)
 
     def holds_given_to(self, field, node, where):
-        self.one(node, [*names()["words"]["gives_to"], *self.book.of_kind(*PLACED)], "place", where)
+        self.one(node, [*word_list("gives_to"), *self.book.of_kind(*PLACED)], "place", where)
 
     def holds_goes_to(self, field, node, where):
-        self.one(node, [*names()["words"]["goes_to"], *self.book.of_kind(*PLACED)], "place", where)
+        self.one(node, [*word_list("goes_to"), *self.book.of_kind(*PLACED)], "place", where)
 
-    def holds_people(self, field, node, where):
-        if field.entry.kind == "together":
-            self.several(node, self.book.people, "person", where)
+    def holds_several_people(self, field, node, where):
+        self.several(node, self.book.people, "person", where)
 
     def holds_who(self, field, node, where):
-        self.several(node, [*names()["words"]["who"], *self.book.people], "person", where)
+        self.several(node, [*word_list("who"), *self.book.people], "person", where)
 
     def holds_loads(self, field, node, where):
         self.several(node, self.loads, "load", where)
@@ -189,8 +188,8 @@ class Words:
         owner, space, name = node.partition(" ") if isinstance(node, str) else ("", "", "")
         if not space and bare:
             name = owner
-        elif owner not in names()["words"]["owners"] or not space:
-            self.fault(where, f'"{node}" does not name a thing', f"Write {', '.join(names()['words']['owners'])} and then an ID")
+        elif owner not in word_list("owners") or not space:
+            self.fault(where, f'"{node}" does not name a thing', f"Write {', '.join(word_list('owners'))} and then an ID")
             return
         self.one(name, [*self.things, *also], "thing", where)
         kind = self.things[name].kind if name in self.things else None
@@ -202,7 +201,7 @@ class Words:
         for one, at in self.list(node, where):
             if not isinstance(one, str) or not one.strip():
                 self.fault(at, "is not words", "Write words between quotes")
-            elif re.fullmatch(rf"(?:{'|'.join(names()['words']['owners'])}) {ID.pattern}", one):
+            elif re.fullmatch(rf"(?:{'|'.join(word_list('owners'))}) {ID.pattern}", one):
                 self.thing(one, at, measured=measured)
 
     def holds_things(self, field, node, where):
@@ -211,7 +210,7 @@ class Words:
 
     def holds_things_touched(self, field, node, where):
         for one, at in self.either(node, where):
-            if one not in (words := names()["words"]["touched"]):
+            if one not in (words := word_list("touched")):
                 self.thing(one, at, bare=True, also=[word.partition(" ")[2] for word in words])
 
     def holds_touchable(self, field, node, where):
@@ -229,6 +228,17 @@ class Words:
                 self.fault(at, f'"{got[2]}" is nobody\'s: only a state can be my or their', f'Write "{got[2]}"')
             else:
                 self.one(got[2], known, "period, window, state or variant", at)
+
+    def holds_variants(self, field, node, where):
+        """A variant's name is its own: no period, window or state has it, and no other kind of variant."""
+        seen = {}
+        for kind, given in self.book.variants.items():
+            for name in dict.fromkeys(given):
+                taken = next((what for what in ("period", "window", "state") if name in self.ids[what]), None)
+                if taken or name in seen:
+                    other = f"a {taken} of that name" if taken else f"a variant of {seen[name]} of that name"
+                    self.fault(f"{where}.{kind}", f'"{name}" is taken: there is {other}', "Choose another name, so that a when can mean only one of them")
+                seen.setdefault(name, kind)
 
     def holds_list_of_whens(self, field, node, where):
         for one, at in self.list(node, where):
@@ -255,7 +265,7 @@ class Words:
                 self.fault(at, "is not a condition", "Write [who, how, what], or {\"any\": [...]} or {\"all\": [...]} of them")
 
     def _any_or_all(self, field, node, where):
-        groups = names()["words"]["groups"]
+        groups = word_list("groups")
         for name in node:
             if name not in (*groups, "when"):
                 self.faults.append(unknown(where, "field of a group of conditions", name, (*groups, "when")))
@@ -267,35 +277,33 @@ class Words:
 
     def _condition(self, field, condition, where):
         who, how, what = condition
-        words = names()["words"]
         self._someone(who, where)
-        self.one(how, [*words["measures"], *words["compares"]], "word", where)
+        self.one(how, [*word_list("measures"), *word_list("compares")], "word", where)
         if isinstance(what, list):
             if not what:
                 self.fault(where, "names nothing in its list", "Name things, or words for a part that has no ID")
-            self.words_or_things(what, where, measured=how in words["measures"])
+            self.words_or_things(what, where, measured=how in word_list("measures"))
         elif not isinstance(what, str) or what.startswith("=") or re.match(r"-?[0-9]", what):
             self.found += self.reader.value(field.entry, what, None if not isinstance(what, bool) else "number", where)
-        elif what not in words["what"]:
-            self._what(what, where, how in words["measures"])
+        elif what not in word_list("what"):
+            self._what(what, where, how in word_list("measures"))
 
     def _what(self, what, where, measured):
         owner, _, rest = what.partition(" ")
-        if owner in names()["words"]["owners"] and rest:
+        if owner in word_list("owners") and rest:
             self.thing(what, where, measured=measured)
         else:
-            self.fault(where, f'"{what}" names nothing', f'Write my, their or any and an ID, a number, or one of: {", ".join(names()["words"]["what"])}')
+            self.fault(where, f'"{what}" names nothing', f'Write my, their or any and an ID, a number, or one of: {", ".join(word_list("what"))}')
 
     def _someone(self, who, where):
-        words = names()["words"]
         owner, _, name = who.partition(" ") if isinstance(who, str) else ("", "", "")
-        if owner in words["the"]:
-            self.one(name, [*words["the_piece"], *self.ids["piece"]], "piece", where)
-        elif owner in words["sides"]:
-            self.one(name, [*words["someone"], *self.ids["count"]], "actor or count", where)
+        if owner in word_list("the"):
+            self.one(name, [*word_list("the_piece"), *self.ids["piece"]], "piece", where)
+        elif owner in word_list("sides"):
+            self.one(name, [*word_list("someone"), *self.ids["count"]], "actor or count", where)
         else:
             self.fault(where, f'"{who}" is not someone or something counted',
-                       f"Write {', '.join(words['sides'])} and then {', '.join(words['someone'])} or an ID of counts; or the and a piece")
+                       f"Write {', '.join(word_list("sides"))} and then {', '.join(word_list("someone"))} or an ID of counts; or the and a piece")
 
     # -- costs
 
@@ -308,9 +316,6 @@ class Words:
                 self._one_cost(one, [c for j, (c, _) in enumerate(costs) if j != i], at)
 
     def _one_cost(self, one, others, where):
-        main = names()["cost_main"]
-        if len(set(main) & set(one)) != 1:
-            self.fault(where, f"does not say one of {', '.join(main[:-1])} or {main[-1]}", "Write exactly one of them")
         if "award" in one and "to" not in one:
             self.fault(where, 'gives an award and has no "to"', 'Say who gets it, such as "to": "their alliance"')
         if "instead_of" in one:

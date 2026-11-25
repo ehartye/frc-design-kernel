@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from ..errors import DesignError, unknown
 from . import quantity
-from .read import AXES, ID, Entry, names
+from .read import AXES, ID, Entry, names, word_list
 
 NEARLY = 0.85                               # a name this close to a known one is a slip (difflib's ratio)
 DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
@@ -78,6 +78,8 @@ class Reader:
             return self.value(entry, node, None, where, loose=True)
         if holds in ("piece count", "after period"):
             return self.value(entry, node, "number" if holds == "piece count" else "time", where)
+        if rest == "lengths":
+            return self.holds_point(entry, node, where, sizes=(int(first),))
         if first in ("word", "words"):
             return self.words(node, rest, where, many=first == "words")
         method = getattr(self, "holds_" + holds.replace(" ", "_"), None)
@@ -86,7 +88,7 @@ class Reader:
         return self.value(entry, node, holds, where) if self.is_kind(holds) else ()
 
     def is_kind(self, holds):
-        return holds in (*names()["units"], "number", "flag", *names()["kept"])
+        return holds in (*names()["units"], "number", "flag", *names()["kept"]["units"])
 
     # -- one value
 
@@ -110,7 +112,7 @@ class Reader:
         try:
             got = "flag" if isinstance(node, bool) else quantity.count(node).kind if isinstance(node, (int, float)) else quantity.read(node).kind if isinstance(node, str) else None
         except DesignError as problem:
-            if loose and not re.match(r"-?[0-9]|" + "|".join(names()["limit_words"]), node):
+            if loose and not re.match(r"-?[0-9]|" + "|".join(word_list("limit")), node):
                 self.fault(where, f'"{node}" is words, not a value', A_TEXT)
             else:
                 self.fault(where, problem.problem, problem.fix + or_words if kind != "flag" else "Write true or false")
@@ -166,7 +168,7 @@ class Reader:
 
     def _about(self, entry, about, where, also):
         """The fields beside `is`: where a value comes from, what it was and what differs. Their Leaves are kept in self.beside."""
-        known = names()["value"]
+        known = {name: one["holds"] for name, one in names()["kinds"]["value"]["fields"].items()}
         for name, node in about.items():
             at = f"{where}.{name}"
             if name in also:
@@ -187,13 +189,15 @@ class Reader:
     def words(self, node, known, where, many=False):
         """A word of a list in fields.json, or several."""
         for i, word in enumerate(node if many and isinstance(node, list) else [node]):
-            if word not in names()["words"][known]:
-                self.faults.append(unknown(f"{where}[{i}]" if isinstance(node, list) and many else where, "word", word, names()["words"][known]))
+            if word not in word_list(known):
+                self.faults.append(unknown(f"{where}[{i}]" if isinstance(node, list) and many else where, "word", word, word_list(known)))
         return ()
 
     def holds_text(self, entry, node, where):
         self.text(node, where)
         return ()
+
+    holds_says = holds_text     # words.py reads the names in it
 
     def holds_texts(self, entry, node, where):
         for i, one in enumerate(node if isinstance(node, list) else [node]):
@@ -217,22 +221,22 @@ class Reader:
 
     def holds_differs(self, entry, node, where, dated=False):
         """What other sources say (`differs`), or what it was until a date (`was`)."""
-        known = names()["was" if dated else "differs"]
+        about = names()["kinds"]["was" if dated else "differs"]
         for i, one in enumerate(a_list(node, where, self.faults)):
             at = f"{where}[{i}]"
             if not isinstance(one, dict):
                 self.fault(at, "is not an object", "Write its fields between { and }")
                 continue
-            for name in ("until", "src") if dated else ("src",):
+            for name in about["needs"]:
                 if name not in one:
                     self.fault(at, f'has no "{name}"', f'Add "{name}"')
-            if not {"is", "says"} & set(one):
-                self.fault(at, "does not say what it is: it has no is or says", "Write the value as is, or the words as says")
+            if not set(about["any_of"]) & set(one):
+                self.fault(at, f"does not say what it is: it has no {' or '.join(about['any_of'])}", "Write the value as is, or the words as says")
             for name, inner in one.items():
-                if name not in known:
-                    self.faults.append(unknown(at, "field", name, known))
+                if name not in about["fields"]:
+                    self.faults.append(unknown(at, "field", name, about["fields"]))
                 else:
-                    yield from self.value(entry, inner, None, f"{at}.is", loose=True) if name == "is" else getattr(self, "holds_" + known[name])(entry, inner, f"{at}.{name}")
+                    yield from self.read(entry, inner, f"{at}.{name}", about["fields"][name]["holds"])
 
     def holds_was(self, entry, node, where):
         return self.holds_differs(entry, node, where, dated=True)
@@ -247,7 +251,7 @@ class Reader:
     # -- counts
 
     def holds_height(self, entry, node, where):
-        return self.value(entry, node, "length", where, words=names()["words"]["height"])
+        return self.value(entry, node, "length", where, words=word_list("height"))
 
     def holds_by_piece(self, entry, node, where, words=()):
         if not isinstance(node, dict):
@@ -257,24 +261,24 @@ class Reader:
             yield from self.value(entry, many, "number", f"{where}.{piece}", words=words)
 
     def holds_starts(self, entry, node, where):
-        return self.holds_by_piece(entry, node, where, names()["words"]["starts"])
+        return self.holds_by_piece(entry, node, where, word_list("starts"))
 
-    def holds_limit(self, entry, node, where):
+    def holds_hold_limit(self, entry, node, where):
         return self.holds_by_piece(entry, node, where) if is_group(node) else self.value(entry, node, "number", where)
 
     def holds_cap(self, entry, node, where):
         return self.value(entry, node, "number", where, also=("when",))
 
     def holds_circuits(self, entry, node, where):
-        return self.value(entry, node, "number", where, words=names()["words"]["no_limit"])
+        return self.value(entry, node, "number", where, words=word_list("no_limit"))
 
     def holds_on(self, entry, node, where):
         if not isinstance(node, dict):
             self.fault(where, "does not say how many one device of each kind may run", '{"controller": 1, "relay": 1}')
             return
         for kind, many in node.items():
-            if kind not in names()["words"]["device"]:
-                self.faults.append(unknown(where, "kind of device", kind, names()["words"]["device"]))
+            if kind not in word_list("device"):
+                self.faults.append(unknown(where, "kind of device", kind, word_list("device")))
             else:
                 yield from self.holds_circuits(entry, many, f"{where}.{kind}")
 
@@ -328,29 +332,25 @@ class Reader:
         at, form = f"{where}.{name}", forms.get(name)
         if form is None:
             self.faults.append(unknown(where, what, name, forms))
-        elif form == "length":
-            yield from self.value(entry, sizes, "length", at)
-        elif form == "shapes":
-            yield from self._joined(entry, sizes, at)
-        elif isinstance(form, str):
-            yield from self.holds_point(entry, sizes, at, sizes=(int(form.split()[0]),))
+        elif "fields" in form:
+            yield from self._sizes(entry, sizes, at, form["fields"])
         else:
-            yield from self._sizes(entry, sizes, at, form)
+            yield from self.read(entry, sizes, at, form["holds"])
 
     def _sizes(self, entry, node, where, form):
         if not isinstance(node, dict):
             self.fault(where, "is not an object", f"Write its {', '.join(form)} between {{ and }}")
             return
         for name in form:
-            if name not in node and name not in names()["may_be_left_out"]:
+            if name not in node and not form[name].get("optional"):
                 self.fault(where, f'has no "{name}"', f'Add "{name}"')
         for name, inner in node.items():
             if name not in form:
                 self.faults.append(unknown(where, "size", name, form))
             else:
-                yield from self.read(entry, inner, f"{where}.{name}", form[name])
+                yield from self.read(entry, inner, f"{where}.{name}", form[name]["holds"])
 
-    def _joined(self, entry, node, where):
+    def holds_shapes(self, entry, node, where):
         """The shapes of a join or a cut, each with its own `at`."""
         shapes = a_list(node, where, self.faults)
         if isinstance(node, list) and not shapes:

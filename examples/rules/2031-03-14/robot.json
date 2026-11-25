@@ -2,7 +2,7 @@
   "limits": {
     "perimeter": {"code": "R90", "size": "at most 118 in", "bump": "less than 3/8 in", "says": "A string pulled tight around the robot without bumpers.", "src": "manual R90"},
     "start": {
-      "code": ["R90", "G99"], "height": "at most 4 ft", "where": [["my bumpers", "fully in", "my yard"], ["my robot", "not touching", "any crate"]], "src": "manual R90"
+      "code": ["R90", "G99"], "height": "at most 4 ft", "overhang": "none but bumpers and bolt heads", "where": [["my bumpers", "fully in", "my yard"], ["my robot", "not touching", "any crate"]], "src": "manual R90"
     },
     "height": {"code": "R91", "max": {"is": "= limits.start.height + limits.height.more", "of": "floor to the top, at any time"}, "more": "18 in", "src": "manual R91"},
     "reach": {"code": "R91", "far": "at most 1 ft 2 in", "sides": 1, "src": "manual R91"},
@@ -14,18 +14,18 @@
       "inspected": {"max": "at most 140 lb", "without": ["bumpers", "battery", "console"]},
       "src": "manual R92"
     },
-    "hold": {"code": "G94", "bale": 1, "pumpkin": "1 to 2", "src": "manual G94"},
+    "hold": {"code": "G94", "bale": 1, "pumpkin": 2, "src": "manual G94"},
     "preload": {"code": "G99", "bale": 1, "src": "manual G99"},
     "bumpers": {
       "code": "R93", "low": "2 in", "high": "7 1/4 in", "out": "at most 3 3/4 in", "hard": "at most 1 1/4 in", "gap": "less than 1 in", "corner": "at least 2 in",
       "tolerance": "1/4 in", "padding": {"deep": "at least 2 1/8 in", "tall": "at least 5 in", "foam": {"text": "any closed foam"}}, "backing": {"tall": "4 1/2 in +/- 1/2"},
-      "numbers": {"height": "at least 3 7/8 in", "places": "more than 2"},
+      "cover": "canvas, red or blue", "numbers": {"height": "at least 3 7/8 in", "stroke": "at least 5/8 in", "places": "more than 2"},
       "frame_gap": {"any": [{"deep": "at most 3/8 in"}, {"wide": "at most 9 in"}]}, "src": "manual R93"
     },
     "drive": {"code": "R94", "motors": "at most 6", "src": "manual R94"},
     "price": {"code": "R95", "part": "at most 550 USD", "src": "manual R95"},
-    "console": {"code": "R96", "long": "at most 5 ft", "deep": "at most 400 mm", "tall": "at most 2 m", "src": "manual R96"},
-    "radio": {"code": "R96", "rate": "at most 6 Mbit/s", "src": "manual R96"},
+    "console": {"code": "R96", "long": "at most 5 ft", "deep": "at most 400 mm", "tall": "at most 2 m", "mass": "at most 12 kg", "src": "manual R96"},
+    "radio": {"code": "R96", "part": "Crow 2", "rate": "at most 6 Mbit/s", "src": "manual R96"},
     "air": {"code": "R97", "stored": "at most 110 psi", "working": "at most 4 bar", "flow": "at most 1 1/4 scfm", "pump": "at most 1.1 cfm", "src": "manual R97"},
     "battery": {
       "code": "R98", "volts": "12 V", "capacity": "17 to 18 Ah", "energy": "at most 220 Wh", "mass": "at most 6500 g", "size": ["7 in", "3 in", "16.8 cm"],
@@ -76,7 +76,7 @@
     "R94": {"says": "At most {limits.drive.motors} motors drive the robot.", "src": "manual R94"},
     "R95": {"says": "No part costs more than {limits.price.part}.", "src": "manual R95"},
     "R96": {"says": "The console is at most {limits.console.long} long; the radio sends at most {limits.radio.rate}.", "src": "manual R96"},
-    "R97": {"says": "Only parts.motors and parts.controllers may be used, at most {limits.air.stored} is stored, and a Mule is run two to a controller or {parts.motors.mule.on.relay} to a relay.", "src": "manual R97"},
+    "R97": {"says": "Only parts.motors and parts.controllers may be used, at most {limits.air.stored} is stored, and a Mule is run at most {parts.motors.mule.on.controller} to a controller or {parts.motors.mule.on.relay} to a relay.", "src": "manual R97"},
     "R98": {"says": "The main wire is no thinner than {parts.wire.main.thinnest}; a motor has {parts.branch.motor.protection}. The fuse holder is seen from {seen}.", "seen": "3 ft", "src": "manual R98"}
   }
 }

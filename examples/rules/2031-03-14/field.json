@@ -1,13 +1,13 @@
 {
   "size": {
     "length": {"by": "field", "welded": "612.40 in", "bolted": {"is": "611.75 in", "src": "drawings sheet 2"}}, "width": "25 ft",
-    "carpet": {"text": "low pile"}, "src": "drawings sheet 1"
+    "surface": "low pile carpet", "carpet": {"text": "laid in two halves"}, "src": "drawings sheet 1"
   },
   "symmetry": "turn",
   "guardrail": {"height": "1 ft 10 in", "gates": 2, "gate_width": "41 in", "see_through": true, "src": "manual 3.1"},
   "zones": {
     "yard": {
-      "alliance": "each", "at": ["27 in", "40 in"], "outline": {"rectangle": ["54 in", "21 in"]},
+      "alliance": "each", "at": ["27 in", "40 in"], "outline": {"rectangle": ["= yard.deep", "= yard.wide"]}, "deep": "54 in", "wide": "21 in",
       "edge": "tape inside", "height": "none", "src": "manual 3.2"
     },
     "paddock": {
@@ -34,7 +34,7 @@
       "alliance": "each", "from": ["= yard.at.x + yard.outline.rectangle.x / 2", "0 in"],
       "to": ["= yard.at.x + yard.outline.rectangle.x / 2", "= size.width"], "src": "manual 3.2"
     },
-    "coach_line": {"alliance": "each", "for": "people", "no_geometry": "Behind the wall.", "src": "manual 3.3"}
+    "coach_line": {"alliance": "each", "for": "people", "from_wall": "26 in", "no_geometry": "A line for people, off the field.", "src": "manual 3.3"}
   },
   "solids": {
     "crate": {"alliance": "each", "at": ["131 in", "150 in", "0 in"], "faces": "0 deg", "shape": {"box": ["22 in", "55 in", "15 in"]}, "src": "manual 3.4"},
@@ -56,9 +56,9 @@
       "shape": {"prism": {"outline": [["0 in", "-12 in"], ["24 in", "-12 in"], ["18 in", "12 in"], ["0 in", "12 in"]], "tall": "3 in"}}, "src": "manual 3.4"
     },
     "barn_body": {
-      "alliance": "each", "at": ["= barn.at.x - barn_body.deep / 2", "= barn.at.y", "0 in"], "faces": "0 deg", "deep": "20 in",
+      "alliance": "each", "at": ["= barn.at.x - barn_body.deep / 2", "= barn.at.y", "0 in"], "faces": "0 deg", "deep": "20 in", "wide": "60 in", "tall": "80 in",
       "shape": {"cut": [
-        {"at": ["0 in", "0 in", "0 in"], "box": ["= barn_body.deep", "60 in", "80 in"]},
+        {"at": ["0 in", "0 in", "0 in"], "box": ["= barn_body.deep", "= barn_body.wide", "= barn_body.tall"]},
         {"at": ["0 in", "0 in", "= barn.opening.bottom"], "box": ["= barn_body.deep * 2", "= barn.opening.outline.rectangle.x", "= barn.opening.outline.rectangle.y"]}]},
       "src": "manual 3.5"
     },
@@ -109,10 +109,10 @@
       "lift": "18 in", "width": "20 in", "src": "manual 3.7"
     },
     "mast": {"alliance": "each", "kind": "post", "at": ["= pen.at.x", "= pen.at.y", "= pen.shape.prism.tall"], "diameter": "2 in", "tall": "6 ft", "src": "manual 3.7"},
-    "knot": {"alliance": "each", "kind": "ledge", "says": "Where a rope joins the mast.", "no_geometry": "At the top of the mast, as drawn.", "src": "manual 3.7"}
+    "knot": {"alliance": "each", "kind": "ledge", "says": "Where a rope joins the mast.", "no_geometry": "No drawing gives how high it is.", "src": "manual 3.7"}
   },
   "tags": {
-    "family": "36h11", "black": "5 1/2 in", "panel": "9 in", "point": {"text": "the middle of the black square"}, "src": "drawings sheet 9",
+    "family": "36h11", "black": "5 1/2 in", "panel": "9 in", "measured": "to the middle of the black square", "src": "drawings sheet 9",
     "t1": {"at": ["0 in", "= size.width / 2", "50 in"], "faces": "0 deg", "tilt": "0 deg"},
     "t2": {"at": ["= size.length", "= size.width / 2", "50 in"], "faces": "180 deg", "tilt": "0 deg"},
     "t3": {"at": ["150 in", "12 in", "40 in"], "faces": "90 deg", "tilt": "15 deg", "panel": "11 in"},

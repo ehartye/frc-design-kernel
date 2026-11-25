@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 
 from ..errors import DesignError, unknown
-from .read import names
+from .read import names, word_list
 
 PLUS = r"(?:[0-9]+ [0-9]+/[0-9]+|[0-9]+/[0-9]+|[0-9]+(?:\.[0-9]+)?)"
 NUMBER = "-?" + PLUS
@@ -41,21 +41,21 @@ class Quantity:
 
 def kind_of(unit):
     """The kind that a unit measures: length, mass, time, angle, or the unit itself when it does not convert."""
-    for kind, units in names()["units"].items():
-        if unit in units:
+    for kind, group in names()["units"].items():
+        if unit in group["units"]:
             return kind
-    if unit not in names()["kept"]:
+    if unit not in names()["kept"]["units"]:
         raise unknown("", "unit", unit, all_units())
     return unit
 
 
 def all_units():
-    return [u for units in names()["units"].values() for u in units] + names()["kept"]
+    return [u for group in names()["units"].values() for u in group["units"]] + names()["kept"]["units"]
 
 
 def factor(unit):
     """How many base units one of this unit is."""
-    return Fraction(str(names()["units"].get(kind_of(unit), {}).get(unit, 1)))
+    return Fraction(str(names()["units"].get(kind_of(unit), {}).get("units", {}).get(unit, 1)))
 
 
 def exact(number):
@@ -73,11 +73,11 @@ def ordinary(number, text):
 
 def read(text):
     """The Quantity that a printed text stands for."""
-    limit = next((w for w in names()["limit_words"] if text.startswith(w + " ")), None)
+    limit = next((w for w in word_list("limit") if text.startswith(w + " ")), None)
     rest = text[len(limit) + 1:] if limit else text
     form, found = next(((f, m) for f, p in FORMS.items() if (m := p.fullmatch(rest))), (None, None))
     if form is None or form == "plain" and found[2] is None and not limit:
-        raise DesignError("", f'"{text}" is not a number as RULES.md section 3 writes one', HOW_TO_WRITE)
+        raise DesignError("", f'"{text}" is not a number written as it is printed', HOW_TO_WRITE)
     if limit and form not in ("plain", "joined"):
         raise DesignError("", f'"{text}" puts a limit on a range or a tolerance', "Write only one of them")
     try:
@@ -99,7 +99,7 @@ def _quantity(form, found, limit, text):
         if low > high:
             raise DesignError("", f'"{text}" is a range whose low end is above its high end', "Write the low end first")
     elif form == "joined":
-        if names()["joined"].get(unit) != found[4]:
+        if names()["joined"]["pairs"].get(unit) != found[4]:
             raise DesignError("", f'"{text}" joins {unit} with {found[4]}', "Only feet with inches and minutes with seconds may be joined")
         value += exact(found[3]) * factor(found[4])
     elif form in ("both", "sides"):
@@ -119,6 +119,6 @@ def count(number):
 def convert(value, kind, to):
     """A value of a kind, in base units, given in the unit to."""
     if to not in all_units() or kind_of(to) != kind:
-        fits = list(names()["units"].get(kind, [kind] if kind in names()["kept"] else []))
+        fits = list(names()["units"][kind]["units"]) if kind in names()["units"] else [kind] if kind in names()["kept"]["units"] else []
         raise unknown("", f"unit for a {kind}", to, fits)
     return value / float(factor(to))

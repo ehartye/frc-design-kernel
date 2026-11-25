@@ -1,4 +1,4 @@
-"""Reading the nine files of a rules folder, the IDs in them and paths (RULES.md section 1)."""
+"""Reading the nine files of a rules folder, the IDs in them and paths."""
 import unittest
 from pathlib import Path
 
@@ -21,7 +21,7 @@ class Files(unittest.TestCase):
             self.assertIn(word, faults[0])
 
     def test_nine_files(self):
-        """Control: nine readable files give their data, in the order of RULES.md, and no fault."""
+        """Control: nine readable files give their data, in the order of fields.json, and no fault."""
         from frc_design_kernel.rules import read
         data, faults = read.read_files(written(small(terms={"pin": {"says": "Held."}})))
         self.assertEqual((faults, list(data), data["terms"]), ([], FILES, {"pin": {"says": "Held."}}))
@@ -110,7 +110,7 @@ class Ids(unittest.TestCase):
         self.assertEqual(next(e for e in book.entries if e.path == "tags.t1").where, "field.json tags.t1")
 
     def test_a_name_at_the_top_of_a_file(self):
-        """Catches a name at the top of a file that RULES.md does not give, whatever it holds: a slip would lose a whole group."""
+        """Catches a name at the top of a file that the format does not have, whatever it holds: a slip would lose a whole group."""
         self.one("field.json", '"pasages"', 'Did you mean "passages"', field={"pasages": {"arch": {}}})
         self.one("field.json", '"fence"', "guardrail", field={"fence": {"height": "3 in"}})
         self.one("clock.json", '"note"', "windows", clock={"note": "words"})

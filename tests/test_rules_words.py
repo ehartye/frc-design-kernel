@@ -1,4 +1,4 @@
-"""Every word and every ID that a field names: conditions, times, costs, people, places and parts (RULES.md)."""
+"""Every word and every ID that a field names: conditions, times, costs, people, places and parts."""
 import unittest
 
 from frc_design_kernel.errors import DesignError
@@ -69,6 +69,17 @@ class Words(Checked):
                               (lambda d: d["scoring"]["awards"]["loft_rp"]["easier"].update(when=["sharing"]), "loft_rp.easier.when"),
                               (lambda d: d["scoring"]["awards"]["hang"].update(most={"is": 2, "when": ["tele"]}), "hang.most.when")]:
             self.refused(change, where)
+
+    def test_a_variant_named_like_something_else(self):
+        """Catches a variant with the name of a period, window or state, so that nobody knows which one a when means."""
+        for name, what in [("teleop", "period"), ("endgame", "window"), ("lit", "state")]:
+            self.refused(lambda d: d["game"]["variants"].update(weather=["dry", name]), "game.json variants.weather", f'"{name}"', what)
+        self.accepted(lambda d: d["game"]["variants"].update(weather=["dry", "wet"]))
+        self.accepted(lambda d: d["game"]["variants"].update(weather=["dry", "hang"]))     # an award is never in a when
+
+    def test_a_variant_name_of_two_kinds(self):
+        """Catches one variant name in two kinds of variant, so that a when means either."""
+        self.refused(lambda d: d["game"]["variants"].update(roof=["open", "welded"]), "game.json variants.roof", '"welded"', "field")
 
     def test_periods(self):
         """Catches a window in a period that is not there, and a late time after one."""
@@ -187,7 +198,7 @@ class Words(Checked):
 
     def test_a_thing_with_no_geometry(self):
         """Catches a zone, line, solid or hang that a rule or a score names, of which nobody can say where it is."""
-        self.refused(lambda d: [d["field"]["zones"]["fold"].pop(k) for k in ("outline", "at")], "field.json fold", "no_geometry", "G94")
+        self.refused(lambda d: [d["field"]["zones"]["fold"].pop(k) for k in ("outline", "at")], "field.json fold", "no_geometry", "G89")
         self.refused(lambda d: [d["field"]["lines"]["gate_line"].pop(k) for k in ("from", "to")], "field.json gate_line", "G95")
         self.refused(lambda d: d["field"]["hangs"]["knot"].pop("no_geometry"), "field.json knot", "no_geometry")
         self.refused(lambda d: d["places"]["stall"].pop("spots"), "places.json stall", "G96")
@@ -229,7 +240,7 @@ class Words(Checked):
         book, _ = read.gather("", example())
         leaves = {leaf.where: (leaf.kind, leaf.node) for leaf in words.leaves(book)}
         for where, leaf in [("scoring.json loft_rp.needs[0]", (None, "= loft_rp.needed")), ("scoring.json loft_rp.easier.needs[0].championship", (None, 14)),
-                            ("conduct.json G96.longer_than", ("time", "10 s")), ("field.json lane.long", (None, "60 in"))]:
+                            ("conduct.json G89.longer_than", ("time", "10 s")), ("field.json lane.long", (None, "60 in"))]:
             self.assertEqual(leaves.get(where), leaf, where)
 
     def test_the_wrong_kind_of_data_is_never_a_crash(self):

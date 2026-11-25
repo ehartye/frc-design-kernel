@@ -1,6 +1,7 @@
 """Reading a rules folder: the nine files as plain data, every record in them, and paths.
 
-    names()                    fields.json, as data
+    names()                    fields.json, as data: the format itself
+    word_list(name)            the words of one of its lists
     read_files(folder)         ({file name: data}, [DesignError]): the JSON itself
     gather(folder, data)       (Book, [DesignError]): every record as an Entry, and the IDs
     book.entries               every Entry, in the order written: records, limits, tags, parts, people and sources
@@ -29,8 +30,13 @@ ALLIANCES = ("blue", "red")
 
 @functools.lru_cache(maxsize=1)
 def names():
-    """fields.json: every field name, unit and word that RULES.md gives."""
+    """fields.json: the format. Every property, word, unit and form, with what it holds and what it means."""
     return json.loads(Path(__file__).with_name("fields.json").read_text(encoding="utf-8"))
+
+
+def word_list(name):
+    """The words of one of the lists in fields.json."""
+    return list(names()["words"][name]["words"])
 
 
 # ---- the files
@@ -155,7 +161,7 @@ class Book:
     def roots(self):
         """{word that a path may begin with: its data}, beside the IDs."""
         file_of = {name: file for file, about in names()["files"].items() for name in about.get("fields", ())}
-        return {root: self.part(file_of[root], root) for root in names()["roots"]}
+        return {root: self.part(file_of[root], root) for root in names()["roots"]["words"]}
 
     def look(self, path, choice=None):
         """What a path names, as a Found; a DesignError that lists what there is when it names nothing."""
@@ -165,7 +171,7 @@ class Book:
         entry = self.ids.get(head)
         node = entry.data if entry else self.roots.get(head)
         if node is None:
-            raise unknown(where, "ID", head, [*self.ids, *names()["roots"]])
+            raise unknown(where, "ID", head, [*self.ids, *names()["roots"]["words"]])
         if at:
             if alliance not in ALLIANCES:
                 raise unknown(where, "alliance", alliance, ALLIANCES)
@@ -270,11 +276,9 @@ def gather(folder, data):
     """(Book, [DesignError]): every record of the files' data, and what is wrong with its ID or its place."""
     entries, faults = [], []
     for file, about in names()["files"].items():
-        if file not in data:
-            continue
         own = {}
-        for name, node in data[file].items():
-            holds = "record " + about["records"] if "records" in about else about["fields"].get(name)
+        for name, node in data.get(file, {}).items():
+            holds = "record " + about["records"] if "records" in about else about["fields"].get(name, {}).get("holds")
             if holds is None:
                 faults.append(unknown(f"{file}.json", "field", name, about["fields"]))
             elif holds.startswith("record "):
@@ -339,7 +343,7 @@ def _id(name, where, faults):
 
 def _ids(entries, faults):
     """{ID: Entry} of every record that a path begins with, and a fault for each ID that is taken."""
-    ids, roots = {}, names()["roots"]
+    ids, roots = {}, names()["roots"]["words"]
     for entry in entries:
         if not entry.path or "." in entry.path or entry.kind in (*roots, "frame"):
             continue

@@ -1,4 +1,4 @@
-"""A number as it is printed, in base units (RULES.md section 3)."""
+"""A number as it is printed, in base units."""
 import unittest
 
 from frc_design_kernel.errors import DesignError

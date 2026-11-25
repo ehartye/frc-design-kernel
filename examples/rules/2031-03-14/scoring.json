@@ -16,6 +16,7 @@
     "bale_on_bench": {"per": "piece", "points": [{"when": ["teleop"], "points": {"by": "event", "regional": 1, "championship": 2}}], "src": "manual 5.7"},
     "pumpkin_in_loft": {"per": "piece", "points": [{"when": ["teleop"], "points": 4}, {"when": ["teleop", "high_gate"], "points": 5}], "src": "manual 5.7"},
     "hoop_on_rack": {"per": "piece", "points": [{"when": ["auto"], "points": 4}, {"when": ["teleop"], "points": 2}], "src": "manual 5.7"},
+    "out_early": {"per": "robot", "points": [{"when": ["auto"], "points": 3}], "needs": [["my bumpers", "fully outside", "my yard"]], "src": "manual 5.8"},
     "hang": {
       "per": "robot", "points": [{"when": ["teleop"], "points": 9}], "says": "Off the carpet on the bar.", "most": {"each": "alliance", "is": 2},
       "needs": [
