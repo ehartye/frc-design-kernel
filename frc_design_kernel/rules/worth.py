@@ -2,7 +2,6 @@
 
     Value                its kind, its number in mm, kg, s or degrees, its limit, its ends, and where it comes from
     AnyOf                a list of Values, one of which is enough
-    Sort                 how its number goes with positions, to see one that is written where it would not move for red
     Wrong                the DesignError of a formula, which is told where it is written
     Told                 a DesignError with another fix for a program and for a command
     NotOne               the DesignError of what is no value
@@ -10,40 +9,16 @@
     one_end(value, end)  the low or the high end of a range or a tolerance
     moved(value, ...)    a position's number somewhere else
     shown, words_of      how a number or a Value is printed
+    moves(got)           whether it, or one of them, is or uses a position or a direction
     counted(value)       what it is for each of and when, in words that follow its number
 """
 from dataclasses import dataclass, field, replace
-from fractions import Fraction
-from typing import NamedTuple
 
 from ..errors import DesignError
 from . import quantity
 
 BASE = {"length": "mm", "mass": "kg", "time": "s", "angle": "deg"}
 WORKED = {"ft": "in", "min": "s"}       # nobody reads a decimal foot or a decimal minute
-
-
-class Sort(NamedTuple):
-    """How a number goes with what moves for red. A position counts one of its axis and a direction counts one, all else none, and a sum has the sum."""
-    counts: tuple | None = (Fraction(0), Fraction(0), Fraction(0))      # of x, of y and of directions; None for what is no sum, such as a product of two positions
-    uses: frozenset = frozenset()                                       # "position" and "direction", as far as they are in it at all
-
-    @property
-    def still(self):
-        """Whether it is the same for red: a distance, an angle between two directions, or neither used."""
-        return self.counts is not None and not any(self.counts)
-
-    @property
-    def one(self):
-        """Whether it is one position or one direction itself."""
-        return self.counts is not None and sorted(self.counts) == [0, 0, 1]
-
-    def times(self, number):
-        return self._replace(counts=self.counts and tuple(count * number for count in self.counts))
-
-
-STILL = Sort()
-X, Y, DIRECTION = (Sort(tuple(Fraction(i == at) for i in range(3)), frozenset({what})) for at, what in enumerate(("position", "position", "direction")))
 
 
 @dataclass(frozen=True)
@@ -63,7 +38,7 @@ class Value:
     when: tuple = ()                    # for a cap at some times only: Moments (conditions.py), which must all be true
     name: str | None = None             # its name in a list of which one is enough
     unit: str | None = None             # the unit it is printed in
-    sort: Sort = field(default=STILL, repr=False, compare=False)    # for formulas, and for what may be written where
+    moves: bool = field(default=False, repr=False, compare=False)   # whether it is, or is worked out from, a position or a direction
 
     @property
     def number_words(self):
@@ -149,6 +124,11 @@ def moved(value, number, sign=None):
         low, high = sorted(number + sign * (end - value.value) for end in (value.low, value.high))
     unit = worked(value.unit)
     return replace(value, value=number, limit=None, low=low, high=high, printed=shown(number, value.kind, unit), unit=unit)
+
+
+def moves(got):
+    """Whether a Value, or one of several, is or uses a position or a direction."""
+    return any(moves(one) for one in got) if isinstance(got, list) else isinstance(got, Value) and got.moves
 
 
 def counted(value):

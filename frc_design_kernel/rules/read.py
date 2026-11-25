@@ -146,6 +146,7 @@ class Found:
     end: str | None         # "low" or "high" when the path asks for one end of a range
     alliance: str | None    # "blue" or "red" when the path says it: stall@red.at.x
     spot: str | None        # the spot when the path says it: branch@red.3.b.at.x or branch.spots.3.b.at.x
+    about: dict             # what is said beside the lists and groups that the path goes into, through their `is`
 
 
 @dataclass(frozen=True)
@@ -213,37 +214,57 @@ class Book:
                 raise unknown(where, "alliance", alliance, ALLIANCES)
             if not entry or entry.data.get("alliance") != "each":
                 raise DesignError(where, f'"{head}" is not one of the things of each alliance', f'Write "{head}" without @, or give it "alliance": "each"')
-            spot, node, steps = at_spot(node, steps)
+            spot, node, steps = at_spot(node, after_spots(node, steps))
         elif entry and steps[:1] == ["spots"] and is_pattern(node.get("spots")) and at_spot(node, steps[1:])[0]:
             spot, _, steps = at_spot(node, steps[1:])
             node = spot_data(node["spots"], spot)
         while entry is None and steps and not self._entry(head) and isinstance(node, dict) and isinstance(node.get(steps[0]), dict):
             node, head, steps = node[steps[0]], f"{head}.{steps[0]}", steps[1:]
             entry = self._entry(head)
-        node, end = self._follow(node, steps, choice or {}, where)
-        return Found(node, entry or self._entry(head), end, alliance or None, spot)
+        node, end, about = self._follow(node, steps, choice or {}, where)
+        return Found(node, entry or self._entry(head), end, alliance or None, spot, about)
 
-    def within(self, data, path, entry, choice=None):
-        """What a path names that begins with a field of data, an object in the record entry."""
-        node, end = self._follow(data, path.split("."), choice or {}, f'the path "{path}"')
-        return Found(node, entry, end, None, None)
+    def within(self, data, path, entry, choice=None, start=""):
+        """What a path names that begins with a field of data, an object in the record entry; start is what to tell in front of it."""
+        node, end, about = self._follow(data, path.split("."), choice or {}, f'the path "{start}{path}"')
+        return Found(node, entry, end, None, None, about)
+
+    def plain(self, node, steps, choice):
+        """(a path's steps without `is` and the names of variants, {kind: the variant that they name}), as far as it leads."""
+        found, chosen = [], {}
+        for i, name in enumerate(steps):
+            inner, _ = self._to(node, name, choice)
+            if isinstance(inner, dict) and name == "is" and "is" in inner:
+                node = inner["is"]
+            elif isinstance(inner, dict) and name in inner and isinstance(inner.get("by"), str) and name in self.variants.get(inner["by"], ()):
+                chosen[inner["by"]] = name
+                node = inner[name]
+            else:
+                try:
+                    node = self._step(node, name, choice, "", last=True, about={})[0]
+                except DesignError:
+                    return [*found, *steps[i:]], chosen     # whoever follows it says what is wrong
+                found.append(name)
+        return found, chosen
 
     def _follow(self, node, steps, choice, where):
-        """(what a path's steps lead to, the end of a range that it asks for or None)."""
+        """(what a path's steps lead to, the end of a range that it asks for or None, what is said on the way)."""
+        about = {}
         for i, name in enumerate(steps):
-            node, end = self._step(node, name, choice, where, last=i == len(steps) - 1)
+            node, end = self._step(node, name, choice, where, i == len(steps) - 1, about)
             if end:
-                return node, end
-        return node, None
+                return node, end, about
+        return node, None, about
 
     def _entry(self, path):
         return next((e for e in self.entries if e.path == path), None)
 
-    def _step(self, node, name, choice, where, last):
-        """(the data one step further, None), or (the data itself, "low" or "high") when the last step asks for an end."""
-        whole = node
-        while isinstance(node, dict) and name not in node and (inner := self._inside(node, name, choice)) is not None:
-            node = inner
+    def _step(self, node, name, choice, where, last, about):
+        """(the data one step further, None), or (the data itself, "low" or "high") when the last step asks for an end. What is said
+        beside an `is` that it goes through is added to about."""
+        whole, (node, said) = node, self._to(node, name, choice)
+        if isinstance(node, (list, dict)):
+            about.update(said)
         if isinstance(node, list) and name in tuple(AXES[:len(node)]):
             return node[AXES.index(name)], None
         if isinstance(node, dict) and name in node:
@@ -251,6 +272,14 @@ class Book:
         if last and name in ENDS and isinstance(node, str):
             return whole, name
         raise unknown(where, "field", name, AXES[:len(node)] if isinstance(node, list) else node if isinstance(node, dict) else ())
+
+    def _to(self, node, name, choice):
+        """(the object or list that has a name, inside those that stand for it; what is said beside each `is` on the way)."""
+        said = {}
+        while isinstance(node, dict) and name not in node and (inner := self._inside(node, name, choice)) is not None:
+            said.update({k: v for k, v in node.items() if k != "is"} if "is" in node else {})
+            node = inner
+        return node, said
 
     def _inside(self, node, name, choice):
         """What an object that stands for a value holds: its `is`, its variant, or the limit of that name in its `any`."""
@@ -274,6 +303,11 @@ def at_spot(record, steps):
             rest = steps[size:]
             return name, {**record, **one}, rest
     return None, record, steps
+
+
+def after_spots(record, steps):
+    """The steps after @red, without a `spots` in front of a spot: stall@red.spots.near is stall@red.near."""
+    return steps[1:] if steps[:1] == ["spots"] and at_spot(record, steps[1:])[0] else steps
 
 
 def is_pattern(spots):

@@ -19,13 +19,12 @@ class Formulas(unittest.TestCase):
 
     def work(self, text):
         from frc_design_kernel.rules import formulas
-        return formulas.work(text, self.named)[:2]
+        return formulas.work(text, self.named)
 
     def named(self, path):
         if path not in self.NAMED:
             raise unknown("", "path", path, self.NAMED)
-        from frc_design_kernel.rules.worth import STILL
-        return *self.NAMED[path], STILL
+        return self.NAMED[path]
 
     def gives(self, text, kind, number):
         got = self.work(text)

@@ -58,6 +58,7 @@ class Formulas(Refused):
         self.refused(lambda d: size(d, width={"is": "= crate@red.at.y"}), "field.json size.width", "needs itself", '"= crate@red.at.y"')
         self.refused(lambda d: size(d, length={"by": "field", "welded": "612.40 in", "bolted": "= size.length.bolted"}), "field.json size.length.bolted", "needs itself")
         self.refused(lambda d: d["scoring"]["total"].update(bale="= stall.starts.bale * 2"), "scoring.json total.bale", "needs itself")
+        self.refused(lambda d: size(d, length={"by": "field", "welded": "= size.length.bolted", "bolted": "= size.length.welded"}), "needs itself", '"= size.length.bolted"', '"= size.length.welded"')
         self.accepted(lambda d: size(d, length={"by": "field", "welded": "612.40 in", "bolted": "= size.length.welded"}))
         self.accepted(lambda d: d["field"]["solids"]["crate"].update(at=["= crate.at.y", "150 in", "0 in"]))
 
@@ -69,7 +70,7 @@ class Formulas(Refused):
             self.refused(lambda d: deep(d, text), "field.json fold.deep", text, says)
         self.refused(lambda d: d["pieces"]["hoop"].update(mass="= bale.mass"), "pieces.json hoop.mass", "range", ".low")
         self.accepted(lambda d: d["pieces"]["hoop"].update(mass="= bale.mass.low"))
-        self.accepted(lambda d: deep(d, "= rack.spots.2.a.at.x - near_bales.spots.3.at.x"))
+        self.accepted(lambda d: d["field"]["zones"]["pond"].update(own="= rack.spots.2.a.at.x - near_bales.spots.3.at.x"))
 
     def test_only_the_formula_that_is_wrong_is_told(self):
         """Catches one wrong formula that is told again for everything that uses it."""
@@ -122,6 +123,8 @@ class Places(Refused):
         "period.lasts": (lambda d, v: d["clock"]["periods"]["auto"].update(lasts=v("s")), "clock.json auto.lasts"),
         "window.first": (lambda d, v: d["clock"]["windows"]["early"].update(first=v("s")), "clock.json early.first"),
         "window.last": (lambda d, v: d["clock"]["windows"]["endgame"].update(last=v("s")), "clock.json endgame.last"),
+        "state.lasts": (lambda d, v: d["clock"]["states"]["lit"].update(lasts=v("s")), "clock.json lit.lasts"),
+        "tag.tilt": (lambda d, v: d["field"]["tags"]["t3"].update(tilt=v("deg")), "field.json tags.t3.tilt"),
         "judged.after_": (lambda d, v: d["scoring"]["judged"]["late"].update(after_auto=v("s")), "scoring.json judged.late.after_auto"),
         "points.points": (lambda d, v: d["scoring"]["awards"]["hang"]["points"][0].update(points=v("")), "scoring.json hang.points[0].points"),
         "foul.points_to_them": (lambda d, v: d["scoring"]["fouls"]["minor"].update(points_to_them=v("")), "scoring.json minor.points_to_them"),
@@ -321,6 +324,13 @@ class Scores(Refused):
         self.refused(lambda d: starts(d, "vine").update(pumpkin={"is": "left over"}), "places.json vine.starts.pumpkin", "left over", "patch")
         self.refused(lambda d: starts(d, "stall").update(bale={"each": "spot", "is": "left over"}) or d["places"]["stall"]["holds"].update(bale="= stall.starts.bale * 2"), "places.json stall.starts.bale:", "each")
         self.refused(lambda d: starts(d, "stall").update(bale={"each": "zebra", "is": "left over"}), "places.json stall.starts.bale.each", '"zebra"')
+        total = lambda d, many: d["scoring"]["total"].update(bale=many)
+        for many, at in [({"each": "alliance", "is": 60}, ""), ({"each": "spot", "is": {"by": "event", "regional": 60, "championship": 80}}, ""), ({"by": "event", "regional": 60, "championship": {"each": "alliance", "is": 60}}, ".championship"),
+                         ({"is": {"is": 60, "each": "barn"}}, ".is")]:
+            self.refused(lambda d: total(d, many), f"scoring.json total.bale{at}:", "each", "in all")
+        self.refused(lambda d: total(d, {"each": "zebra", "is": 60}), "scoring.json total.bale.each", '"zebra"')
+        self.accepted(lambda d: total(d, {"is": 60, "src": "manual 5.6"}))
+        self.accepted(lambda d: d["robot"]["limits"]["hold"].update(bale={"each": "alliance", "is": 1}) or d["conduct"]["G94"].update(limit={"pumpkin": 2}, says="x"))
         self.accepted(lambda d: starts(d, "vine").update(pumpkin=12))
         self.accepted(lambda d: starts(d, "patch").update(pumpkin={"is": "left over"}))
         self.accepted(lambda d: starts(d, "spare_hoops").update(hoop=3))
@@ -412,6 +422,12 @@ class Says(Refused):
         self.refused(lambda d: d["places"]["barn"]["opening"].update(says="It is {barn.opening}."), "places.json barn.opening.says", "barn.opening")
         self.accepted(lambda d: d["places"]["barn"]["opening"].update(says="It is {bottom} up, {opening.depth} deep and {out} out, from the {from}."))
 
+    def said(self, change, *paths):
+        from frc_design_kernel.rules.rules import load_rules
+        data = example()
+        change(data)
+        rules = load_rules(written(data))
+        return [rules.get(path).value for path in paths]
 
     def test_says_that_need_each_other(self):
         """Catches words that name themselves, alone, through others, through a formula or at any depth: each loop is told once."""
@@ -422,6 +438,15 @@ class Says(Refused):
         self.refused(lambda d: d["places"]["barn"]["opening"].update(says="It is {says}."), "places.json barn.opening.says", "needs itself")
         self.refused(lambda d: d["places"]["barn"]["opening"].update(says="As {barn.opening.says}"), "places.json barn.opening.says", "needs itself")
         self.accepted(lambda d: says(d, "R94", "As {R95.says}") or says(d, "R95", "As {R96.says}"))
+        spots = lambda d, of, **texts: [d["places"][of]["spots"][name].update(says=text) for name, text in texts.items()]
+        self.accepted(lambda d: d["places"]["stall"].update(says="Here: {stall.spots.near.says}") or spots(d, "stall", near="The near one."))
+        self.accepted(lambda d: spots(d, "stall", near="Next to: {stall.spots.far.says}", far="By the corner."))
+        self.accepted(lambda d: d["places"]["near_bales"].update(says="Each: {near_bales.spots.1.says}", gap="3 in") or spots(d, "near_bales", first="On the carpet, by {near_bales.gap}."))
+        self.assertEqual(self.said(lambda d: spots(d, "stall", near="Next to: {stall.spots.far.says}", far="By the corner."), "stall.spots.near.says", "stall@red.near.says", "stall.spots.far.says"),
+                         ["Next to: By the corner.", "Next to: By the corner.", "By the corner."])
+        self.assertEqual(self.said(lambda d: d["places"]["near_bales"].update(says="All.") or spots(d, "near_bales", first="Each."), "near_bales.says", "near_bales.spots.2.says"), ["All.", "Each."])
+        self.refused(lambda d: spots(d, "stall", near="{stall.spots.far.says}", far="{stall.spots.near.says}"), "places.json stall.spots.near.says:", '"stall.spots.near.says" needs "stall.spots.far.says" needs "stall.spots.near.says"')
+        self.refused(lambda d: d["places"]["stall"].update(says="{stall.spots.near.says}") or spots(d, "stall", near="{stall.says}"), "needs itself", '"stall.says" needs "stall.spots.near.says"')
         self.accepted(lambda d: d["places"]["barn"]["opening"].update(says="As {R94.says}"))
 
 
@@ -434,6 +459,17 @@ class More(Refused):
         data = example()
         data["field"]["solids"]["pen"].update(dict(reversed(lengths.items())) if backward else lengths)
         return written(data)
+
+    def test_a_chain_by_variant(self):
+        """Catches a chain that goes through the names of variants and is not counted, as another reader works each of them out."""
+        from frc_design_kernel.rules.rules import faults, load_rules
+        for many, whole, backward in [(60, False, False), (30, False, True), (20, True, True)]:
+            data = example()
+            lengths = {f"n{i}": {"by": "field", "welded": f"= pen.n{i + 1}.bolted * 2", "bolted": f"= pen.n{i + 1}.welded"} for i in range(many)} | {f"n{many}": {"by": "field", "welded": "1 mm", "bolted": "2 mm"}}
+            data["field"]["solids"]["pen"].update(dict(reversed(lengths.items())) if backward else lengths)
+            found = faults(written(data))
+            self.assertEqual([f.problem[:13] for f in found], [] if whole else ["needs a chain"], found)
+        self.assertAlmostEqual(load_rules(written(data)).get("pen.n0").value, 2 ** 10)
 
     def red_chain(self, many):
         """A folder in which a ring of red's is placed by the next one's, many times over."""

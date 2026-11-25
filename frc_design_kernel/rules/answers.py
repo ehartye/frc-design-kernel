@@ -27,7 +27,7 @@ def plain(rules, got, unit=None):
         inner = [plain(rules, one, unit) for one in got]
         return {"any": inner} if isinstance(got, AnyOf) else inner
     shown_in, (number, low, high) = _numbers(rules, got, unit)
-    told = {name: one for name, one in asdict(replace(got, when=())).items() if name != "sort"}
+    told = {name: one for name, one in asdict(replace(got, when=())).items() if name != "moves"}
     return {**told, "value": number, "low": low, "high": high, "unit": shown_in, "when": [moment.words for moment in got.when]}
 
 

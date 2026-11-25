@@ -94,8 +94,7 @@ class Finder:
         found = []
         for field in fields.walk(self.rules.book, []):
             if field.holds == "says":
-                before = field.where.partition(" ")[2].removeprefix(f"{field.entry.path}.").split(".")[:-1]
-                found.append((field.entry, field.owner, self.each(lambda worker, field=field, before=before: says.fill(worker, field.entry, field.owner, before, field.node))))
+                found.append((field.entry, field.owner, self.each(lambda worker, field=field: says.fill(worker, field).value)))
         return found
 
     @functools.cached_property

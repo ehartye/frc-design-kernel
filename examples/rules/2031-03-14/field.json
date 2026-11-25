@@ -70,7 +70,7 @@
       "src": "manual 3.5"
     },
     "pen": {
-      "alliance": "each", "at": ["180 in", "110 in", "0 in"], "faces": "0 deg", "says": "A triangle with its point along {faces}.",
+      "alliance": "each", "at": ["180 in", "110 in", "0 in"], "faces": "0 deg", "says": "A triangle with its point the way it looks, its sides {side} long.",
       "side": {"is": "30 in", "of": "each side in plan"}, "lean": {"is": "60 deg", "of": "between two sides"}, "half": "= pen.side / 2",
       "tall": {"is": "= pen.side * sin(pen.lean)", "of": "a side to the point across from it"},
       "bearing": {"is": "= atan2(pen.half, pen.tall)", "of": "half of the angle at a point"},

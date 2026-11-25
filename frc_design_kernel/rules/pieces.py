@@ -57,7 +57,7 @@ def left_over(worker, entry, piece):
         total = one_number(worker.get(f"total.{piece}"))
         used = sum(count(worker, other, piece) * sides(other) for other in placed(worker, piece) if other is not entry)
     finally:
-        worker.doing.pop()
+        worker.season.doing.pop()
     share = (total - used) / sides(entry)
     if share < 0 or share != int(share):
         half = " for each alliance" if sides(entry) == 2 else ""

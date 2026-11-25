@@ -1,6 +1,6 @@
 """The arithmetic of one formula, such as "= size.length / 2 - pen.side * cos(pen.lean)".
 
-    work(text, named)    (kind, number in base units, Sort); named(path) gives the same for each path that the formula names
+    work(text, named)    (kind, number in base units); named(path) gives the same for each path that the formula names
 
 First the kinds are checked: adding needs the same kind, and a bare number only multiplies or divides. Then the library's
 own evaluator works the number out. An angle goes into it in radians and comes out in degrees, so an author converts
@@ -8,43 +8,33 @@ nothing. What is wrong is told with the author's own text.
 """
 import ast
 import math
-from fractions import Fraction
-from typing import NamedTuple
 
 from ..errors import DesignError
 from ..source.expressions import evaluate
 from .read import word_list
 from .values import in_words
 from .words import PATH
-from .worth import DIRECTION, STILL, Sort
 
 GIVES = {"sin": "number", "cos": "number", "tan": "number", "sqrt": "number", "atan2": "angle"}     # the others give what they are given
 TAKES = {"sin": "angle", "cos": "angle", "tan": "angle", "sqrt": "number"}                          # the others take any one kind
 HOW_MANY = {"sin": 1, "cos": 1, "tan": 1, "sqrt": 1, "abs": 1, "atan2": 2}                          # the others take two or more
 
 
-class Part(NamedTuple):
-    """What a part of a formula gives."""
-    kind: str
-    sort: Sort
-    plain: Fraction | None = None       # its number, when it is written as one
-
-
 def work(text, named):
-    """(kind, number in base units, Sort) of a formula. named(path) gives the same for a path, or raises a DesignError."""
+    """(kind, number in base units) of a formula. named(path) gives the same for a path, or raises a DesignError."""
     own = {}        # {path: a plain name that can not be one of the evaluator's own}
     plain = PATH.sub(lambda found: own.setdefault(found[0], f"value_{len(own)}_"), text[1:]).strip()
     held = {name: named(path) for path, name in own.items()}
     if plain in held:
         return held[plain]      # a path alone is exact: an angle does not go through radians
     try:
-        kind, sort, _ = _part(ast.parse(plain, mode="eval").body, {name: Part(kind, sort) for name, (kind, _, sort) in held.items()})
-        number = evaluate("=" + plain, {name: math.radians(n) if kind == "angle" else n for name, (kind, n, _) in held.items()})
+        kind = _kind(ast.parse(plain, mode="eval").body, {name: kind for name, (kind, _) in held.items()})
+        number = evaluate("=" + plain, {name: math.radians(n) if kind == "angle" else n for name, (kind, n) in held.items()})
     except DesignError as problem:
         raise _wrong(text, problem.problem.replace(f'the expression "={plain}" ', ""), problem.fix) from None
     except (SyntaxError, ValueError, RecursionError, MemoryError):
         raise _wrong(text, "is not valid arithmetic") from None
-    return kind, math.degrees(number) if kind == "angle" else number, sort
+    return kind, math.degrees(number) if kind == "angle" else number
 
 
 def _wrong(text, why, fix=None):
@@ -60,59 +50,19 @@ def _not(why, fix=None):
     return DesignError("", why, fix or _allowed())
 
 
-def _part(node, named):
-    """What a part of a formula gives."""
+def _kind(node, kinds):
+    """The kind of what a part of a formula gives."""
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
-        return Part("number", STILL, Fraction(str(node.value)))
-    if isinstance(node, ast.Name) and node.id in named:
-        return named[node.id]
+        return "number"
+    if isinstance(node, ast.Name) and node.id in kinds:
+        return kinds[node.id]
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
-        return _times(_part(node.operand, named), Fraction(-1 if isinstance(node.op, ast.USub) else 1))
+        return _kind(node.operand, kinds)
     if isinstance(node, ast.BinOp):
-        left, right = _part(node.left, named), _part(node.right, named)
-        return Part(_both(node.op, left.kind, right.kind), _sort(node.op, left, right), _plain(node.op, left.plain, right.plain))
+        return _both(node.op, _kind(node.left, kinds), _kind(node.right, kinds))
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and not node.keywords:
-        given = [_part(one, named) for one in node.args]
-        return Part(_function(node.func.id, [one.kind for one in given]), _sort_of(node.func.id, [one.sort for one in given]))
+        return _function(node.func.id, [_kind(one, kinds) for one in node.args])
     raise _not("uses something that is not arithmetic")
-
-
-def _times(part, number):
-    return part._replace(sort=part.sort.times(number), plain=part.plain if part.plain is None else part.plain * number)
-
-
-def _plain(op, left, right):
-    """The number of two that are written, or None."""
-    if left is None or right is None or isinstance(op, ast.Div) and not right:
-        return None
-    return left + right if isinstance(op, ast.Add) else left - right if isinstance(op, ast.Sub) else left * right if isinstance(op, ast.Mult) else left / right
-
-
-def _sort(op, left, right):
-    """The Sort of two parts together. Only a number that is written makes a part or a multiple of a position."""
-    one, other, uses = left.sort.counts, right.sort.counts, left.sort.uses | right.sort.uses
-    if one is None or other is None:
-        return Sort(None, uses)
-    if isinstance(op, (ast.Add, ast.Sub)):
-        return Sort(tuple(a + b if isinstance(op, ast.Add) else a - b for a, b in zip(one, other)), uses)
-    if left.sort.still and right.sort.still:
-        return Sort(uses=uses)
-    if isinstance(op, ast.Div):
-        got = left.sort.times(1 / right.plain) if right.plain else Sort(None)
-    else:
-        got = left.sort.times(right.plain) if right.plain is not None else right.sort.times(left.plain) if left.plain is not None else Sort(None)
-    return got._replace(uses=uses)
-
-
-def _sort_of(name, given):
-    """The Sort of what a function gives: a direction from atan2 of positions, and no position but from min and max of some along one axis."""
-    uses = frozenset().union(*(one.uses for one in given))
-    if name == "atan2":
-        return DIRECTION if uses else STILL
-    if name in ("min", "max"):
-        counts = {one.counts for one in given}
-        return Sort(counts.pop() if len(counts) == 1 else None, uses)
-    return Sort(uses=uses) if all(one.still for one in given) else Sort(None, uses)
 
 
 def _both(op, left, right):

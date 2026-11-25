@@ -157,16 +157,18 @@ class Words:
             many = given.get("is") if isinstance(given, dict) and "each" not in given else given
             if spots and many == spots:
                 self.fault(f"{where}.{piece}", f"types {many}, which its {spots} spots already make", 'Write {"each": "spot", "is": 1}')
-            self._left_over_each(given, f"{where}.{piece}")
+            for end, each in self._ends(given, f"{where}.{piece}"):
+                if each and end in word_list("starts"):
+                    self.fault(each, "is what is left over, and has an each: what is left over is shared out already", 'Write "left over" without the each')
 
-    def _left_over_each(self, node, where, each=None):
-        """A fault where what is left over stands beside an each, or inside what does: each is the place of that."""
+    def _ends(self, node, where, each=None):
+        """(a value that a node stands for, through `is` and every variant; the place of the each beside it or around it, or None)."""
         if isinstance(node, dict) and ("is" in node or "by" in node):
             each = where if isinstance(node.get("each"), str) and node["each"] in (*word_list("each"), *self.book.ids) else each
             for name in ["is"] if "is" in node else [name for name in node if name != "by"]:
-                self._left_over_each(node[name], f"{where}.{name}", each)
-        elif each and node in word_list("starts"):
-            self.fault(each, "is what is left over, and has an each: what is left over is shared out already", 'Write "left over" without the each')
+                yield from self._ends(node[name], f"{where}.{name}", each)
+        else:
+            yield node, each
 
     def left_over(self):
         """Only one place starts with what is left over of a piece."""
@@ -185,6 +187,8 @@ class Words:
 
     def holds_piece_count(self, field, node, where):
         self.one(field.name, self.ids["piece"], "piece", field.entry.where)
+        for each in dict.fromkeys(each for _, each in self._ends(node, where) if each) if field.entry.kind == "total" else ():
+            self.fault(each, "has an each, and a total is how many there are in all", "Write the number without the each")
 
     def holds_period(self, field, node, where):
         if "periods" not in self.missing:

@@ -21,9 +21,9 @@
     "A piece put in one place often comes out of another.",
     "Follow `takes`, `gives` and `then`, and no piece is lost or made.",
     "A place that belongs to an alliance but stands at the other end is still written as blue's, where blue's stands.",
-    "A position is written in `at`, `from`, `to`, spots, patterns and the points of a zone's outline, and a direction in `faces`: only these move for red.",
-    "A record that each alliance has holds no position and no direction anywhere else.",
-    "One position less another along the same axis is a distance, the same for both alliances, and may be anywhere.",
+    "What moves for red is `at`, `faces`, `from`, `to`, spots, patterns and the points of a zone's outline: positions and directions are written there.",
+    "In a record that each alliance has, and in the first spot of a pattern, nothing else is worked out from a position or a direction, and no `says` names one: write the whole sum in the `at`.",
+    "A position that is typed as a plain number can not be seen, so keep it out of other fields too.",
     "A count belongs to the record of one alliance, all its spots together.",
     "Do not type a count that the spots already make.",
     "Examples here are invented.",
@@ -732,8 +732,8 @@
       "fields": {
         "alliance": {"holds": "word alliance", "means": "`each`: blue and red each have one. Write blue's; red's is made by the symmetry. Left out, there is one and it belongs to neither."},
         "symmetry": {"holds": "word symmetry", "means": "This record's own symmetry, if it is not the field's."},
-        "at": {"holds": "point", "means": "Where it is: [x, y] or [x, y, z] in the field's frame. A solid stands on z: it is the height of its lowest point. A position is written here, or in `from` and `to` of a line, and nowhere else.", "one": true},
-        "faces": {"holds": "angle", "means": "Which way it looks in plan: 0 deg is +X, 90 deg is +Y, anticlockwise from above. Shapes and outlines are turned by it. 0 deg if left out. A direction is written here and nowhere else.", "one": true},
+        "at": {"holds": "point", "means": "Where it is: [x, y] or [x, y, z] in the field's frame. A solid stands on z: it is the height of its lowest point. A position, and all that is worked out from one, is written here, in `from` and `to`, in spots or in the points of a zone's outline.", "one": true},
+        "faces": {"holds": "angle", "means": "Which way it looks in plan: 0 deg is +X, 90 deg is +Y, anticlockwise from above. Shapes and outlines are turned by it. 0 deg if left out. A direction, and all that is worked out from one, is written here.", "one": true},
         "spots": {"holds": "spots", "means": "Several of the same thing: where each is."},
         "no_geometry": {"holds": "text", "means": "Why it has no position or shape, in words: no source gives it, or it needs none. `rules check` lists it. A zone, line, solid or hang that a rule or a score names must have an outline, `from` and `to`, a shape, an `at` or `spots`, or this. `unknown` is for anything else that no source gives."}
       }
@@ -839,7 +839,7 @@
         "of": {"holds": "word state_of", "means": "What it is true of."},
         "starts": {"holds": "text", "means": "What makes it start, in words."},
         "needs": {"holds": "conditions", "means": "Conditions that must be true for it to start."},
-        "lasts": {"holds": "time", "means": "How long it is true."},
+        "lasts": {"holds": "time", "means": "How long it is true.", "one": true},
         "or_until": {"holds": "text", "means": "What ends it sooner, in words."},
         "grace": {"holds": "time", "means": "Time added after it ends. The state is over, but what `of` or `says` names still counts."},
         "true": {"holds": "list of whens", "means": "When it is true: a list of `when` lists, and any one is enough."}
@@ -937,7 +937,7 @@
       "fields": {
         "at": {"holds": "point", "means": "Where its point is (`measured` says which point).", "one": true},
         "faces": {"holds": "angle", "means": "Which way it looks in plan.", "one": true},
-        "tilt": {"holds": "angle", "means": "How far it leans from upright so that it looks downward."},
+        "tilt": {"holds": "angle", "means": "How far it leans from upright so that it looks downward.", "one": true},
         "panel": {"holds": "length", "means": "Its own panel, when it is not like the others."}
       }
     },
@@ -1059,7 +1059,7 @@
       }
     },
     "total": {
-      "means": "How many of each piece there are in all.",
+      "means": "How many of each piece there are in all, so with no `each`.",
       "by_piece": true,
       "fields": {}
     },

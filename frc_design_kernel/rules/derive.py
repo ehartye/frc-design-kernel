@@ -10,15 +10,14 @@ import re
 
 from ..errors import DesignError, unknown
 from . import alliances, conditions, fields, outlines, parts, pieces, quantity, says, shapes, ties, times, words
-from .read import names
+from .read import is_pattern, names
 from .values import OUTLINES, in_words
 from .worker import Loop, Season, TooLong, Wrong, inside
+from .worth import moves
 
 NAME = re.compile(r"\w+")
-MOVE = {"position": "at, from or to, which move; a distance is", "direction": "faces, which moves; an angle is"}
-LESS = {"position": "one position less another along the same axis (to red's, ID@red.at.x - ID.at.x; to the far wall, that of something there less ID.at.x)",
-        "direction": "one direction less another"}
-NEITHER = {"position": "neither a position nor a distance", "direction": "neither a direction nor an angle between two"}
+HIDDEN = "uses a position or a direction, which moves for red only in at, faces, from, to, spots and the points of an outline"
+WHERE_IT_MOVES = "Write the whole sum in at (or in faces, for a direction)"
 LEAST = {"more than 0": (operator.gt, "is not more than 0"), "0 or more": (operator.ge, "is below 0")}
 
 
@@ -54,7 +53,7 @@ class _Check:
         self.book, self.faults, self.told = book, {}, set()
         self.leaves, self.fields = all_of_it
         self.unread = set(bad if unread is None else unread)
-        self.places = [(field.where, field.key) for field in self.fields if field.key in (*alliances.POSITIONS, *alliances.DIRECTIONS)]
+        self.places = [(field.where, field.key) for field in self.fields if field.key in alliances.PLACES]
         several = self.several()
         self.unread |= several
         self.season = Season(book, bad | several)
@@ -100,15 +99,13 @@ class _Check:
         self.season.each(lambda worker: self._one(worker, work, where))
 
     def _one(self, worker, work, where):
-        worker.own = where
+        self.season.own = where
         try:
             work(worker)
         except Wrong:
             pass            # a formula, which is told where it is written
         except DesignError as problem:
             self.fault(problem if problem.where.split(" ")[0] in _files() else problem.under(where))
-        finally:
-            worker.own = None
 
     def fault(self, problem):
         self.faults.setdefault(str(problem), problem)
@@ -125,22 +122,16 @@ class _Check:
                 raise unknown(leaf.entry.where, "weight", name, names()["limits"]["weight"]["fields"])
             if leaf.kind not in (None, kind):
                 raise DesignError(leaf.where, f'the formula "{leaf.node}" gives {in_words(kind)}, not {in_words(leaf.kind)}', f"Write {in_words(leaf.kind)}")
-            if not got.sort.still:
-                self.hidden(leaf, got)
+            if got.moves and self.red_is_blue(leaf.entry, leaf.where) and not self.moves_for_red(leaf.where):
+                raise DesignError(leaf.where, f'the formula "{leaf.node}" {HIDDEN}', WHERE_IT_MOVES)
         self.over(work, leaf.where)
 
-    def hidden(self, leaf, got):
-        """A position or a direction that is written where it would not move for red, in a record that each alliance has."""
-        if leaf.entry.data.get("alliance") != "each" or words.OTHER.search(leaf.where):
-            return
-        if any(inside(leaf.where, where) and alliances.holds_places(key, NAME.findall(leaf.where.removeprefix(where))) for where, key in self.places):
-            return
-        kind = "direction" if got.kind == "angle" else "position"
-        if got.sort.one:
-            raise DesignError(leaf.where, f'the formula "{leaf.node}" gives a {kind}, which would not move for red here', f"Write it in {MOVE[kind]} {LESS[kind]}")
-        used = sorted(got.sort.uses, reverse=True)      # positions first
-        raise DesignError(leaf.where, f'the formula "{leaf.node}" uses {" and ".join(f"a {what}" for what in used)}, and gives {NEITHER[kind]}',
-                          f"Write {' and '.join(LESS[what] for what in used)}")
+    def red_is_blue(self, entry, where):
+        """Whether what is written at a place is blue's for red too, or the first spot's for every spot of a pattern."""
+        return (entry.data.get("alliance") == "each" or is_pattern(entry.data.get("spots")) and inside(where, f"{entry.where}.spots.first")) and not words.OTHER.search(where)
+
+    def moves_for_red(self, where):
+        return any(inside(where, one) and alliances.holds_places(key, NAME.findall(where.removeprefix(one))) for one, key in self.places)
 
     def least(self):
         """The numbers that must be more than 0, or not below it: printed, or worked out."""
@@ -157,12 +148,15 @@ class _Check:
             shown = f'the formula "{leaf.node}" gives {got.printed}, which' if str(leaf.node).startswith("=") else f'"{got.printed}"'
             raise DesignError(leaf.where, f"{shown} {says}", f"Write what is {least}")
 
-    def words(self, worker, field, before):
-        """One text of words: whether each {name} in it can be filled in."""
+    def words(self, worker, field):
+        """One text of words: whether each {name} in it can be filled in, and is the same for red."""
         try:
-            worker.once(field.where, lambda: says.fill(worker, field.entry, field.owner, before, field.node))
+            got = worker.once(field.where, lambda: says.fill(worker, field))
         except Wrong as problem:
-            self.tell(problem, says.path_of(field.entry, before), field.where)
+            return self.tell(problem, says.path_of(field), field.where)
+        if got.moves and self.red_is_blue(field.entry, field.where):
+            path = next(path for path in words.IN_SAYS.findall(field.node) if moves(says.named(worker, field, path)))
+            raise DesignError(field.where, f"names {{{path}}}, which is, or uses, a position or a direction: another one for red, and at another spot", "Say it in words, or name what is the same for red")
 
     def tell(self, problem, own, where):
         """Raise what is wrong with a formula or words at their own place. What another place tells is passed over, and a loop, or
@@ -244,8 +238,7 @@ class _Check:
         elif field.holds in OUTLINES:
             self.over(lambda worker: outlines.checked(worker, field.entry, field.node, False), field.where)
         elif field.holds == "says":
-            before = field.where.partition(" ")[2].removeprefix(field.entry.path + ".").split(".")[:-1]
-            self.over(lambda worker: self.words(worker, field, before), field.where)
+            self.over(lambda worker: self.words(worker, field), field.where)
         elif field.key in ("tag.at", "tag.faces"):
             self.over(lambda worker: worker.get(field.where.partition(" ")[2]), field.where)
 

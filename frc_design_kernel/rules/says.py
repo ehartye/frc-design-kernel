@@ -1,32 +1,33 @@
 """Words with their numbers filled in: "At most {limits.reach.far} out" becomes "At most 1 ft 2 in out".
 
-    fill(worker, entry, owner, before, text)    the words; owner is the object that the text is in, before the path to it
-    path_of(entry, before)                      the path to the words
+    fill(worker, field)           the words of a Field, as a Value: whether one of its numbers is, or uses, a position goes with it
+    named(worker, field, path)    the Value that {path} stands for in them, or Values
 
 A limit prints without its words, so that "at most {limits.reach.far}" reads well.
 """
 from ..errors import DesignError
 from .words import IN_SAYS
-from .worth import Value, Wrong, words_of
+from .worth import Value, Wrong, moves, words_of
 
 
-def fill(worker, entry, owner, before, text):
-    worker.begin(path_of(entry, before))
+def fill(worker, field):
+    worker.begin(path_of(field))
     try:
-        return IN_SAYS.sub(lambda found: words_of(_value(worker, entry, owner, before, found[1])), text)
+        found = {path: named(worker, field, path) for path in IN_SAYS.findall(field.node)}
     finally:
-        worker.doing.pop()
+        worker.season.doing.pop()
+    text = IN_SAYS.sub(lambda path: words_of(found[path[1]]), field.node)
+    return Value("text", text, printed=text, moves=moves(list(found.values())))
 
 
-def path_of(entry, before):
-    """The path to the words, by which words that name themselves are seen."""
-    return ".".join([entry.path, *before, "says"])
+def path_of(field):
+    """The path to the words as they are written, by which words that name themselves are seen."""
+    return field.where.partition(" ")[2]
 
 
-def _value(worker, entry, owner, before, path):
-    """The Value that {path} stands for, or Values."""
+def named(worker, field, path):
     try:
-        got = _found(worker, entry, owner, before, path)
+        got = _found(worker, field, path)
     except Wrong:
         raise
     except DesignError as problem:
@@ -36,12 +37,13 @@ def _value(worker, entry, owner, before, path):
     return got
 
 
-def _found(worker, entry, owner, before, path):
+def _found(worker, field, path):
     """What {path} stands for: a field of its own object, of its own record, or any other path."""
-    head, *steps = path.split(".")
-    for data, start in ((owner, before), (entry.data, ())):
-        if head in data:
+    entry, steps = field.entry, path.split(".")
+    before = path_of(field).removeprefix(f"{entry.path}.").split(".")[:-1]
+    for data, start in ((field.owner, before), (entry.data, [])):
+        if steps[0] in data:
             found = worker.book.within(data, path, entry, worker.choice)
-            worker.check(entry, None, [*start, head, *steps])
-            return worker.field(found.node, entry, [*start, head, *steps], found.end)
+            worker.check(entry, None, [*start, *steps])
+            return worker.season.marked(worker.field(found.node, entry, [*start, *steps], found.end, about=found.about), entry, None, [*start, *steps])
     return worker.get(path)

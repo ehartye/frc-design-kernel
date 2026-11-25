@@ -208,12 +208,13 @@ def get(args):
     except Told as problem:
         raise DesignError(problem.where, problem.problem, problem.command or f"It is told by: {_command(args.rules, 'find', problem.find)}") from None
     taken = {kind: worker.choice[kind] for kind in rules.season.variants if kind in worker.asked}
-    entry, _, own_spot, rest = worker.address(args.path)
+    entry, said, own_spot, rest = worker.address(args.path)
+    alliance = (said or args.alliance) if entry and entry.data.get("alliance") == "each" else None
     meaning = meanings.of_path(rules.book, args.path if own_spot or not args.spot else ".".join([entry.path, "spots", args.spot, *rest]))
     try:
         if args.json:
             print(json.dumps({
-                "path": args.path, "alliance": args.alliance, "spot": args.spot, "variants": taken,
+                "path": args.path, "alliance": alliance, "spot": args.spot, "variants": taken,
                 "means": {"key": meaning.key, "means": meaning.means} if meaning else None, "answer": answers.plain(rules, got, args.unit)}))
             return
         lines = answers.lines(rules, args.path, got, args.unit)

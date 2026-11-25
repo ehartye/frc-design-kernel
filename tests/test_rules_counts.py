@@ -89,6 +89,74 @@ class Each(Derived):
                 self.assertIn(text, str(found[0]))
         self.is_(self.rules(data("= total.bale / 10 + hang.most", most={"is": 2})).get("cellar.holds.bale"), "number", 8)
 
+    def test_through_is_and_a_variant(self):
+        """Catches a path through `is`, or through the name of a variant, that loses what the value is for each of, when, its source or what else is said of it."""
+        most = {"each": "alliance", "when": ["auto"], "src": "manual 5.6", "is": {"by": "event", "regional": {"is": 2, "of": "robots"}, "championship": {"is": 3, "each": "stall", "src": "update3 5"}}}
+        own = {"by": "field", "welded": "= size.length", "bolted": {"is": "= size.length / 2", "assumed": "half"}}
+        rules = self.rules(lambda d: d["scoring"]["awards"]["hang"].update(most=most) or d["field"]["zones"]["pond"].update(own=own))
+        said = lambda path, **asked: (lambda v: (v.value, v.each, [m.name for m in v.when], v.src, v.of))(rules.get(path, **asked))
+        regional, championship = (2, "alliance", ["auto"], "manual 5.6", "robots"), (3, "stall", ["auto"], "update3 5", None)
+        for path in ["hang.most", "hang.most.is", "hang.most.regional", "hang.most.is.regional", "hang.most.is.regional.is", "hang.most.regional.is"]:
+            self.assertEqual(said(path), regional, path)
+            self.assertEqual(said(path, event="championship"), regional if "regional" in path else championship, path)
+        self.assertEqual(said("hang.most.championship"), championship)
+        self.assertEqual((rules.get("near_bales.starts.bale.is").value, rules.get("near_bales.starts.bale.is").each), (1, "spot"))
+        self.assertEqual((rules.get("hoop.mass.is").assumed, rules.get("barn.opening.outline.rectangle.y.is").differs), (rules.get("hoop.mass").assumed, rules.get("barn.opening.outline.rectangle.y").differs))
+        self.assertEqual([rules.get(f"size.length.{name}").src for name in ("welded", "bolted", "bolted.is")], ["drawings sheet 1", "drawings sheet 2", "drawings sheet 2"])
+        self.is_(rules.get("pond.own.bolted"), "length", 611.75 * 25.4 / 2)      # as it is for bolted, whatever is asked
+        self.is_(rules.get("pond.own.welded", field="bolted"), "length", 612.40 * 25.4)
+        self.assertEqual(rules.get("pond.own.bolted.is").assumed, "half")
+        deep = {"is": {"by": "field", "welded": "= size.length", "bolted": {"is": {"by": "gate", "low_gate": "= size.length / 2", "high_gate": "= swing.at.z"}}}, "src": "drawings sheet 2"}
+        rules = self.rules(lambda d: d["field"]["zones"]["pond"].update(own=deep))
+        for path, inches in [("pond.own.bolted", 611.75 / 2), ("pond.own.is.bolted", 611.75 / 2), ("pond.own.welded", 612.40), ("pond.own.bolted.high_gate", 30), ("pond.own.is.bolted.is.high_gate", 30), ("pond.own.bolted.low_gate", 611.75 / 2)]:
+            self.is_(rules.get(path), "length", inches * 25.4)
+            self.assertEqual(rules.get(path).src, "drawings sheet 2", path)
+        self.is_(rules.get("pond.own.high_gate", field="bolted"), "length", 30 * 25.4)
+        self.wrong(lambda: rules.get("pond.own.high_gate"), "high_gate")
+
+    def test_words_and_formulas_through_is(self):
+        """Catches a count for each spot that words print, or a formula takes, as the whole when it is named through `is`."""
+        from frc_design_kernel.rules.rules import faults
+        rules = self.rules(lambda d: d["robot"]["rules"]["R98"].update(says="{near_bales.starts.bale.is}; {hang.most.is}"))
+        self.assertEqual(rules.says("R98"), "1 each spot; 2 each alliance")
+        for path in ("near_bales.starts.bale", "near_bales.starts.bale.is", "hang.most.is"):
+            data = example()
+            data["places"]["cellar"]["holds"]["bale"] = f"= {path} * 3"
+            found = faults(written(data))
+            self.assertEqual([f.where for f in found], ["places.json cellar.holds.bale"], found)
+            self.assertIn("for the whole", str(found[0]))
+
+    def test_beside_a_list(self):
+        """Catches what is said beside a list, a point or limits of which one is enough that the values inside lose, or that goes over what they say themselves."""
+        beside = {"src": "drawings sheet 2", "of": "two marks", "assumed": "a guess", "each": "spot", "differs": [{"is": "3 in", "src": "manual 3.2"}]}
+
+        def change(d):
+            d["field"]["solids"]["crate"].update(own={"is": ["1 in", {"is": "2 in", "of": "the far one", "src": "manual 3.4"}], **beside}, at={"is": ["131 in", {"is": "150 in", "src": "manual 3.4"}, "0 in"], "src": "drawings sheet 2", "assumed": "a guess"})
+            d["scoring"]["awards"]["hang"]["most"] = {"each": "alliance", "when": ["auto"], "is": {"any": [{"few": 2}, {"many": {"is": 1, "each": "barn"}}]}}
+            d["field"]["zones"]["fold"]["outline"] = {"is": [["120 in", "250 in"], ["150 in", {"is": "250 in", "of": "a corner"}], ["150 in", "280 in"]], "src": "drawings sheet 2"}
+        rules = self.rules(change)
+        said = lambda v: (v.src, v.of, v.assumed, v.each, len(v.differs))
+        first, second = ("drawings sheet 2", "two marks", "a guess", "spot", 1), ("manual 3.4", "the far one", "a guess", "spot", 1)
+        self.assertEqual([said(v) for v in rules.get("crate.own")], [first, second])
+        for path in ("crate.own.x", "crate.own.is.x"):
+            self.assertEqual(said(rules.get(path)), first)
+        self.assertEqual([said(rules.get("crate.own.y")), said(rules.get("crate.own.y.is"))], [second, second])
+        for path in ("crate.at", "crate@red.at"):
+            self.assertEqual([(v.src, v.assumed) for v in rules.get(path)], [("drawings sheet 2", "a guess"), ("manual 3.4", "a guess"), ("drawings sheet 2", "a guess")])
+            self.assertEqual([(v.src, v.assumed) for v in (rules.get(f"{path}.x"), rules.get(f"{path}.y"))], [("drawings sheet 2", "a guess"), ("manual 3.4", "a guess")])
+        for path in ("fold.outline.y", "fold@red.outline.y"):
+            self.assertEqual([(v.src, v.of) for v in rules.get(path)], [("drawings sheet 2", None), ("drawings sheet 2", "a corner")])
+            self.assertEqual((rules.get(f"{path}.y").src, rules.get(f"{path}.y").of), ("drawings sheet 2", "a corner"))
+        self.assertEqual([(v.name, v.each, len(v.when)) for v in rules.get("hang.most")], [("few", "alliance", 1), ("many", "barn", 1)])
+        self.assertEqual([(rules.get(path).each, len(rules.get(path).when)) for path in ("hang.most.few", "hang.most.many", "hang.most.is.many")], [("alliance", 1), ("barn", 1), ("barn", 1)])
+
+    def test_words_of_a_list(self):
+        """Catches words that print the values of a list without what each is for each of, be it said of one or beside all."""
+        rules = self.rules(lambda d: d["places"]["cellar"].update(two=[{"is": "1 in", "each": "spot"}, "2 in"], both={"is": ["3 in", "4 in"], "each": "barn"}) or d["robot"]["rules"]["R98"].update(says="{cellar.two}; {cellar.both}; {cellar.both.y}"))
+        self.assertEqual(rules.says("R98"), "1 in each spot, 2 in; 3 in each barn, 4 in each barn; 4 in each barn")
+        own = self.rules(lambda d: d["places"]["cellar"].update(both={"is": ["3 in", "4 in"], "each": "barn"}, says="{both.y}; {both}"))
+        self.assertEqual(own.says("cellar"), "4 in each barn; 3 in each barn, 4 in each barn")
+
     def test_starts_go_on(self):
         """Catches what is there at the start that is no longer all of it."""
         self.assertEqual(self.rules().starts("bale")["near_bales@red"], 4)

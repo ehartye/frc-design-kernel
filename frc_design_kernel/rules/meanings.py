@@ -11,7 +11,7 @@ import difflib
 from dataclasses import dataclass
 
 from . import fields
-from .read import at_spot, names
+from .read import after_spots, at_spot, names
 from .values import OUTLINES
 from .worker import Season
 
@@ -137,12 +137,11 @@ def of_path(book, path):
     head, *steps = path.split(".")
     ident, at, _ = head.partition("@")
     entry, starts, least = book.ids.get(ident), [ident], 0
-    if entry and (at or steps[:1] == ["spots"]) and (spotted := at_spot(entry.data, steps if at else steps[1:]))[0]:
+    if entry and (at or steps[:1] == ["spots"]) and (spotted := at_spot(entry.data, after_spots(entry.data, steps) if at else steps[1:]))[0]:
         spot, _, steps = spotted
         if not steps:
             return _of_key("spot")
-        own, *of_spot = Season(book).starts(entry, spot)
-        starts, least = [*of_spot, own], 1
+        starts, least = Season(book).starts(entry, spot), 1
     at_path = {field.where.partition(" ")[2]: field.key or ("" if field.holds != "piece count" else _record_key(field.entry)) for field in fields.walk(book, [])}
     at_path.update({entry.path: _record_key(entry) for entry in book.entries if entry.path})
     for i in range(len(steps), least - 1, -1):

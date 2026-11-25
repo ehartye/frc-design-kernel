@@ -156,5 +156,20 @@ class Says(Derived):
         self.assertEqual(deep.says("barn.opening"), "48 in up, 5 in deep and 20 in out, from the front.")
 
 
+class OfACap(Derived):
+    """rules.when of a cap's times."""
+
+    def test_a_cap(self):
+        """Catches a cap whose times a program can not ask for: beside its number, or beside one that depends on a variant."""
+        cap = {"each": "alliance", "is": 2, "when": ["auto", "not lit"]}
+        names = lambda rules, path: [(m.name, m.negated) for m in rules.when(path)]
+        rules = self.rules(lambda d: d["scoring"]["awards"]["hang"].update(most=cap) or d["places"]["loft"]["takes"][0].update(most=5))
+        self.assertEqual(names(rules, "hang.most.when"), [("auto", False), ("lit", True)])
+        by = self.rules(lambda d: d["scoring"]["awards"]["hang"].update(most={**cap, "is": {"by": "event", "regional": 2, "championship": 3}}))
+        self.assertEqual(names(by, "hang.most.when"), [("auto", False), ("lit", True)])
+        for path in ("hang.most", "hang.most.each"):
+            self.wrong(lambda: rules.when(path), "holds no when")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -146,7 +146,7 @@ class Get(Command):
     def test_lists(self):
         """Catches a list that prints as one value, or as code."""
         self.assertEqual(self.lines("get", "barn.at"),
-                         ["barn.at:", "  x: 20 in (508 mm)", "  y: 150 in (3810 mm)", "  src: manual 3.5", "  placed.at: Where it is: [x, y] or [x, y, z] in the field's frame. A solid stands on z: it is the height of its lowest point. A position is written here, or in `from` and `to` of a line, and nowhere else."])
+                         ["barn.at:", "  x: 20 in (508 mm)", "  y: 150 in (3810 mm)", "  src: manual 3.5", "  placed.at: Where it is: [x, y] or [x, y, z] in the field's frame. A solid stands on z: it is the height of its lowest point. A position, and all that is worked out from one, is written here, in `from` and `to`, in spots or in the points of a zone's outline."])
         self.assertEqual(self.lines("get", "parts.motors.mule.part_numbers")[0], "parts.motors.mule.part_numbers: 217-0000, mu-12")
         self.assertEqual(self.lines("get", "limits.battery.size")[:4], ["limits.battery.size:", "  x: 7 in (177.8 mm)", "  y: 3 in (76.2 mm)", "  z: 16.8 cm (168 mm)"])
         self.assertEqual(self.lines("get", "barn.frames", change=lambda d: d["places"]["barn"].update(frames=["1 in", "2 in", "3 in", "4 in"]))[:5],
@@ -203,6 +203,8 @@ class Get(Command):
         code, out, _ = run("get", "--gate", "high_gate", "--rules", str(EXAMPLE), "--field", "bolted", "swing.at.z")
         self.assertEqual((code, out.splitlines()[0]), (0, "swing.at.z: 30 in (762 mm)"))
         self.assertEqual([line for line in self.lines("get", "barn.opening.bottom", "--field", "bolted") if "variants" in line], [])
+        for path in ("barn.opening.bottom", "size.length.welded", "size.length.bolted", "swing.at.z.high_gate"):      # what a path names itself was not chosen
+            self.assertEqual([line for line in self.lines("get", path) if "variants" in line], [], path)
         self.wrong("get", "size.length", "--feild", "bolted", says=["--feild", 'Did you mean "field"'])
         self.wrong("get", "size.length", "--field", "boltde", says=['"boltde"', 'Did you mean "bolted"'])
 
@@ -305,7 +307,7 @@ class NotOneValue(Command):
 
     @staticmethod
     def changed(d):
-        d["scoring"]["awards"]["hang"]["most"] = {"is": 2, "when": ["auto"]}
+        d["scoring"]["awards"]["hang"]["most"] = {"is": 2, "when": ["auto"], "each": "alliance"}
         d["field"]["zones"]["fold"].pop("at")
         d["field"]["zones"]["fold"]["spots"] = {"a": {"at": ["1 in", "2 in"]}, "b": {"at": ["9 in", "2 in"]}}
         d["field"]["solids"]["post"] = {"shape": {"box": ["1 in", "1 in", "1 in"]}, "spots": {"c": {"at": ["131 in", "150 in", "0 in"]}, "d": {"at": ["131 in", "250 in", "0 in"]}}}
@@ -324,7 +326,7 @@ class NotOneValue(Command):
         ("G92.cost.z.if", "G92", 'records("conduct")'), ("placing_order.cost", "placing_order", 'records("conduct")'), ("G90.must_not", "G90", 'conditions("G90.must_not")'), ("G90.must_not.x.y", "G90", 'conditions("G90.must_not")'),
         ("G95.must_not.x.any", "G95", 'conditions("G95.must_not")'), ("G93.only_if", "G93", 'conditions("G93.only_if")'), ("G90.when", "G90", 'when("G90.when")'), ("G90.when.x", "G90", 'when("G90.when")'),
         ("hang.points", "hang", 'points("hang")'), ("hang.points.x", "hang", 'points("hang")'), ("loft_rp.easier.needs", "loft_rp", 'conditions("loft_rp.easier.needs")'), ("loft_rp.easier.when", "loft_rp", 'when("loft_rp.easier.when")'),
-        ("hang.most.when", "hang", 'get("hang.most")'), ("hang.most.when.x", "hang", 'records("scoring")'), ("fold.differs", "fold", 'records("field")'), ("G92.was", "G92", 'records("conduct")'), ("trestle.shape.join", "trestle", 'records("field")'),
+        ("hang.most.when", "hang", 'when("hang.most.when")'), ("hang.most.when.x", "hang", 'when("hang.most.when")'), ("hang.most.each", "hang", 'get("hang.most")'), ("fold.differs", "fold", 'records("field")'), ("G92.was", "G92", 'records("conduct")'), ("trestle.shape.join", "trestle", 'records("field")'),
         ("hutch.starts", "hutch", 'records("places")'), ("fold@red.differs", "fold", 'records("field")')]
 
     def test_a_command_is_told_what_to_run(self):
@@ -364,6 +366,10 @@ class NotOneValue(Command):
         """Catches several spots that a command, or a program, is not told how to name."""
         self.wrong("get", "stall.at", says=["stands at 2 spots", "--spot", "near, far"])
         self.wrong("get", "rack.at.x", "--alliance", "red", says=["stands at 12 spots", "--spot", "1.a"])
+        for path in ("stall.spots.near", "stall@red.near", "stall@red.spots.near"):
+            self.wrong("get", path, says=[path, "is not one value", "Name one of its fields: at, faces"])
+        for path, says in [("yard", "alliance, at"), ("stall", "alliance, says"), ("limits", "perimeter")]:
+            self.wrong("get", path, "--spot", "near", says=["is not one value", f"Name one of its fields: {says}"])
         for ask in (lambda **more: self.rules.get("stall.at", **more), lambda **more: self.rules.outline("fold", **more), lambda **more: self.rules.solid("post", **more)):
             with self.assertRaises(DesignError) as caught:
                 ask()
@@ -415,7 +421,23 @@ class Json(Command):
         got = self.json("stall.at", "--spot", "far", "--alliance", "red", "--field", "bolted")
         self.assertEqual([got[name] for name in ("path", "alliance", "spot", "variants")], ["stall.at", "red", "far", {"field": "bolted"}])
         self.assertEqual(got["means"]["key"], "spot.at")
+        self.assertEqual(self.json("rack@red.spots.3.b.post.tip")["means"]["key"], "post.tip")
         self.assertIsNone(self.json("barn.out")["means"])
+
+    def test_whose_it_is(self):
+        """Catches an answer about a thing that neither alliance has that is told as one alliance's, or one whose path says red that is told as blue's."""
+        from frc_design_kernel.rules.rules import load_rules
+        data = example()
+        data["scoring"]["awards"]["hang"]["own"] = "= barn.at.x"
+        rules = load_rules(written(data))
+        for path, more, alliance in [("barn.at", [], "blue"), ("barn.at", ["--alliance", "red"], "red"), ("barn@red.at", [], "red"), ("barn@blue.at", ["--alliance", "red"], "blue"), ("yard.deep", ["--alliance", "red"], "red"),
+                                     ("pond.at", [], None), ("pond.at", ["--alliance", "red"], None), ("hang.own", ["--alliance", "red"], None), ("limits.reach.far", [], None), ("tags.t1.at", ["--alliance", "red"], None), ("size.length", [], None)]:
+            with mock.patch(f"{__name__}.once_read", lambda _: rules):
+                got = self.json(path, *more)
+                self.assertEqual(got["alliance"], alliance, (path, more))
+                self.assertNotIn("alliance", "\n".join(self.lines("get", path, *more)[:-1]))
+                if path == "hang.own":
+                    self.assertEqual(got["answer"]["printed"], "20 in")
 
 
 class Means(Command):

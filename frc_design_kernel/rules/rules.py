@@ -101,7 +101,7 @@ class Rules:
         entry = next((e for e in self.book.entries if e.path == path and path), None)
         if entry is None or "says" not in entry.data:
             return worker.get(f"{path}.says").value
-        return self._of(entry, lambda: says.fill(worker, entry, entry.data, [], entry.data["says"]))
+        return self._of(entry, lambda: says.fill(worker, self.season.fields[f"{path}.says"]).value)
 
     def conditions(self, path, **variants):
         """The conditions of a field, such as "G90.must_not", parsed: Conditions and Groups. True for a must_not that is true."""
@@ -113,7 +113,7 @@ class Rules:
         """The names of a `when`, such as "G95.when" or a list of them, as Moments; for the `true` of a state, a tuple for each way."""
         node, several = asked, False
         if isinstance(asked, str):
-            _, node = conditions.node_of(self.season.worker(), asked, ("when", "list of whens"), "when")
+            _, node = conditions.node_of(self.season.worker(), asked, ("when", "list of whens", *(["cap"] if asked.endswith(".when") else [])), "when")
             several = bool(node) and isinstance(node[0], list)
         return copy.deepcopy([conditions.moments(self.book, one) for one in node] if several else conditions.moments(self.book, node))
 
