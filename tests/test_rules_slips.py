@@ -5,6 +5,9 @@ import functools
 import json
 import random
 import unittest
+from unittest import mock
+
+from frc_design_kernel.errors import DesignError
 
 from .rules_cases import example, rename, written
 from .test_rules_refusals import Refused
@@ -119,12 +122,52 @@ class Beside(Refused):
                 d["places"]["cellar"]["holds"].update(bale="= hang.most.regional * 2")
             self.refused(change, "scoring.json hang.most.when")
         self.accepted(lambda d: change(d, beside=False))
+        self.refused(lambda d: d["scoring"]["awards"]["hang"].update(most={"is": {"any": [{"few": 2}, {"many": 1}]}, "when": ["zebra"]}, says="{most.few}") or d["robot"]["rules"]["R98"].update(says="{hang.most.many}"), "scoring.json hang.most.when[0]")
         for slip in (5, None, True, "133 in", {}, {"is": "133 in", "src": "drawings sheet 6"}):
             def change(d):
                 d["field"]["solids"]["crate"].update(at={"is": ["131 in", "150 in", "0 in"], "differs": slip})
                 d["field"]["zones"]["pond"].update(own={"is": {"any": [{"a": "1 in"}, {"b": "2 in"}]}, "differs": slip}, says="{own.a} {own.is.b} {pond.own.a}", k="= pond.own.b")
                 d["game"]["people"]["coach"].update(step={"is": "1 in", "differs": slip}, says="{step.is}")
             self.assertEqual([one.partition(":")[0] for one in self.faults(change)], ["game.json people.coach.step.differs", "field.json pond.own.differs", "field.json crate.at.differs"])
+
+    def test_a_slip_inside_a_variant(self):
+        """Catches a slip inside a variant that stops the reader, or is told again, when the value is named and the variant is not."""
+        by = lambda one, other: {"by": "field", "welded": one, "bolted": other}
+        pond = lambda d, **more: d["field"]["zones"]["pond"].update(more)
+        for slip in (5, None, {}, "x"):
+            beside = lambda inner: {"is": inner, "differs": slip}
+            def change(d):
+                pond(d, own=by(beside(["1 in", "2 in"]), ["1 in", "2 in"]), k="= pond.own.x", says="{own.x} {own.welded.y}", any1=by({"any": [{"a": "1 in"}]}, beside({"any": [{"a": "1 in"}]})), j="= pond.any1.a")
+                d["field"]["hangs"]["swing"]["at"] = {"by": "gate", "low_gate": beside(["60 in", "270 in", "12 in"]), "high_gate": ["60 in", "270 in", "30 in"]}
+                d["places"]["barn"]["opening"]["outline"] = by({"rectangle": beside(["36 in", "16 in"])}, {"rectangle": ["36 in", "16 in"]})
+            self.assertEqual(sorted(one.partition(":")[0] for one in self.faults(change)),
+                             ["field.json pond.any1.bolted.differs", "field.json pond.own.welded.differs", "field.json swing.at.low_gate.differs", "places.json barn.opening.outline.welded.rectangle.differs"])
+            record = example()["places"]["centre_bales"]
+            self.assertTrue(self.faults(lambda d: d["places"].update(centre_bales={"is": record, "each": "spot", "differs": slip})))
+        for variant in ("welded", "bolted"):
+            at, good = ["131 zz", "150 in", "0 in"], ["131 in", "150 in", "0 in"]
+            self.refused(lambda d: d["field"]["solids"]["crate"].update(at=by(at, good) if variant == "welded" else by(good, at)), f"field.json crate.at.{variant}.x:")
+            outline, sound = {"rectangle": ["36 in", "16 zz"]}, {"rectangle": ["36 in", "16 in"]}
+            self.refused(lambda d: d["places"]["barn"]["opening"].update(outline=by(outline, sound) if variant == "welded" else by(sound, outline)), f"places.json barn.opening.outline.{variant}.rectangle.y:")
+        both = self.faults(lambda d: pond(d, own=by(["1 zz", "2 in"], ["1 in", "2 in"]), k="= pond.own.bolted.x * hoop.mass"))
+        self.assertEqual(len(both), 2, both)       # what names the other variant is looked at all the same
+
+    def test_a_bug_still_shows(self):
+        """Control: an error that is no fault of the folder is passed over only while there are faults of reading."""
+        def broken(*_):
+            raise ZeroDivisionError("a bug")
+        for name in ("frc_design_kernel.rules.pieces.count", "frc_design_kernel.rules.times.window", "frc_design_kernel.rules.alliances.spots", "frc_design_kernel.rules.outlines.checked"):
+            with mock.patch(name, broken):
+                with self.assertRaises(ZeroDivisionError):
+                    self.faults()
+                with self.assertRaises(ZeroDivisionError):
+                    self.faults(lambda d: d["field"]["solids"]["crate"].update(own="= barn.at.x"))      # a fault, and none of reading
+                self.refused(lambda d: d["field"]["zones"]["pond"].update(edge="tape beside"), "field.json pond.edge", "tape beside")
+
+        def told(*_):
+            raise DesignError("x", "a fault of its own")
+        with mock.patch("frc_design_kernel.rules.derive._Check.piece", told), self.assertRaises(DesignError):
+            self.faults(lambda d: d["field"]["zones"]["pond"].update(edge="tape beside"))
 
     def test_a_slip_in_a_value(self):
         """Catches a value at fault that is told again where it is named without the is, the any or the place in a list that it is in."""
@@ -133,6 +176,7 @@ class Beside(Refused):
             self.refused(lambda d: most(d) or d["places"]["cellar"]["holds"].update(bale=f"= {path} * 2"), "scoring.json hang.most.is.regional:")
         self.refused(lambda d: d["field"]["zones"]["pond"].update(own={"is": ["1 zz", "2 in"]}, k="= pond.own.x * 2"), "field.json pond.own.is.x:")
         self.refused(lambda d: d["field"]["zones"]["pond"].update(own={"any": [{"a": "1 zz"}, {"b": "2 in"}]}, k="= pond.own.a * 2"), "field.json pond.own.any[0].a:")
+        self.refused(lambda d: d["field"]["zones"]["pond"].update(own=["1 zz", "2 in"], says="{own}") or d["robot"]["rules"]["R98"].update(says="{pond.own}"), "field.json pond.own.x:")
         self.refused(lambda d: d["field"]["zones"]["fold"].update(outline=[["1 in", "2 in"], ["9 zz", "2 in"], ["9 in", "8 in"], ["1 in", "8 in"]]) or d["field"]["zones"]["pond"].update(k="= fold.outline.y.x"), "field.json fold.outline[1].x:")
         both = self.faults(lambda d: d["field"]["solids"]["crate"].update(differs=5) or d["field"]["zones"]["pond"].update(k="= crate.at.x + hoop.mass"))
         self.assertEqual(len(both), 2, both)      # beside a record, it is no slip of its values

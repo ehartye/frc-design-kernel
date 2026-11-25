@@ -5,7 +5,6 @@
     holds_places(key, steps)                whether a property is for positions or a direction
     uses_place(key, steps)                  whether what is at some steps inside a property is a position or a direction
     spots(entry)                            the names of its spots
-    own_of(field)                           the spots that have their own value for a name in their record's words
     size(worker, i)                         the field's length (0) or width (1) in mm
 
 Red is made from blue by the record's own symmetry, or else the field's. A spot of a pattern is made from its first one:
@@ -16,7 +15,6 @@ import math
 from ..errors import DesignError, unknown
 from . import fields, worth
 from .read import AXES, is_pattern, names, spot_data, spot_names
-from .words import IN_SAYS
 
 MOVES = ("at", "faces", "from", "to", "outline")
 POSITIONS = ("placed.at", "spot.at", "tag.at", "line.from", "line.to", "row.step", "ring.around", "zone.outline")       # properties that hold positions
@@ -46,12 +44,6 @@ def uses_place(key, steps):
 
 def spots(entry):
     return spot_names(entry.data.get("spots"))
-
-
-def own_of(field):
-    """The spots of a record that have a value of their own for a name in some words of the record."""
-    heads, entry = {path.partition(".")[0] for path in IN_SAYS.findall(field.node)}, field.entry
-    return [spot for spot in spots(entry) if heads & set(spot_data(entry.data["spots"], spot))]
 
 
 def check_spot(entry, spot):
@@ -86,7 +78,8 @@ class Place:
         self.red = alliance == "red" and entry.data.get("alliance") == "each"
         written = entry.data.get("spots")
         self.pattern = written if spot is not None and is_pattern(written) else None
-        self.data = {**entry.data, **spot_data(written, spot)} if spot is not None else entry.data
+        self.own = spot_data(written, spot) if spot is not None else {}
+        self.data = {**entry.data, **self.own}
 
     @property
     def as_written(self):
@@ -108,6 +101,10 @@ class Place:
         """Whether its outline is a list of points, which are in the field's frame."""
         return isinstance(self.worker.unwrap(self.data.get("outline"))[0], list)
 
+    def holder(self, name):
+        """The object that has a field of that name: the spot, or else the record."""
+        return self.own if name in self.own else self.entry.data
+
     def written(self, name):
         """(the coordinates of its at, from or to, or of a point of its outline, as they are written; what is said beside them)."""
         known = spots(self.entry)
@@ -116,7 +113,7 @@ class Place:
             raise worth.Told("", f"stands at {len(known)} spots", f"Name one spot: {listed}", f'Name one with spot=, such as spot="{known[0]}": {listed}', f"Name one with --spot: {listed}")
         if name not in self.data and "." not in name:
             raise unknown("", "field", name, self.data)
-        found = self.worker.book.within(self.data, name, self.entry, self.worker.choice)
+        found = self.worker.book.within(self.holder(name.partition(".")[0]), name, self.entry, self.worker.choice)
         return self.worker.unwrap(found.node, found.about)
 
     def point(self, name):
@@ -145,7 +142,8 @@ class Place:
     def faces(self):
         """Which way it looks."""
         if "faces" in self.data:
-            got = self.worker.value(self.data["faces"], self.entry, "angle")
+            node, about = self.written("faces")
+            got = self.worker.value(node, self.entry, "angle", about=about)
         else:
             got = self.worker.told(worth.Value("angle", 0.0, printed="0 deg", unit="deg"), {}, self.entry)
         angle = worth.one_number(got)

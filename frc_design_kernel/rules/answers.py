@@ -44,24 +44,40 @@ def lines(rules, path, got, unit=None):
         return [f"{path}: a solid whose faces lean, in mm", *outlines, f"  tall: {shown(got.tall, 'number', None)}"]
     if isinstance(got, Value):
         return [f"{path}: {_text(rules, got, unit)}", *_about(got)]
-    if not isinstance(got, AnyOf) and all(isinstance(one, Value) and one.kind == "text" for one in got):
-        return [f"{path}: {_text(rules, got, unit)}", *(_about(got[0]) if got else [])]
-    return [f"{path}:{' one of these is enough' if isinstance(got, AnyOf) else ''}", *_each(rules, got, unit)]
+    if not isinstance(got, AnyOf) and all(isinstance(one, Value) and one.kind == "text" for one in got) and _known(got) is not None:
+        return [f"{path}: {_text(rules, got, unit)}", *_known(got)]
+    return [f"{path}:{_enough(got)}", *_each(rules, got, unit)]
+
+
+def _enough(got):
+    return " one of these is enough" if isinstance(got, AnyOf) else ""
+
+
+def _known(got):
+    """What is known of every value in a list, when it is the same for all; else None."""
+    if isinstance(got, Value):
+        return _about(got)
+    every = [_known(one) for one in got]
+    return (every[0] if every else []) if all(one == every[0] for one in every) else None
 
 
 def _each(rules, got, unit):
     """A line for each value of a list, and what is known of it: once at the end, when it is the same for all."""
-    known = [_about(one) if isinstance(one, Value) else [] for one in got]
-    once = all(one == known[0] for one in known)
-    found = []
-    for i, (one, about) in enumerate(zip(got, known)):
-        name = one.name if isinstance(got, AnyOf) else AXES[i] if len(got) <= len(AXES) else i + 1
-        found += [f"  {name}: {_text(rules, one, unit)}", *([] if once else ("  " + line for line in about))]
-    return found + (known[0] if once else [])
+    once, found = _known(got), []
+    for i, one in enumerate(got):
+        name = one.name if isinstance(got, AnyOf) and isinstance(one, Value) else AXES[i] if len(got) <= len(AXES) else i + 1
+        known = _known(one)
+        if known is None:
+            found += [f"  {name}:{_enough(one)}", *("  " + line for line in _each(rules, one, unit))]
+        else:
+            found += [f"  {name}: {_text(rules, one, unit)}", *([] if once is not None else ("  " + line for line in known))]
+    return found + (once or [])
 
 
 def _text(rules, got, unit):
     """A value on one line: as it is printed, and then in its base unit; or in the unit asked alone; what it is for each of, and when."""
+    if isinstance(got, AnyOf):
+        return " or ".join(f"{_text(rules, one, unit)}{f' ({one.name})' if isinstance(one, Value) else ''}" for one in got)
     if isinstance(got, list):
         return ", ".join(f"[{_text(rules, one, unit)}]" if isinstance(one, list) else _text(rules, one, unit) for one in got) or "nothing"
     shown_in, numbers = _numbers(rules, got, unit)

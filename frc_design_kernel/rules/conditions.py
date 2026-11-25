@@ -122,7 +122,7 @@ def _thing(book, node):
 
 def rows(worker, entry):
     """The points of an award, by when."""
-    return [Row(moments(worker.book, row["when"]), worker.value(row["points"], entry, "number")) for row in entry.data.get("points", ())]
+    return [Row(moments(worker.book, row["when"]), worker.value(row["points"], entry, "number", about={"src": row["src"]} if "src" in row else None)) for row in entry.data.get("points", ())]
 
 
 def node_of(worker, path, holds, what):

@@ -5,7 +5,7 @@ from unittest import mock
 
 from frc_design_kernel.rules.read import spot_names
 
-from .rules_cases import Derived, as_it_is, example, written
+from .rules_cases import Derived, as_it_is, example, paths, written
 
 IN, AXES = 25.4, "xyz"
 WHOLE, SPOTS = "is turned round for red", "is what blue's spots are made from"
@@ -92,15 +92,6 @@ class Oracle:
         if isinstance(node, str) and node.startswith("="):
             return round(self.worker.formula(node).value, 6)
         return node["text"] if isinstance(node, dict) and "text" in node else node
-
-
-def paths(node, steps=()):
-    """The steps to every node of some data, but what was and what differs; of a list, as far as a path goes."""
-    if steps:
-        yield list(steps)
-    for name, inner in node.items() if isinstance(node, dict) else zip(AXES, node) if isinstance(node, list) else ():
-        if name not in ("was", "differs", "by", "unknown"):
-            yield from paths(inner, (*steps, name))
 
 
 def given(got):
@@ -329,6 +320,34 @@ class Red(Derived):
         data["places"]["stall"]["spots"]["near"]["slide"] = {"wide": "1 in", "deep": "2 in"}
         found = faults(written(data))       # else it passes, and fails when the spot's words are asked for
         self.assertEqual([one.where for one in found], ["places.json stall.says"], found)
+
+    def test_words_for_which_spots(self):
+        """Catches a spot's own words that are judged by another spot's values, and a record's words that are not looked at for a spot that is not
+        the first: they would pass, and fail when they are asked for."""
+        from frc_design_kernel.rules.rules import faults, load_rules
+        data, size = example(), {"wide": "1 in", "deep": "2 in"}
+        spots = data["places"]["stall"]["spots"]
+        spots["near"].update(says="Slide {slide}.")
+        spots["far"].update(slide=size)
+        self.assertEqual([str(one) for one in faults(written(data))], [])
+        rules = load_rules(written(data))
+        self.assertEqual([rules.get(path).value for path in ("stall.spots.near.says", "stall@red.near.says")], ["Slide 50 deg."] * 2)
+        spots["far"].update(says="Slide {slide}.", slide="7 deg")
+        self.assertEqual([load_rules(written(data)).get(f"stall.spots.{name}.says").value for name in ("near", "far")], ["Slide 50 deg.", "Slide 7 deg."])
+        spots["near"].pop("says"), spots["far"].pop("says")
+        data["places"]["stall"]["says"] = "Slide {slide}."
+        for name, other in (("near", "far"), ("far", "near")):
+            spots[name]["slide"], spots[other]["slide"] = size, "7 deg"
+            self.assertEqual([one.where for one in faults(written(data))], ["places.json stall.says"], name)
+        data = example()
+        first = data["places"]["rack"]["spots"]["first"]
+        first["a"].update(says="A {tall}.", tall="1 in")
+        first["b"].update(tall=size)
+        self.assertEqual(load_rules(written(data)).get("rack.spots.5.a.says").value, "A 1 in.")
+        data["places"]["rack"].update(says="B {tall}.", tall="3 in")
+        self.assertEqual([one.where for one in faults(written(data))], ["places.json rack.says"])
+        data["places"]["near_bales"]["spots"]["first"].update(says="Each {own}.", own=size)
+        self.assertEqual([one.where for one in faults(written(data))], ["places.json near_bales.spots.first.says", "places.json rack.says"])
 
     def test_a_wrong_answer_is_caught(self):
         """Control: with red's points of an outline given as blue's, and nothing refused as turned round, the test of every path fails."""

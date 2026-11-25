@@ -159,6 +159,23 @@ class Get(Command):
         self.assertEqual(self.lines("get", "bar.at", change=change)[:7],
                          ["bar.at:", "  x: 40 in (1016 mm)", "    src: manual 3.7", "  y: 150 in (3810 mm)", "    src: drawings sheet 3", "  z: 33 in (838.2 mm)", "    src: manual 3.7"])
 
+    def test_what_is_known_of_each(self):
+        """Catches a list of words, a list in a list, or an any in a list, that tells what is known of the first one for all, or of none; or that loses a name."""
+        def change(d):
+            d["field"]["zones"]["pond"].update(
+                lst=[{"text": "a", "of": "first", "src": "update3 1"}, {"text": "b", "src": "update3 2", "assumed": "why"}], same=[{"text": "a"}, {"text": "b"}], mix=["1 in", {"is": ["2 in", "3 in"], "of": "pair"}],
+                nl={"is": [["1 in", "2 in"], ["3 in", {"is": "4 in", "assumed": "why"}]], "src": "update3 1", "each": "spot"}, all=[["1 in", "2 in"], ["3 in"]], la=[{"any": [{"a": {"is": "1 in", "of": "aa"}}, {"b": "2 in"}]}, "3 in"], one=[{"any": [{"a": "1 in"}, {"b": "2 in"}]}, "3 in"],
+                deep={"any": [{"a": {"any": [{"b": "1 in"}, {"c": {"is": "2 in", "of": "it"}}]}}, {"d": "3 in"}]})
+        told = lambda path: self.lines("get", f"pond.{path}", change=change)[:-1]
+        self.assertEqual(told("lst"), ["pond.lst:", "  x: a", "    of: first", "    src: update3 1", "  y: b", "    assumed: why", "    src: update3 2"])
+        self.assertEqual(told("same"), ["pond.same: a, b", "  src: manual 3.2"])
+        self.assertEqual(told("all"), ["pond.all:", "  x: 1 in (25.4 mm), 2 in (50.8 mm)", "  y: 3 in (76.2 mm)", "  src: manual 3.2"])
+        self.assertEqual(told("nl"), ["pond.nl:", "  x: 1 in (25.4 mm) each spot, 2 in (50.8 mm) each spot", "    src: update3 1", "  y:", "    x: 3 in (76.2 mm) each spot", "      src: update3 1", "    y: 4 in (101.6 mm) each spot", "      assumed: why", "      src: update3 1"])
+        self.assertEqual(told("mix"), ["pond.mix:", "  x: 1 in (25.4 mm)", "    src: manual 3.2", "  y: 2 in (50.8 mm), 3 in (76.2 mm)", "    of: pair", "    src: manual 3.2"])
+        self.assertEqual(told("la"), ["pond.la:", "  x: one of these is enough", "    a: 1 in (25.4 mm)", "      of: aa", "      src: manual 3.2", "    b: 2 in (50.8 mm)", "      src: manual 3.2", "  y: 3 in (76.2 mm)", "    src: manual 3.2"])
+        self.assertEqual(told("deep")[:3], ["pond.deep: one of these is enough", "  x: one of these is enough", "    b: 1 in (25.4 mm)"])
+        self.assertEqual(told("one"), ["pond.one:", "  x: 1 in (25.4 mm) (a) or 2 in (50.8 mm) (b)", "  y: 3 in (76.2 mm)", "  src: manual 3.2"])
+
     def test_one_is_enough(self):
         """Catches limits of which one is enough that print as if all were needed."""
         self.assertEqual(self.lines("get", "limits.bumpers.frame_gap")[:4],

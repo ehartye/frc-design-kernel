@@ -270,6 +270,8 @@ class Book:
         whole, (node, said) = node, self.opened(node, choice, name)
         if isinstance(node, (list, dict)):
             about.update(said)
+        if isinstance(node, dict) and "src" in node:
+            about["src"] = node["src"]      # the nearest object around a value that has a source gives its source
         if isinstance(node, list) and name in tuple(AXES[:len(node)]):
             return node[AXES.index(name)], None
         if isinstance(node, dict) and name in node:

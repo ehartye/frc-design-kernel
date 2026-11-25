@@ -230,6 +230,8 @@ class InFull(Command):
         self.assertEqual(told[at + 3:at + 9], ["      by: field", f"      welded: 306.2 in ({half})", "      bolted:", f"        is: 305.875 in ({half})", "        of: it",
                                                f"    high_gate: 306.2 in (welded) or 305.875 in (bolted) ({half}), 306.2 in (welded) or 305.875 in (bolted) ({half})"])
 
+        nest = [[{"by": "field", "welded": half, "bolted": half}, half], ["1 in", "1 in"]]
+        self.assertIn(f"    - {{by: field, welded: 306.2 in ({half}), bolted: 305.875 in ({half})}}, 306.2 in (welded) or 305.875 in (bolted) ({half})", self.lines("find", "pond", change=lambda d: d["field"]["zones"]["pond"].update(nest=nest)))
         at = told.index("  near:")
         self.assertEqual(told[at + 2:at + 7], ["    low_gate:", "      by: field", f"      welded: 624.4 in ({both})", f"      bolted: 623.75 in ({both})", f"    high_gate: 642.4 in (welded) or 641.75 in (bolted) ({both})"])
 

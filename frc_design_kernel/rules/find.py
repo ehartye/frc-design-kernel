@@ -140,10 +140,7 @@ class _Full:
 
     def object(self, data, steps):
         found = []
-        for name, node in data.items():
-            before = self.chosen
-            if isinstance(data.get("by"), str) and name in self.finder.rules.book.variants.get(data["by"], ()):
-                self.chosen = {**before, data["by"]: name}
+        for name, node in self.under(data):
             if name == "says" and id(data) in self.finder.said:
                 found += [f"says{f' ({', '.join(chosen)})' if chosen else ''}: {text}" for chosen, text in self.finder.said[id(data)]]
             elif steps == ("starts",) and isinstance(node, str) and node in word_list("starts"):
@@ -153,8 +150,16 @@ class _Full:
             else:
                 inner = self.object(node, (*steps, name)) if isinstance(node, dict) else self.items(node, (*steps, name))
                 found += [f"{name}:", *("  " + one for one in inner)]
-            self.chosen = before
         return found
+
+    def under(self, data):
+        """The fields of an object. Under the name of a variant, what is told is worked out for it."""
+        before = self.chosen
+        for name, node in data.items():
+            by = data.get("by")
+            self.chosen = {**before, by: name} if isinstance(by, str) and name in self.finder.rules.book.variants.get(by, ()) else before
+            yield name, node
+        self.chosen = before
 
     def items(self, node, steps):
         """A line for each thing in a list, or several for an object."""
@@ -170,7 +175,7 @@ class _Full:
             text = ", ".join(self.row(one, True) for one in node) or NOTHING
             return f"[{text}]" if inside else text
         if isinstance(node, dict):
-            return f"{{{', '.join(f'{name}: {self.row(one, True)}' for name, one in node.items())}}}" if node else NOTHING
+            return f"{{{', '.join(f'{name}: {self.row(one, True)}' for name, one in self.under(node))}}}" if node else NOTHING
         if isinstance(node, str) and node.startswith("="):
             chosen = self.chosen
             return f"{self.worked(lambda worker: worker.of_variant(chosen, ('told', node), lambda own: own.formula(node)))} ({node})"

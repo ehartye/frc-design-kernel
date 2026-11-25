@@ -36,6 +36,15 @@ def example():
     return {name: json.loads(_text(name)) for name in FILES}
 
 
+def paths(node, steps=()):
+    """The steps to every node of some data, but what was and what differs; of a list, as far as a path goes."""
+    if steps:
+        yield list(steps)
+    for name, inner in node.items() if isinstance(node, dict) else zip("xyz", node) if isinstance(node, list) else ():
+        if name not in ("was", "differs", "by", "unknown"):
+            yield from paths(inner, (*steps, name))
+
+
 def rename(data, old, new):
     """Give one field of an object another name, as a slip of the keyboard would."""
     data[new] = data.pop(old)

@@ -10,7 +10,7 @@ import re
 
 from ..errors import DesignError, unknown
 from . import alliances, conditions, fields, outlines, parts, pieces, quantity, says, shapes, ties, times, words
-from .read import is_pattern, names
+from .read import is_pattern, names, spot_data
 from .values import OUTLINES, in_words
 from .worker import Loop, Season, TooLong, Wrong, inside
 from .worth import moves
@@ -53,6 +53,7 @@ class _Check:
         self.book, self.faults, self.told = book, {}, set()
         self.leaves, self.fields = all_of_it
         self.unread = set(bad if unread is None else unread)
+        self.held = [field for field in self.fields if field.least]
         self.places = [(field.where, field.key) for field in self.fields if field.key in alliances.PLACES]
         several = self.several()
         self.unread |= several
@@ -76,17 +77,28 @@ class _Check:
     def all(self):
         for leaf in self.leaves:
             if isinstance(leaf.node, str) and leaf.node.startswith("=") and self.reads(leaf.where):
-                self.formula(leaf)
-        self.least()
+                self.passed(self.formula, leaf)
+            self.passed(self.least, leaf)
         for entry in self.book.entries:
             if entry.path:
-                getattr(self, f"of_{entry.kind}", self.of_any)(entry)
+                self.passed(getattr(self, f"of_{entry.kind}", self.of_any), entry)
         for field in self.fields:
             if self.reads(field.where):
-                self.field(field)
+                self.passed(self.field, field)
         for piece in self.book.of_kind("piece"):
-            self.piece(piece)
+            self.passed(self.piece, piece)
         return list(self.faults.values())
+
+    def passed(self, work, what):
+        """Look at one thing. While there are faults of reading, an error of Python in it is passed over: it needs a value that is at
+        fault. When there are none it is a bug, and shows."""
+        try:
+            work(what)
+        except DesignError:
+            raise
+        except Exception:
+            if not self.unread:
+                raise
 
     def reads(self, *wheres):
         """Whether reading found no fault at any of some places, in them or around them."""
@@ -133,13 +145,11 @@ class _Check:
     def moves_for_red(self, where):
         return any(inside(where, one) and alliances.holds_places(key, NAME.findall(where.removeprefix(one))) for one, key in self.places)
 
-    def least(self):
-        """The numbers that must be more than 0, or not below it: printed, or worked out."""
-        held = [field for field in self.fields if field.least]
-        for leaf in self.leaves:
-            field = next((field for field in held if inside(leaf.where, field.where)), None)
-            if field and self.reads(leaf.where) and not words.OTHER.search(leaf.where):
-                self.over(lambda worker: self._at_least(worker, leaf, field.least), leaf.where)
+    def least(self, leaf):
+        """A number that must be more than 0, or not below it: printed, or worked out."""
+        field = next((field for field in self.held if inside(leaf.where, field.where)), None)
+        if field and self.reads(leaf.where) and not words.OTHER.search(leaf.where):
+            self.over(lambda worker: self._at_least(worker, leaf, field.least), leaf.where)
 
     def _at_least(self, worker, leaf, least):
         enough, says = LEAST[least]
@@ -147,6 +157,18 @@ class _Check:
         if got.kind == leaf.kind and got.value is not None and not enough(got.value, 0):
             shown = f'the formula "{leaf.node}" gives {got.printed}, which' if str(leaf.node).startswith("=") else f'"{got.printed}"'
             raise DesignError(leaf.where, f"{shown} {says}", f"Write what is {least}")
+
+    def spots_of(self, field):
+        """The spots that some words are worked out for: a spot's own for that spot, and a record's for none and for each that has its own
+        value of a name in them. The spots of a pattern are alike."""
+        entry, heads = field.entry, {path.partition(".")[0] for path in words.IN_SAYS.findall(field.node)}
+        of_a_spot = says.path_of(field).startswith(f"{entry.path}.spots.")
+        found = {}
+        for spot in alliances.spots(entry):
+            own = spot_data(entry.data["spots"], spot)
+            if own is field.owner if of_a_spot else heads & set(own):
+                found.setdefault(id(own), spot)
+        return list(found.values()) if of_a_spot and found else [None, *found.values()]
 
     def words(self, worker, field, spot):
         """One text of words: whether each {name} in it can be filled in, and is the same for red."""
@@ -238,7 +260,7 @@ class _Check:
         elif field.holds in OUTLINES:
             self.over(lambda worker: outlines.checked(worker, field.entry, field.node, False), field.where)
         elif field.holds == "says":
-            for spot in [None, *alliances.own_of(field)]:
+            for spot in self.spots_of(field):
                 self.over(lambda worker: self.words(worker, field, spot), field.where)
         elif field.key in ("tag.at", "tag.faces"):
             self.over(lambda worker: worker.get(field.where.partition(" ")[2]), field.where)

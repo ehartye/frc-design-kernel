@@ -157,6 +157,34 @@ class Each(Derived):
         self.assertEqual([(v.value, v.src, v.of, v.each) for v in map(rules.get, ("pond.own", "pond.two", "pond.two.is", "pond.three"))],
                          [("laid", "drawings sheet 2", "a mat", None), ("flat", "drawings sheet 2", "it", "spot"), ("flat", "drawings sheet 2", "it", "spot"), ("dry", "manual 3.2", None, None)])
 
+    def test_the_source_of_what_is_inside(self):
+        """Catches a value inside an object with a source of its own that tells its record's: the nearest object around a value that has a source gives it."""
+        def change(d):
+            d["places"]["barn"]["opening"].update(src="update3 1", grp={"deep": "1 in", "src": "drawings sheet 9"}, lean={"is": ["1 in", {"is": "2 in", "src": "manual 3.2"}], "of": "it"}, outline={"rectangle": ["36 in", {"is": "16 in", "src": "drawings sheet 6"}]}, says="{depth}")
+            d["places"]["rack"]["post"].update(src="update3 2")
+            d["field"]["tags"]["t3"].update(src="update3 3")
+            d["places"]["stall"]["spots"]["near"].update(src="update3 4", slide="40 deg")
+            d["places"]["near_bales"]["spots"]["first"].update(src="update3 5", own="3 in")
+            d["robot"]["limits"]["weight"]["bumpers"].update(src="update3 6")
+            d["scoring"]["awards"]["hang"]["points"][0].update(src="update3 7")
+            d["scoring"]["judged"]["late"].update(src="update3 8")
+            d["field"]["zones"]["fold"].update(outline=[["120 in", "250 in"], ["150 in", "250 in"], ["150 in", "280 in"]], spots={"a": {"at": ["1 in", "2 in"], "src": "update3 9"}})
+        rules = self.rules(change)
+        for path, src in [("barn.opening.bottom", "update3 1"), ("barn@red.opening.bottom", "update3 1"), ("barn.opening.grp.deep", "drawings sheet 9"), ("barn.opening.lean.x", "update3 1"), ("barn.opening.lean.is.y", "manual 3.2"),
+                          ("barn.opening.outline.rectangle.x", "update3 1"), ("barn.opening.outline.rectangle.y", "drawings sheet 6"), ("barn.opening.says", "update3 1"), ("barn.out", "manual 3.5"), ("rack.post.tip", "update3 2"),
+                          ("rack.spots.3.b.post.tip", "update3 2"), ("tags.t3.at.x", "update3 3"), ("tags.t3.tilt", "update3 3"), ("tags.t1.at.x", "drawings sheet 9"), ("tags.panel", "drawings sheet 9"),
+                          ("stall.spots.near.at.x", "update3 4"), ("stall@red.near.at.y", "update3 4"), ("stall.spots.near.faces", "update3 4"), ("stall@red.near.faces", "update3 4"), ("stall.spots.near.slide", "update3 4"),
+                          ("stall.spots.far.slide", "manual 3.8"), ("stall.spots.near.opening.bottom", "manual 3.8"), ("stall@red.near.opening.lip", "manual 3.8"), ("stall.spots.far.at.x", "manual 3.8"),
+                          ("near_bales.spots.3.at.x", "update3 5"), ("near_bales@red.3.at.y", "update3 5"), ("near_bales.spots.1.own", "update3 5"), ("near_bales.spots.1.starts.bale", "drawings sheet 5"), ("near_bales.starts.bale", "drawings sheet 5"),
+                          ("limits.weight.bumpers.max", "update3 6"), ("fold@red.a.outline.y.x", "drawings sheet 3"), ("fold@red.a.at.x", "update3 9"), ("limits.weight.robot.max", None), ("judged.late.after_auto", "update3 8"), ("pond.says", None), ("pen.says", ["manual 3.5", "drawings sheet 4"])]:
+            if src is None:
+                continue
+            self.assertEqual(rules.get(path).src, src, path)
+        self.assertEqual([v.src for v in rules.get("barn.opening.lean")], ["update3 1", "manual 3.2"])
+        self.assertEqual([row.points.src for row in rules.points("hang")], ["update3 7"])
+        self.assertEqual({v.src for v in rules.get("near_bales.at", spot="2")}, {"update3 5"})
+        self.assertEqual(rules.get("limits.weight.robot.max").src, self.rules().get("limits.weight.robot.max").src)
+
     def test_beside_a_list(self):
         """Catches what is said beside a list, a point or limits of which one is enough that the values inside lose, or that goes over what they say themselves."""
         beside = {"src": "drawings sheet 2", "of": "two marks", "assumed": "a guess", "each": "spot", "differs": [{"is": "3 in", "src": "manual 3.2"}]}
