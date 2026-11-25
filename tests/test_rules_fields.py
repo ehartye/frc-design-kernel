@@ -11,6 +11,17 @@ class FieldNames(Checked):
         """Control for every refusal in this class and the next: the example as it is passes."""
         self.assertEqual(self.faults(), [])
 
+    def test_a_weight_that_is_written_in_another_way(self):
+        """Catches a weight under a name of its own, which a program that asks for the official ones would read as no limit."""
+        weight = lambda d, node: d["robot"]["limits"]["weight"].update(total=node)
+        for node in ["at most 115 lb", "50 kg", {"is": "at most 115 lb", "of": "all of it"}, {"most": "at most 115 lb"}, {"most": 3}, {"max": "at most 115 lb"}, {"by": "event", "regional": "at most 6 in", "championship": "at most 115 lb"},
+                     {"any": [{"deep": "at most 6 in"}, {"light": "at most 3 lb"}]}, ["at most 6 in", "at most 3 lb"]]:
+            self.refused(lambda d: weight(d, node), "robot.json limits.weight", '"total"', "with_bumpers")
+        for node in ["at most 12 in", {"is": "at most 12 in", "of": "cable"}, 3, True, {"text": "115 lb"}, ["1 in", "2 in"], {"any": [{"deep": "at most 6 in"}]}]:
+            self.accepted(lambda d: weight(d, node))
+        self.accepted(lambda d: d["robot"]["limits"]["weight"]["robot"].update(spare="at most 3 lb"))
+        self.accepted(lambda d: d["robot"]["limits"]["console"].update(lid="at most 3 lb"))
+
     def test_a_slip_in_a_field_name(self):
         """Catches openning for opening: the opening would be lost, and read as one that is not there."""
         self.refused(lambda d: rename(d["places"]["barn"], "opening", "openning"), "places.json barn", '"openning"', '"opening"')

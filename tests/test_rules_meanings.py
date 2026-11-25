@@ -73,7 +73,7 @@ def faults_of(name, holds, given):
             return [str(problem)]
     field = NAMED.get(name, "says" if name == "says" else "example")
     entry = read.Entry("conduct", "example", "example", {"kind": "relay"})
-    spec = fields.Spec({field: fields.Property("", holds, "")})
+    spec = fields.Spec({field: fields.Property("", holds, "", False)})
     reader, checker, leaves = values.Reader(book, faults), words.Words(book, faults), []
     for one in fields.object_fields(entry, {field: given}, spec, "conduct.json example", faults):
         leaves += [*reader.read(one.entry, one.node, one.where, one.holds), *checker.field(one)]

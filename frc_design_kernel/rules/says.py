@@ -1,6 +1,7 @@
 """Words with their numbers filled in: "At most {limits.reach.far} out" becomes "At most 1 ft 2 in out".
 
     fill(worker, entry, owner, before, text)    the words; owner is the object that the text is in, before the path to it
+    path_of(entry, before)                      the path to the words
 
 A limit prints without its words, so that "at most {limits.reach.far}" reads well.
 """
@@ -10,7 +11,16 @@ from .worth import Value, Wrong, words_of
 
 
 def fill(worker, entry, owner, before, text):
-    return IN_SAYS.sub(lambda found: words_of(_value(worker, entry, owner, before, found[1])), text)
+    worker.begin(path_of(entry, before))
+    try:
+        return IN_SAYS.sub(lambda found: words_of(_value(worker, entry, owner, before, found[1])), text)
+    finally:
+        worker.doing.pop()
+
+
+def path_of(entry, before):
+    """The path to the words, by which words that name themselves are seen."""
+    return ".".join([entry.path, *before, "says"])
 
 
 def _value(worker, entry, owner, before, path):

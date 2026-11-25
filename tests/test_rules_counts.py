@@ -1,7 +1,7 @@
 """How many pieces start where, what each device may run, and every record by name, for the example."""
 import unittest
 
-from .rules_cases import Derived
+from .rules_cases import Derived, example, written
 
 IN = 25.4
 
@@ -39,6 +39,50 @@ class Starts(Derived):
     def test_a_formula_of_what_is_left_over(self):
         """Catches a formula that cannot name what is left over."""
         self.is_(self.rules(lambda d: d["places"]["stall"]["holds"].update(bale="= stall.starts.bale * 2")).get("stall.holds.bale"), "number", 40)
+
+
+class Each(Derived):
+    """What a number is for each of, and a cap's times: they go with the Value wherever it goes."""
+
+    CAP = {"each": "alliance", "is": 2, "when": ["auto", "not lit"]}
+
+    def capped(self):
+        return self.rules(lambda d: d["scoring"]["awards"]["hang"].update(most=self.CAP))
+
+    def test_get(self):
+        """Catches a count for each spot, or a cap at some times, that comes back as if it were for the whole, always."""
+        rules = self.rules()
+        one = rules.get("near_bales.starts.bale")
+        self.assertEqual((one.kind, one.value, one.printed, one.each, one.when), ("number", 1, "1", "spot", ()))
+        self.assertEqual((rules.get("hang.most").value, rules.get("hang.most").each), (2, "alliance"))
+        self.assertEqual((rules.get("total.bale").each, rules.get("stall.starts.bale").each, rules.get("barn.out").each), (None, None, None))
+        cap = self.capped().get("hang.most")
+        self.assertEqual([(m.name, m.kind, m.whose, m.negated) for m in cap.when], [("auto", "period", None, False), ("lit", "state", "my", True)])
+        by = self.rules(lambda d: d["scoring"]["awards"]["hang"].update(most={**self.CAP, "is": {"by": "event", "regional": 2, "championship": {"is": 3, "each": "stall"}}}))
+        self.assertEqual([(v.value, v.each, len(v.when)) for v in (by.get("hang.most"), by.get("hang.most", event="championship"))], [(2, "alliance", 2), (3, "stall", 2)])
+
+    def test_says(self):
+        """Catches words in which a count for each spot reads as the count of all."""
+        rules = self.rules(lambda d: d["robot"]["rules"]["R98"].update(says="{near_bales.starts.bale}; {hang.most}; {total.bale}; {limits.bumpers.frame_gap}; {cellar.holds.bale}") or d["places"]["cellar"]["holds"].update(
+            bale={"is": "at most 8", "each": "barn"}))
+        self.assertEqual(rules.says("R98"), "1 each spot; 2 each alliance; 60; 3/8 in (deep) or 9 in (wide); 8 each barn")
+
+    def test_a_formula(self):
+        """Catches a formula that takes a count for each spot, or a cap at some times, for the whole."""
+        from frc_design_kernel.rules.rules import faults
+        data = lambda text, **more: (lambda d: d["places"]["cellar"]["holds"].update(bale=text) or d["scoring"]["awards"]["hang"].update(**more))
+        for change, name in [(data("= near_bales.starts.bale * 4"), "near_bales.starts.bale"), (data("= hang.most"), "hang.most"), (data("= hang.most * 2", most={"is": 2, "when": ["auto"]}), "hang.most")]:
+            files = example()
+            change(files)
+            found = faults(written(files))
+            self.assertEqual([f.where for f in found], ["places.json cellar.holds.bale"], found)
+            for text in (name, "for the whole", "rules.starts"):
+                self.assertIn(text, str(found[0]))
+        self.is_(self.rules(data("= total.bale / 10 + hang.most", most={"is": 2})).get("cellar.holds.bale"), "number", 8)
+
+    def test_starts_go_on(self):
+        """Catches what is there at the start that is no longer all of it."""
+        self.assertEqual(self.rules().starts("bale")["near_bales@red"], 4)
 
 
 class Runs(Derived):
@@ -119,6 +163,26 @@ class Records(Derived):
                     self.assertTrue(-1 <= r.at[0] <= 612.40 * IN + 1 and -1 <= r.at[1] <= 300 * IN + 1, r.name)
                     many += 1
         self.assertEqual(many, 49 + 58)    # of the field: zones 7, solids 19, passages 7, hangs 12 and tags 4; of the places: 58
+
+    def test_no_place_no_facing(self):
+        """Catches a record that stands nowhere, or at its spots only, and that looks somewhere all the same."""
+        found = {r.name: r for file in ("field", "places") for r in self.rules().records(file)}
+        self.assertEqual([found[name].faces for name in ("lane@blue", "lane@red", "rack@red", "centre", "stands", "cellar@blue")], [None] * 6)
+        self.assertEqual([found[name].faces for name in ("yard@blue", "yard@red", "rack@red.4.b")], [0, 180, 180])
+
+    def test_copies(self):
+        """Catches an asker who changes what is given, and with it the rules that the next one is given."""
+        rules = self.rules(lambda d: None)      # its own, as a failure here would change it for other tests
+        found = {r.name: r for r in rules.records("field")}
+        found["yard@red"].data["deep"] = found["yard@blue"].entry.data["wide"] = "1 in"
+        found["yard@blue"].outline.clear()
+        rules.conditions("G90.must_not")[0].what.entry.data["deep"] = "1 in"
+        rules.when("G95.when")[1].entry.data["last"] = "1 s"
+        rules.points("bale_in_barn")[0].when[0].entry.data["lasts"] = "1 s"
+        self.assertEqual([rules.book.ids["yard"].data[name] for name in ("deep", "wide")], ["54 in", "21 in"])
+        self.assertEqual((rules.book.ids["endgame"].data["last"], rules.book.ids["auto"].data["lasts"]), ("25 s", "12 s"))
+        again = {r.name: r for r in rules.records("field")}
+        self.assertEqual((again["yard@red"].data["deep"], again["yard@blue"].entry.data["wide"], len(again["yard@blue"].outline)), ("54 in", "21 in", 4))
 
     def test_the_variant(self):
         """Catches records that are always of the first variant."""

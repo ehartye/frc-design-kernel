@@ -1,4 +1,5 @@
 """What cannot be worked out is refused, with its file, its record and its field. Every refusal has a change beside it that passes."""
+import json
 import unittest
 
 from .rules_cases import Checked, example, small, written
@@ -31,6 +32,15 @@ class Formulas(Refused):
                            ("= size.width * size.width", "multiplies a length by a length"), ("= size.width * asin(pen.lean)", '"asin"'), ("= size.width +", "not valid arithmetic")]:
             self.refused(lambda d: at(d, text), "places.json barn.at.x", f'"{text}"', says)
         self.accepted(lambda d: at(d, "= size.width * sin(pen.lean) + 3 * crate.at.y / 4"))
+
+    def test_a_weight_that_is_a_formula(self):
+        """Catches a weight under a name of its own that is worked out, as one that is printed is caught."""
+        weight = lambda d, **more: d["robot"]["limits"]["weight"].update(more)
+        self.refused(lambda d: weight(d, total="= limits.weight.robot.max"), "robot.json limits.weight", '"total"', "with_bumpers")
+        self.refused(lambda d: weight(d, total={"is": "= 2 * limits.weight.robot.max"}), "robot.json limits.weight", '"total"')
+        self.accepted(lambda d: weight(d, cable="= limits.reach.far"))
+        self.accepted(lambda d: weight(d, was=[{"until": "2031-02-04", "is": "= limits.weight.robot.max", "src": "update3 R92"}]))
+        self.accepted(lambda d: d["robot"]["limits"]["weight"]["robot"].update(spare="= limits.weight.bumpers.max"))
 
     def test_the_kind_that_the_field_holds(self):
         """Catches a formula that gives a mass where a length is needed, a length where a count is, or a number for a flag."""
@@ -85,9 +95,69 @@ class Places(Refused):
                               (lambda d: d["places"]["near_bales"]["spots"]["step"].__setitem__(1, "47 to 49 in"), "places.json near_bales"),
                               (lambda d: d["field"]["zones"]["pond"]["outline"].update(circle="45 to 47 in"), "field.json pond"),
                               (lambda d: d["pieces"]["pumpkin"]["shape"]["ball"].update(diameter="8 to 9 in") or d["field"]["solids"]["pen"]["shape"]["prism"].update(tall="5 in"), "pieces.json pumpkin.shape"),
-                              (lambda d: d["field"]["tags"]["t1"]["at"].__setitem__(2, "49 to 51 in"), "field.json tags.t1")]:
+                              (lambda d: d["field"]["tags"]["t1"]["at"].__setitem__(2, "49 to 51 in"), "field.json tags.t1"),
+                              (lambda d: d["field"]["tags"]["t1"].update(faces="0 to 5 deg"), "field.json tags.t1.faces")]:
             self.refused(change, where, "range")
         self.accepted(lambda d: d["field"]["solids"]["crate"]["at"].__setitem__(0, "131 in +/- 1"))
+        self.accepted(lambda d: d["field"]["tags"]["t1"].update(faces="0 deg +/- 5"))
+
+    ONE = {      # where one number is needed: how to put a range there, and where it is told
+        "placed.at": (lambda d, v: d["field"]["solids"]["crate"]["at"].__setitem__(2, v("in")), "field.json crate.at.z"),
+        "placed.faces": (lambda d, v: d["field"]["solids"]["crate"].update(faces=v("deg")), "field.json crate.faces"),
+        "spot.at": (lambda d, v: d["places"]["hooks"]["spots"]["left"]["at"].__setitem__(0, v("in")), "places.json hooks.spots.left.at.x"),
+        "spot.faces": (lambda d, v: d["places"]["hooks"]["spots"]["left"].update(faces=v("deg")), "places.json hooks.spots.left.faces"),
+        "row.step": (lambda d, v: d["places"]["centre_bales"]["spots"]["step"].__setitem__(0, v("in")), "places.json centre_bales.spots.step.x"),
+        "ring.around": (lambda d, v: d["field"]["hangs"]["rope"]["spots"]["around"].__setitem__(0, v("in")), "field.json rope.spots.around.x"),
+        "ring.step": (lambda d, v: d["field"]["hangs"]["rope"]["spots"].update(step=v("deg")), "field.json rope.spots.step"),
+        "tag.at": (lambda d, v: d["field"]["tags"]["t1"]["at"].__setitem__(2, v("in")), "field.json tags.t1.at.z"),
+        "tag.faces": (lambda d, v: d["field"]["tags"]["t1"].update(faces=v("deg")), "field.json tags.t1.faces"),
+        "size.length": (lambda d, v: d["field"]["size"].update(length=v("in")), "field.json size.length"),
+        "size.width": (lambda d, v: d["field"]["size"].update(width=v("in")), "field.json size.width"),
+        "zone.outline": (lambda d, v: d["field"]["zones"]["pond"]["outline"].update(circle=v("in")), "field.json pond.outline.circle"),
+        "line.from": (lambda d, v: d["field"]["lines"]["centre"]["from"].__setitem__(1, v("in")), "field.json centre.from.y"),
+        "line.to": (lambda d, v: d["field"]["lines"]["centre"]["to"].__setitem__(1, v("in")), "field.json centre.to.y"),
+        "solid.shape": (lambda d, v: d["field"]["solids"]["boulder"]["shape"]["ball"].update(diameter=v("in")), "field.json boulder.shape.ball.diameter"),
+        "piece.shape": (lambda d, v: d["pieces"]["hoop"]["shape"]["ring"].update(thick=v("in")), "pieces.json hoop.shape.ring.thick"),
+        "opening.outline": (lambda d, v: d["places"]["loft"]["opening"]["outline"].update(circle=v("in")), "places.json loft.opening.outline.circle"),
+        "period.lasts": (lambda d, v: d["clock"]["periods"]["auto"].update(lasts=v("s")), "clock.json auto.lasts"),
+        "window.first": (lambda d, v: d["clock"]["windows"]["early"].update(first=v("s")), "clock.json early.first"),
+        "window.last": (lambda d, v: d["clock"]["windows"]["endgame"].update(last=v("s")), "clock.json endgame.last"),
+        "judged.after_": (lambda d, v: d["scoring"]["judged"]["late"].update(after_auto=v("s")), "scoring.json judged.late.after_auto"),
+        "points.points": (lambda d, v: d["scoring"]["awards"]["hang"]["points"][0].update(points=v("")), "scoring.json hang.points[0].points"),
+        "foul.points_to_them": (lambda d, v: d["scoring"]["fouls"]["minor"].update(points_to_them=v("")), "scoring.json minor.points_to_them"),
+        "award.rp": (lambda d, v: d["scoring"]["awards"]["all_moved"].update(rp=v("")), "scoring.json all_moved.rp"),
+    }
+
+    def test_each_place_for_one_number(self):
+        """Catches a range, or limits of which one is enough, wherever fields.json says that one number is needed, each told once. All are
+        in one folder, so that what uses several of them must not tell any again."""
+        def put(d, value):
+            for change, _ in self.ONE.values():
+                change(d, value)
+        for value, says in [(lambda unit: f"1 to 2 {unit}".strip(), "is a range"), (lambda unit: {"any": [{"low": f"1 {unit}" if unit else 1}, {"high": f"2 {unit}" if unit else 2}]}, "one is enough")]:
+            found = self.faults(lambda d: put(d, value))
+            self.assertEqual(sorted(one.partition(":")[0] for one in found), sorted(where for _, where in self.ONE.values()))
+            self.assertTrue(all(says in one for one in found), found)
+
+    def test_which_places_need_one_number(self):
+        """Catches a property that no longer needs one number, or one that is new and has no case above."""
+        from frc_design_kernel.rules import read
+        flagged = [f"{kind}.{name}" for kind, about in read.names()["kinds"].items() for name, one in about["fields"].items() if one.get("one")]
+        self.assertEqual(sorted(flagged), sorted(self.ONE))
+        drawn = [f"{kind}.{name}" for kind, about in read.names()["kinds"].items() for name, one in about["fields"].items() if one["holds"] in ("point", "outline", "shape")]
+        self.assertEqual(set(drawn) - set(flagged), set())
+
+    def test_the_number_of_a_compare(self):
+        """Catches a count that is compared with a range, which nobody can tell apart from one number; a limit of it is a thing of its own."""
+        needs = lambda d, what: d["scoring"]["awards"]["loft_rp"]["needs"][1].__setitem__(2, what)
+        self.refused(lambda d: needs(d, "1 to 2"), "scoring.json loft_rp.needs[1]:", "is a range")
+        self.refused(lambda d: needs(d, {"by": "event", "regional": 2, "championship": "2 to 3"}), "scoring.json loft_rp.needs[1].championship:", "is a range")
+        self.refused(lambda d: needs(d, {"any": [{"few": 1}, {"many": 2}]}), "scoring.json loft_rp.needs[1]:", "one is enough")
+        self.refused(lambda d: d["conduct"]["G95"].update(must_not=[{"any": [{"all": [["my hanging_robots", "at least", "1 to 2"]]}]}]), "conduct.json G95.must_not[0].any[0].all[0]:", "is a range")
+        self.refused(lambda d: d["scoring"]["awards"]["loft_rp"]["easier"]["needs"][0].__setitem__(2, "1 to 2"), "scoring.json loft_rp.easier.needs[0]:", "is a range")
+        self.accepted(lambda d: needs(d, {"by": "event", "regional": 2, "championship": 3}))
+        self.accepted(lambda d: needs(d, "= G95.limit * 2"))
+        self.accepted(lambda d: d["conduct"]["G95"].update(must_not=[{"any": [{"all": [["my hanging_robots", "at least", 2]]}, ["my hanging_robots", "at most", "= G95.limit"]]}]))
 
     def test_a_position_of_which_one_is_enough(self):
         """Catches limits of which one is enough, in a place that needs one number."""
@@ -107,10 +177,19 @@ class Places(Refused):
         points = lambda *pairs: [[f"{x} in", f"{y} in"] for x, y in pairs]
         for line in [((1, 1), (2, 2), (4, 4)), ((5, 7), (6, 9), (8, 13)), ((3, 9), (3, 2), (3, 5)), ((1, 2), (4, 8), (3, 6), (2, 4))]:
             self.refused(lambda d: zone(d).update(outline=points(*line)), "field.json fold.outline", "no area")
-        for knot in [((0, 0), (9, 9), (9, 0), (0, 8)), ((0, 0), (0, 8), (9, 0), (9, 9)), ((0, 0), (9, 0), (9, 9), (4, 9), (4, -2)), ((4, 9), (4, -2), (0, 0), (9, 0), (9, 9)), ((9, 9), (4, 9), (4, -2), (0, 0), (9, 0))]:
+        for knot in [((0, 0), (9, 9), (9, 0), (0, 8)), ((0, 0), (0, 8), (9, 0), (9, 9)), ((0, 0), (9, 0), (9, 9), (4, 9), (4, -2)), ((4, 9), (4, -2), (0, 0), (9, 0), (9, 9)), ((9, 9), (4, 9), (4, -2), (0, 0), (9, 0)),
+                     ((0, 0), (10, 0), (10, 10), (5, 0), (5, -10), (0, 10))]:
             self.refused(lambda d: zone(d).update(outline=points(*knot)), "field.json fold.outline", "crosses itself")
-        for whole in [((0, 0), (9, 0), (9, 9), (4, 1), (4, 9)), ((0, 0), (4, 0), (9, 0), (9, 9), (4, 0)), ((7, 3), (9, 4), (2, 9)), ((0, 0), (10, 0), (10, 10), (5, 0), (0, 10))]:
+        for whole in [((0, 0), (9, 0), (9, 9), (4, 1), (4, 9)), ((0, 0), (4, 0), (9, 0), (9, 9), (4, 1)), ((7, 3), (9, 4), (2, 9)), ((0, 0), (10, 0), (10, 10), (5, 0.01), (0, 10)), ((0, 0), (4, 0), (6, 0), (9, 0), (9, 9)),
+                      ((7, -3), (37, 7), (37, 27), (22, 2.01), (7, 17)), ((5, 20), (35, 5), (35, 30), (15, 15.01), (5, 30)), ((3, 1), (21, 7), (40, 2), (33, 29), (18, 12), (2, 25))]:
             self.accepted(lambda d: zone(d).update(outline=points(*whole)))
+        for touches in [((0, 0), (10, 0), (10, 10), (5, 0), (0, 10)), ((0, 0), (10, 0), (5, 5), (10, 10), (0, 10), (5, 5)), ((0, 0), (10, 0), (10, 0), (10, 10)),
+                        ((0, 0), (20, 0), (10, 0), (10, 10)), ((0, 0), (4, 0), (9, 0), (9, 9), (4, 0)), ((0, 0), (5, 5), (20, 20), (20, -10), (5, 5), (0, 10)), ((10, 0), (10, 10), (0, 0), (10, 0)), ((5, 5), (0, 10), (0, 0), (5, 5), (20, 20), (20, -10)),
+                        ((0, 0), (4, 0), (-3, 0), (-3, 9)), ((0, 0), (0, 9), (9, 9), (9, 4.0000001), (0, 4), (9, 4), (9, 0)),
+                        ((7, -3), (37, 7), (37, 27), (22, 2), (7, 17)), ((5, 20), (35, 5), (35, 30), (15, 15), (5, 30))]:
+            self.refused(lambda d: zone(d).update(outline=points(*touches)), "field.json fold.outline", "touches itself")
+        self.refused(lambda d: d["field"]["solids"]["ramp"]["shape"]["prism"].update(outline=points((0, 0), (10, 0), (10, 10), (5, 0), (0, 10))), "field.json ramp.shape", "touches itself")
+        self.refused(lambda d: d["places"]["loft"]["opening"].update(outline=points((0, 0), (10, 0), (10, 10), (5, 0), (0, 10))), "places.json loft.opening.outline", "touches itself")
         self.refused(lambda d: d["places"]["barn"]["opening"]["outline"]["rectangle"].__setitem__(0, "0 in") or d["field"]["solids"]["barn_body"].update(shape={"box": ["1 in", "1 in", "1 in"]}), "places.json barn.opening.outline", "no area")
         self.accepted(lambda d: zone(d).update(at=["1 in", "1 in"]))
         self.accepted(lambda d: zone(d).pop("at") and zone(d).update(no_geometry="No drawing gives it."))
@@ -232,6 +311,7 @@ class Scores(Refused):
         """Catches more pieces than there are, or a part of one that is left over."""
         starts = lambda d, place: d["places"][place]["starts"]
         self.refused(lambda d: starts(d, "vine").update(pumpkin=13), "places.json patch.starts.pumpkin", "12", "13", "-0.5")
+        self.refused(lambda d: starts(d, "vine").update(pumpkin=14), "places.json patch.starts.pumpkin", "12", "14", "leaves -1 for each alliance")
         self.refused(lambda d: starts(d, "vine").update(pumpkin=3), "places.json patch.starts.pumpkin", "4.5 for each alliance")
         self.refused(lambda d: starts(d, "spare_hoops").update(hoop=5), "scoring.json total.hoop", "8", "9")
         self.refused(lambda d: d["scoring"]["total"].pop("pumpkin"), "places.json patch.starts.pumpkin", "no total")
@@ -265,8 +345,70 @@ class Says(Refused):
         self.accepted(lambda d: d["places"]["barn"]["opening"].update(says="It is {bottom} up, {opening.depth} deep and {out} out, from the {from}."))
 
 
+    def test_says_that_need_each_other(self):
+        """Catches words that name themselves, alone, through others, through a formula or at any depth: each loop is told once."""
+        says = lambda d, code, text: d["robot"]["rules"][code].update(says=text)
+        self.refused(lambda d: says(d, "R94", "At most {limits.drive.motors}: {R94.says}"), "robot.json R94.says", "needs itself", '"R94.says" needs "R94.says"')
+        self.refused(lambda d: says(d, "R94", "As {R95.says}") or says(d, "R95", "As {R94.says}"), "robot.json R94.says", "needs itself", '"R95.says"')
+        self.refused(lambda d: says(d, "R94", "As {R95.says}") or says(d, "R95", "As {R96.says}") or says(d, "R96", "As {R95.says}"), "robot.json R95.says", "needs itself")
+        self.refused(lambda d: d["places"]["barn"]["opening"].update(says="It is {says}."), "places.json barn.opening.says", "needs itself")
+        self.refused(lambda d: d["places"]["barn"]["opening"].update(says="As {barn.opening.says}"), "places.json barn.opening.says", "needs itself")
+        self.accepted(lambda d: says(d, "R94", "As {R95.says}") or says(d, "R95", "As {R96.says}"))
+        self.accepted(lambda d: d["places"]["barn"]["opening"].update(says="As {R94.says}"))
+
+
 class More(Refused):
     """faults and load_rules."""
+
+    def chain(self, many, backward=False):
+        """A folder in which each of many lengths is worked out from the next."""
+        lengths = {f"n{i}": f"= pen.n{i + 1} + pen.n{i + 1} / 10" for i in range(many)} | {f"n{many}": "1 mm"}
+        data = example()
+        data["field"]["solids"]["pen"].update(dict(reversed(lengths.items())) if backward else lengths)
+        return written(data)
+
+    def red_chain(self, many):
+        """A folder in which a ring of red's is placed by the next one's, many times over."""
+        data = example()
+        ring = lambda x: {"alliance": "each", "spots": {"ring": 2, "around": ["9 in", "1 in"], "step": "120 deg", "first": {"at": [x, "1 in"]}}}
+        data["field"]["equipment"].update({f"z{i}": ring(f"= z{i + 1}@red.2.at.x / 2") for i in range(many)} | {f"z{many}": ring("5 in")})
+        return written(data)
+
+    def test_a_chain_through_red(self):
+        """Catches a chain just long enough that the folder loads and whoever asks for its end is refused."""
+        from frc_design_kernel.rules.rules import faults, load_rules
+        for many in (47, 48, 49, 50):
+            folder = self.red_chain(many)
+            found = faults(folder)
+            if not found:
+                load_rules(folder).get("z0@red.2.at.x")
+            self.assertEqual([f.problem[:13] for f in found], ["needs a chain"] * (many > 48), many)
+
+    def test_a_chain_of_formulas(self):
+        """Catches a chain of formulas that is so long that the reader stops with an error of its own, in place of a fault; or that
+        loads, because it is written the other way round, and stops whoever asks for its end."""
+        from frc_design_kernel.errors import DesignError
+        from frc_design_kernel.rules.rules import faults, load_rules
+        for backward in (False, True):
+            for many in (51,) if backward else (51, 400):
+                found = faults(self.chain(many, backward))
+                self.assertEqual(len(found), 1, found)
+                self.assertIn("one from another", found[0].problem)
+                with self.assertRaises(DesignError):
+                    load_rules(self.chain(many, backward))
+            self.assertAlmostEqual(load_rules(self.chain(49, backward)).get("pen.n0").value, 1.1 ** 49)
+
+    def test_data_that_is_too_deep(self):
+        """Catches data inside data inside data that stops the reader with an error of its own."""
+        from frc_design_kernel.rules.rules import examine
+        text = json.dumps(example()["field"])
+        side = '"side": {"is": "30 in", "of": "each side in plan"}'
+        self.assertIn(side, text)
+        for many, faults in [(3000, 1), (300, 0)]:
+            folder = written({**example(), "field": text.replace(side, '"side": ' + '{"is": ' * many + '"30 in"' + "}" * many)})
+            book, found = examine(folder)
+            self.assertEqual((len(found), book is None), (faults, faults == 1), found)
+        self.assertIn("too deep", examine(written({**example(), "field": text.replace(side, '"side": ' + "[" * 3000 + "]" * 3000)}))[1][0].problem)
 
     def test_every_fault(self):
         """Catches a list of faults that ends at the first, or at those of reading."""
@@ -282,6 +424,14 @@ class More(Refused):
                        lambda d: d["clock"]["windows"]["endgame"].update(last="25"), lambda d: d["scoring"]["awards"]["bale_in_barn"]["points"][0].update(when=["atuo"]),
                        lambda d: d["field"]["solids"]["crate"]["at"].__setitem__(0, "= crat.at.x"), lambda d: d["clock"]["states"]["lit"].update(of="allience")]:
             self.refused(change)
+
+    def test_an_id_used_twice_is_told_once(self):
+        """Catches a second use of an ID that is told again for everything that names the thing."""
+        self.refused(lambda d: d["game"]["people"].update(yard={"says": "Keeps it."}), "field.json yard", '"yard" is used twice, also in game.json')
+        self.refused(lambda d: d["field"]["tags"].update(barn={"at": ["0 in", "10 in", "50 in"], "faces": "0 deg", "tilt": "0 deg"}), "places.json barn", '"barn" is used twice, also in field.json')
+        self.refused(lambda d: d["scoring"]["judged"].update(hang={"awards": ["bale_on_bench"], "after_teleop": "1 s"}), "scoring.json judged.hang", '"hang" is used twice, also in scoring.json')
+        self.refused(lambda d: d["game"]["sources"].update(bale={"title": "Bales"}), "pieces.json bale", '"bale" is used twice, also in game.json')
+        self.accepted(lambda d: d["game"]["people"].update(keeper={"says": "Keeps it."}))
 
     def test_red_that_cannot_be_made(self):
         """Catches a field with no width, on which red's copy cannot be turned; a mirror image needs none."""

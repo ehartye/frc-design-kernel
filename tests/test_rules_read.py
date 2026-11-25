@@ -51,6 +51,18 @@ class Files(unittest.TestCase):
         (folder / "terms.json").write_text("[" * 200000, encoding="utf-8")
         self.assertEqual([f.where.split()[0] for f in read.read_files(folder)[1]], ["robot.json", "terms.json"])
 
+    def test_a_byte_order_mark(self):
+        """Catches a file saved with a mark in front that no editor shows, and a message that nobody can act on."""
+        from frc_design_kernel.rules import read
+        folder = written(small())
+        (folder / "robot.json").write_bytes(b"\xef\xbb\xbf{}")
+        fault, = read.read_files(folder)[1]
+        self.assertEqual(fault.where, "robot.json")
+        self.assertIn("byte order mark", fault.problem)
+        self.assertIn("UTF-8 without", fault.fix)
+        (folder / "robot.json").write_bytes(b"{}")
+        self.assertEqual(read.read_files(folder)[1], [])
+
     def test_not_an_object(self):
         """Catches a file that holds a list, so that nothing in it could be found by name."""
         self.one(small(places="[]"), "places.json", "object")
@@ -161,6 +173,23 @@ class Ids(unittest.TestCase):
         self.one("robot.json parts.wire", "object", robot={"parts": {"wire": "6 AWG"}})
         self.one("robot.json limits", "object", robot={"limits": []})
         self.one("game.json people.together", "list", game={"people": {"together": {}}})
+
+    def test_an_id_of_a_person_a_tag_a_source_or_a_judged_time(self):
+        """Catches an ID that a rule may name as one thing and a reader find as another: those of people, tags, sources and judged times are IDs too."""
+        kinds = {"game": {"people": {"coach": {}}, "sources": {"manual": {}}}, "field": {"tags": {"t1": {"at": ["1 in", "2 in"]}}}, "scoring": {"judged": {"late": {"awards": []}}}, "places": {"barn": {}}}
+        own = {"coach": "people.coach", "manual": "sources.manual", "t1": "tags.t1", "late": "judged.late", "barn": "barn"}
+
+        def faults(**changes):
+            return [str(f) for f in self.gather(**{**kinds, **changes})[1]]
+        self.assertEqual(faults(), [])
+        for name in ["coach", "manual", "t1", "late", "barn"]:
+            for file, group, record in [("game", "people", {}), ("game", "sources", {}), ("field", "tags", {"at": ["1 in", "2 in"]}), ("scoring", "judged", {"awards": []}), ("clock", "periods", {})]:
+                there = kinds.get(file, {})
+                if name not in there.get(group, {}):
+                    found = faults(**{file: {**there, group: {**there.get(group, {}), name: record}}})
+                    self.assertEqual(len(found), 1, (name, file, group, found))
+                    self.assertIn(f'the ID "{name}" is used twice, also in ', found[0])
+        self.assertEqual(faults(robot={"parts": {"motors": {"barn": {}, "coach": {}}}, "limits": {"hold": {}}}), [])
 
     def test_paths(self):
         """Catches a path that finds the wrong value: through a list, an object, a variant and one of several limits."""

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from ..errors import DesignError, unknown
 from .read import Entry, word_list
-from .words import WHEN
+from .words import PLACED, WHEN
 
 
 @dataclass(frozen=True)
@@ -46,6 +46,11 @@ class Moment:
     negated: bool           # with `not` in front
     entry: Entry | None     # its record; None for a variant
     of: str | None = None   # the kind of variant
+
+    @property
+    def words(self):
+        """As it is written, with whose a state is: not my lit."""
+        return " ".join([*(["not"] if self.negated else []), *([self.whose] if self.whose else []), self.name])
 
 
 @dataclass(frozen=True)
@@ -110,9 +115,9 @@ def _thing(book, node):
     if not isinstance(node, str):
         return None
     owner, space, name = node.partition(" ")
-    if space and owner in word_list("owners") and name in book.ids:
-        return Thing(owner, name, book.ids[name])
-    return Thing(None, node, book.ids[node]) if node in book.ids else None
+    owner, name = (owner, name) if space and owner in word_list("owners") else (None, node)
+    entry = book.ids.get(name)
+    return Thing(owner, name, entry) if entry and entry.kind in (*PLACED, "piece") else None
 
 
 def rows(worker, entry):

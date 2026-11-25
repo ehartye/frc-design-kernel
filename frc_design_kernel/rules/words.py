@@ -1,7 +1,6 @@
 """Every word and every ID that a field names: conditions, times, costs, people, places, parts, sources and paths.
 
     load(folder)     (Book, [DesignError]) with every fault; the Book is None when the JSON itself does not read
-    first(folder)    the Book, or the first DesignError raised
     check(book)      [DesignError] for a Book: what fields.py finds, and every word and ID that is wrong
     leaves(book)     every Leaf (values.py) of the fields, and those inside conditions and longer_than
     paths_in(text)   the paths that a formula names
@@ -10,6 +9,7 @@ What a condition means, when a name is true and what a formula gives are not wor
 written with words of the lists, and names things that are there.
 """
 import re
+from dataclasses import replace
 from fractions import Fraction
 
 from ..errors import DesignError, unknown
@@ -33,14 +33,6 @@ def load(folder):
         return None, faults
     book, faults = read.gather(folder, data)
     return book, faults + check(book)
-
-
-def first(folder):
-    """The Book of a folder with no faults; else the first DesignError is raised."""
-    book, faults = load(folder)
-    if faults:
-        raise faults[0]
-    return book
 
 
 def check(book):
@@ -82,6 +74,7 @@ class Words:
         self.loads = [e.id for e in book.entries if e.kind == "part" and "on" in e.data]
         self.named = {}         # {ID of a thing: where a rule names it and must know where it is}
         self.found = []         # the Leaves of the field that is being read
+        self.said = []          # every field of words that has been read
         self.missing = book.missing
 
     def fault(self, where, problem, fix):
@@ -93,8 +86,9 @@ class Words:
         method = getattr(self, "holds_" + field.holds.replace(" ", "_"), None)
         if method:
             method(field, field.node, field.where)
-        if field.name == "says" and isinstance(field.node, str):
+        if field.holds == "says" and isinstance(field.node, str):
             self._says(field)
+            self.said.append(field)
         if field.entry.kind == "conduct" and field.name == "act" and not set(names()["kinds"]["conduct"]["act_needs"]) & set(field.entry.data):
             self.fault(field.entry.where, "has an act with nothing to judge", "Give it must_not, only_if or limit, or leave out the act")
         return self.found
@@ -225,12 +219,12 @@ class Words:
         return name in self.things and self.things[name].data.get("alliance") == "each"
 
     def words_or_things(self, node, where, measured=False):
-        """A list in which my, their or any with one ID is a thing, an ID of each alliance alone is refused, and all else is words."""
+        """A list in which my, their or any with one ID, or an ID alone, is a thing, and all else is words."""
         for one, at in self.list(node, where):
             if not isinstance(one, str) or not one.strip():
                 self.fault(at, "is not words", "Write words between quotes")
-            elif re.fullmatch(rf"(?:{'|'.join(word_list('owners'))}) {ID.pattern}", one) or self.of_each(one):
-                self.thing(one, at, measured=measured)
+            elif re.fullmatch(rf"(?:{'|'.join(word_list('owners'))}) {ID.pattern}", one) or one in self.things:
+                self.thing(one, at, bare=True, measured=measured)
 
     def holds_things(self, field, node, where):
         for one, at in self.either(node, where):
@@ -312,7 +306,8 @@ class Words:
                 self.fault(where, "names nothing in its list", "Name things, or words for a part that has no ID")
             self.words_or_things(what, where, measured=how in word_list("measures"))
         elif not isinstance(what, str) or what.startswith("=") or re.match(r"-?[0-9]", what):
-            self.found += self.reader.value(field.entry, what, None if not isinstance(what, bool) else "number", where)
+            leaves = self.reader.value(field.entry, what, None if not isinstance(what, bool) else "number", where)
+            self.found += [replace(leaf, one=where) for leaf in leaves] if how in word_list("compares") else leaves
         elif what not in word_list("what"):
             self._what(what, where, how in word_list("measures"))
 
@@ -356,6 +351,8 @@ class Words:
     # -- paths in words and formulas
 
     def _says(self, field):
+        if "{" in IN_SAYS.sub("", field.node):
+            self.fault(field.where, "has a { that is not closed", "Close the name between { and }, such as {limits.reach.far}")
         for path in IN_SAYS.findall(field.node):
             try:
                 self.own_or_any(field, path)
@@ -398,12 +395,11 @@ class Words:
             number = _whole(leaf)
             if number is not None and not OTHER.search(leaf.where):
                 own.setdefault(leaf.entry.where, {}).setdefault(number, leaf.where)
-        for entry in self.book.entries:
-            says = entry.data.get("says")
-            for typed in TYPED.findall(IN_SAYS.sub("", says)) if isinstance(says, str) else ():
-                held = own.get(entry.where, {}).get(_exact(typed))
+        for field in self.said:
+            for typed in TYPED.findall(IN_SAYS.sub("", field.node)):
+                held = own.get(field.entry.where, {}).get(_exact(typed))
                 if held:
-                    self.fault(f"{entry.where}.says", f'types {typed}, which {held.split(" ", 1)[1]} holds', "Name the field between { and }, so that the number is written once")
+                    self.fault(field.where, f'types {typed}, which {held.split(" ", 1)[1]} holds', "Name the field between { and }, so that the number is written once")
 
 
 def _exact(text):

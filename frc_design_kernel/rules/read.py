@@ -26,6 +26,7 @@ ID = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 AXES = "xyz"
 ENDS = ("low", "high")
 ALLIANCES = ("blue", "red")
+IDS_IN_A_GROUP = ("person", "tag", "source", "judged")      # kinds whose IDs no path begins with, and that are used once in the folder all the same
 STAND_FOR_IDS = ("who", "gives_to", "goes_to", "what", "someone", "the", "the_piece", "owners", "sides", "whose", "groups", "alliance")    # word lists
 
 
@@ -78,7 +79,12 @@ def read_files(folder):
 
 def _read(path):
     try:
-        got = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_pairs, parse_constant=lambda text: math.nan)
+        text = path.read_text(encoding="utf-8")
+        if text.startswith("\ufeff"):
+            raise DesignError(path.name, "begins with a byte order mark (BOM), which no editor shows", "Save it as UTF-8 without BOM")
+        got = json.loads(text, object_pairs_hook=_pairs, parse_constant=lambda text: math.nan)
+    except DesignError:
+        raise
     except FileNotFoundError:
         raise DesignError(path.name, "does not exist", "All nine files must be there; write {} for one that holds nothing") from None
     except OSError as problem:
@@ -367,16 +373,18 @@ def _id(name, where, faults):
 
 def _ids(entries, faults):
     """{ID: Entry} of every record that a path begins with, and a fault for each ID that is taken."""
-    ids, roots, words = {}, names()["roots"]["words"], taken()
+    ids, used, roots, words = {}, {}, names()["roots"]["words"], taken()
     for entry in entries:
         if entry.id in words and (entry.kind == "person" or entry.path == entry.id):
             faults.append(DesignError(entry.where, f'the ID "{entry.id}" is a word of the format', "Choose another ID, so that a rule can mean only one of them"))
-        if not entry.path or "." in entry.path or entry.kind in (*roots, "frame"):
+        own = entry.path and "." not in entry.path and entry.kind not in (*roots, "frame")
+        if not own and entry.kind not in IDS_IN_A_GROUP:
             continue
-        if entry.path in roots:
+        if own and entry.path in roots:
             faults.append(DesignError(entry.where, f'the ID "{entry.path}" is a word that paths begin with', "Choose another ID"))
-        elif entry.path in ids:
-            faults.append(DesignError(entry.where, f'the ID "{entry.path}" is used twice, also in {ids[entry.path].where.split()[0]}', "Choose another ID"))
-        else:
-            ids[entry.path] = entry
+        elif entry.id in used:
+            faults.append(DesignError(entry.where, f'the ID "{entry.id}" is used twice, also in {used[entry.id].where.split()[0]}', "Choose another ID"))
+        used.setdefault(entry.id, entry)
+        if own and entry.path not in roots:
+            ids.setdefault(entry.path, entry)
     return ids

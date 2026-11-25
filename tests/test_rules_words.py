@@ -53,6 +53,40 @@ class Words(Checked):
         for good in ["any yard", "carpet", "every robot", 3, "= lit.bank", "3 in", {"by": "event", "regional": 3, "championship": 4}, ["my yard", "my long fence", "a hay stack"], "their bale"]:
             self.accepted(lambda d: what(d, good))
 
+    def test_a_bracket_that_is_left_open(self):
+        """Catches a name in says whose bracket is not closed, which prints as it is written."""
+        says = lambda d, text: d["robot"]["rules"]["R94"].update(says=text)
+        for text in ["At most {limits.drive.motors motors.", "At most {limits.drive.motors} of {limits.", "{", "At most {{limits.drive.motors}."]:
+            self.refused(lambda d: says(d, text), "robot.json R94.says", "{", "}")
+        self.refused(lambda d: d["places"]["barn"]["opening"].update(says="It is {depth deep."), "places.json barn.opening.says", "not closed")
+        self.accepted(lambda d: says(d, "At most {limits.drive.motors} motors."))
+
+    def test_a_bare_thing_in_a_list(self):
+        """Catches a thing that belongs to neither alliance and is in a list with nobody in front: it needs geometry as `any bog` does."""
+        bog = lambda d, *things, **more: d["field"]["zones"].update(bog={"says": "Wet.", **more}) or d["scoring"]["awards"]["hang"]["needs"].__setitem__(1, ["my robot", "not touching", ["carpet", *things]])
+        for name in ["bog", "any bog"]:
+            self.refused(lambda d: bog(d, name), "field.json bog", "has no geometry", "hang.needs[1][1]")
+            self.accepted(lambda d: bog(d, name, no_geometry="Nobody drew it."))
+        self.accepted(lambda d: bog(d, "a bog of mud"))
+        self.accepted(lambda d: bog(d, "bale"))
+        self.refused(lambda d: bog(d, "yard", no_geometry="x"), "hang.needs[1][1]", "my yard")
+        self.refused(lambda d: d["field"]["zones"].update(bog={"says": "Wet."}) or d["field"]["hangs"]["bar"].update(may_touch=["bog"]), "field.json bog", "has no geometry", "bar.may_touch[0]")
+        self.accepted(lambda d: d["field"]["hangs"]["bar"].update(may_touch=["pond", "pieces", "a hay stack"]))
+
+    def test_what_a_number_is_counted_for(self):
+        """Catches a cap or a value that is for each of something that is not there. What a cost or a circuit is for each of is words."""
+        for put, where in [(lambda d, each: d["places"]["rack"]["takes"][0].update(most={"each": each, "is": 1}), "places.json rack.takes[0].most.each"),
+                           (lambda d, each: d["scoring"]["awards"]["hang"].update(most={"each": each, "is": 2, "when": ["auto"]}), "scoring.json hang.most.each"),
+                           (lambda d, each: d["places"]["cellar"]["holds"].update(bale={"each": each, "is": 8}), "places.json cellar.holds.bale.each"),
+                           (lambda d, each: d["places"]["cellar"].update(space={"by": "event", "regional": {"each": each, "is": 8}, "championship": 9}), "places.json cellar.space.regional.each")]:
+            for wrong in ["zebra", "spots", "Spot", "my barn", "", 3, ["spot"]]:
+                self.refused(lambda d: put(d, wrong), where)
+            for right in ["spot", "alliance", "barn", "bale", "stall"]:
+                self.accepted(lambda d: put(d, right))
+        self.refused(lambda d: d["places"]["rack"]["takes"][0]["most"].update(each="spott"), "rack.takes[0].most.each", 'Did you mean "spot"')
+        self.accepted(lambda d: d["conduct"]["G89"]["cost"][0].update(each="extra zebra"))
+        self.accepted(lambda d: d["scoring"]["awards"]["loft_rp"].update(each={"by": "event", "regional": 5, "championship": 7}))
+
     def test_when(self):
         """Catches a window, period, state or variant that is not there, and my in front of something that is nobody's."""
         when = lambda d, w: d["conduct"]["G90"].update(when=w)
@@ -265,16 +299,6 @@ class Words(Checked):
         data["clock"] = "{"
         book, faults = words.load(written(data))
         self.assertEqual((book, [f.where for f in faults]), (None, ["clock.json line 1"]))
-
-    def test_the_first_fault(self):
-        """Catches a caller that wants one error and gets a list, or none."""
-        from frc_design_kernel.rules import words
-        self.assertEqual(words.first(written(example())).look("total.bale").node, 60)
-        data = example()
-        data["conduct"]["G90"]["cost"] = ["miner"]
-        with self.assertRaises(DesignError) as caught:
-            words.first(written(data))
-        self.assertEqual(caught.exception.where, "conduct.json G90.cost[0]")
 
     def test_leaves_of_conditions(self):
         """Catches a value in a condition, or a time in longer_than, that a later step would never see."""

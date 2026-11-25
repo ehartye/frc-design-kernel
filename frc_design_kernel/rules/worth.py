@@ -30,6 +30,8 @@ class Value:
     assumed: str | None = None          # why it was chosen, when no source prints it
     src: object = None                  # where it is written: its own source, or its record's
     differs: tuple = ()                 # what other sources say, as it is written
+    each: str | None = None             # what it is for each of: "spot", "alliance" or an ID; None for the whole
+    when: tuple = ()                    # for a cap at some times only: Moments (conditions.py), which must all be true
     name: str | None = None             # its name in a list of which one is enough
     unit: str | None = None             # the unit it is printed in
 
@@ -101,9 +103,9 @@ def moved(value, number, sign=None):
 
 
 def words_of(value):
-    """A value as `says` prints it: without the words of a limit."""
+    """A value as `says` prints it: without the words of a limit, and with what it is for each of."""
     if isinstance(value, AnyOf):
         return " or ".join(f"{one.number_words} ({one.name})" for one in value)
     if isinstance(value, list):
         return ", ".join(words_of(one) for one in value)
-    return value.number_words
+    return f"{value.number_words} each {value.each}" if value.each else value.number_words

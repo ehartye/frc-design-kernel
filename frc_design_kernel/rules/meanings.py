@@ -27,6 +27,7 @@ NOTES = {                                                       # what fields.js
     "needs_with": lambda given: " ".join(f"With `{name}` {word} it must have {_listed(needs)}." for name, cases in given.items() for word, needs in cases.items()),
     "act_needs": lambda given: f"With an `act` it has at least one of {_listed(given)}.",
     "optional": lambda _: "It may be left out.",
+    "one": lambda _: "One number is needed here: no range, and no limits of which one is enough.",
 }
 
 

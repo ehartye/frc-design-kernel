@@ -12,7 +12,7 @@ import math
 from ..errors import DesignError
 from ..source.expressions import evaluate
 from .read import word_list
-from .values import _a as a
+from .values import in_words
 from .words import PATH
 
 GIVES = {"sin": "number", "cos": "number", "tan": "number", "sqrt": "number", "atan2": "angle"}     # the others give what they are given
@@ -69,16 +69,16 @@ def _both(op, left, right):
     if isinstance(op, (ast.Add, ast.Sub)) and left == right:
         return left
     if isinstance(op, (ast.Add, ast.Sub)):
-        raise _not(f"{'adds' if isinstance(op, ast.Add) else 'subtracts'} {a(right)} {'to' if isinstance(op, ast.Add) else 'from'} {a(left)}",
+        raise _not(f"{'adds' if isinstance(op, ast.Add) else 'subtracts'} {in_words(right)} {'to' if isinstance(op, ast.Add) else 'from'} {in_words(left)}",
                      "Both must be of the same kind; a bare number only multiplies or divides")
     if isinstance(op, ast.Mult) and "number" in (left, right):
         return right if left == "number" else left
     if isinstance(op, ast.Mult):
-        raise _not(f"multiplies {a(left)} by {a(right)}", "One of the two must be a bare number")
+        raise _not(f"multiplies {in_words(left)} by {in_words(right)}", "One of the two must be a bare number")
     if isinstance(op, ast.Div) and right in (left, "number"):
         return "number" if left == right else left
     if isinstance(op, ast.Div):
-        raise _not(f"divides {a(left)} by {a(right)}", "Divide by a bare number, or by the same kind")
+        raise _not(f"divides {in_words(left)} by {in_words(right)}", "Divide by a bare number, or by the same kind")
     raise _not("uses something that is not arithmetic")
 
 
@@ -89,7 +89,7 @@ def _function(name, given):
     if len(given) != many:
         raise _not(f"gives {name} the wrong number of values: {len(given)}", f"Give it {HOW_MANY.get(name, 'two or more')}")
     if name in TAKES and given != [TAKES[name]]:
-        raise _not(f"takes {name} of {a(given[0])}", f"Give it {a(TAKES[name])}" + (", such as one printed in deg" if TAKES[name] == "angle" else ""))
+        raise _not(f"takes {name} of {in_words(given[0])}", f"Give it {in_words(TAKES[name])}" + (", such as one printed in deg" if TAKES[name] == "angle" else ""))
     if len(set(given)) > 1:
-        raise _not(f"takes {name} of {' and '.join(a(kind) for kind in dict.fromkeys(given))}", "Give it numbers of one kind")
+        raise _not(f"takes {name} of {' and '.join(in_words(kind) for kind in dict.fromkeys(given))}", "Give it numbers of one kind")
     return GIVES.get(name, given[0])

@@ -10,7 +10,7 @@ import itertools
 from dataclasses import replace
 
 from ..errors import DesignError, unknown
-from . import alliances, fields, formulas, outlines, pieces, quantity, says, shapes
+from . import alliances, conditions, fields, formulas, outlines, pieces, quantity, says, shapes
 from .read import ALLIANCES, AXES, ENDS, ID, at_spot, word_list
 from .words import paths_in
 from .worth import BASE, AnyOf, Value, Wrong, one_end, one_number, shown, worked
@@ -21,12 +21,23 @@ WORDS = {"text", "texts", "list of texts", "says", "src", "date", "timer", "peri
 NOT_VALUES = {"conditions", "must not", "when", "list of whens", "spots", "first spot", "cost", "shapes", "differs", "was", "people", "tags", "limits", "parts"}
 
 
+LONGEST = 50        # a value is worked out from a chain of so many others at most, one from another; a real one needs a few
+
+
 class Loop(Wrong):
-    """Formulas that need each other."""
+    """Formulas, or words, that need each other."""
 
     def __init__(self, texts):
         self.texts = texts
-        super().__init__(texts[0], "", f'needs itself: {" needs ".join(f'"{text}"' for text in texts)}', "Print one of them as a number")
+        fix = "Print one of them as a number" if any(text.startswith("=") for text in texts) else "Write one of them without the other"
+        super().__init__(texts[0], "", f'needs itself: {" needs ".join(f'"{text}"' for text in texts)}', fix)
+
+
+class TooLong(Wrong):
+    """A chain of values that is longer than any reader can follow."""
+
+    def __init__(self):
+        super().__init__("", "", f"needs a chain of more than {LONGEST} values, one from another", "Write one of them as a number")
 
 
 def inside(one, where):
@@ -116,21 +127,29 @@ class Worker:
         self.season, self.book = season, season.book
         self.asked = set()      # the kinds of variant that were needed so far
         self.choice = _Choice(choice, self)
-        self.known = {}         # {what was asked: (its value, the kinds of variant that it needed)}
+        self.known = {}         # {what was asked: (its value, the kinds of variant that it needed, how long a chain of values)}
+        self.inside = 0         # how many values are being worked out, one inside another
+        self.chain = 0          # the longest chain that was needed so far
         self.doing = []         # the formulas being worked out, to see one that needs itself
         self.own = None         # where what is worked out is written, while faults are looked for
 
     def once(self, key, work):
         """What work() gives, worked out the first time it is asked."""
         if key not in self.known:
-            before, self.asked = self.asked, set()
+            asked, chain = self.asked, self.chain
+            self.asked, self.chain, self.inside = set(), 0, self.inside + 1
             try:
+                if self.inside > LONGEST:
+                    raise TooLong()
                 got = work()
-                self.known[key] = got, frozenset(self.asked)
+                if self.chain >= LONGEST:
+                    raise TooLong()
+                self.known[key] = got, frozenset(self.asked), self.chain + 1
             finally:
-                self.asked |= before
-        got, asked = self.known[key]
+                self.asked, self.chain, self.inside = self.asked | asked, chain, self.inside - 1
+        got, asked, chain = self.known[key]
         self.asked |= asked
+        self.chain = max(self.chain, chain)
         return got
 
     # -- paths
@@ -217,7 +236,8 @@ class Worker:
     def value(self, node, entry, holds="", end=None, name=None):
         """The Value of a node as it is written; a list for a list, and AnyOf for limits of which one is enough."""
         node, about = self.unwrap(node)
-        about = {"of": about.get("of"), "assumed": about.get("assumed"), "src": about.get("src", entry.data.get("src")), "differs": tuple(about.get("differs", ())), "name": name}
+        about = {"of": about.get("of"), "assumed": about.get("assumed"), "src": about.get("src", entry.data.get("src")), "differs": tuple(about.get("differs", ())),
+                 "each": about.get("each"), "when": conditions.moments(self.book, about.get("when", ())), "name": name}
         if holds in NOT_VALUES and not isinstance(node, (bool, str)) or holds.startswith("list of ") and holds != "list of texts":
             raise self.not_one(node)
         if isinstance(node, list):
@@ -286,7 +306,10 @@ class Worker:
         """(kind, number) of a value that a formula names."""
         try:
             value = self.get(path)
-            return value.kind if isinstance(value, Value) else None, one_number(value)
+            number = one_number(value)
+            if value.each or value.when:
+                raise DesignError("", f"is {f'for each {value.each}' if value.each else 'only for some times'}", "Name the count for the whole, or print it; what starts where in all is in rules.starts")
+            return value.kind, number
         except Wrong:
             raise
         except DesignError as problem:

@@ -24,7 +24,7 @@
     "A count belongs to the record of one alliance, all its spots together.",
     "Do not type a count that the spots already make.",
     "Examples here are invented.",
-    "In this file: `holds` is what a property holds (a form, or a list of words); `needs` names the fields that must be there; `one_of`, exactly one of these; `any_of`, at least one; `act_needs`, at least one of these when there is an `act`; `closed`, no extra values; `placed`, it may have the fields of `placed`; `geometry`, it needs geometry or `no_geometry` when a rule or score names it; `by_piece`, its fields are pieces' IDs; `optional`, a field of a shape that may be left out, where all others must be there; `as`, the form that an example is read as.",
+    "In this file: `holds` is what a property holds (a form, or a list of words); `needs` names the fields that must be there; `one_of`, exactly one of these; `any_of`, at least one; `act_needs`, at least one of these when there is an `act`; `closed`, no extra values; `placed`, it may have the fields of `placed`; `geometry`, it needs geometry or `no_geometry` when a rule or score names it; `by_piece`, its fields are pieces' IDs; `optional`, a field of a shape that may be left out, where all others must be there; `one`, a place for one number, where a range may not be, nor limits of which one is enough; `as`, the form that an example is read as.",
     "A name is nearly a known one when Python's difflib gives them a ratio of 0.85 or more.",
     "A group with nothing in it may be left out.",
     "A cost's `award` needs `to`. `instead_of` names a foul of the same list.",
@@ -399,6 +399,13 @@
         {"each": "alliance", "is": 2, "when": ["auto"]}
       ]
     },
+    "each": {
+      "means": "`spot`, `alliance` or an ID.",
+      "examples": [
+        "spot",
+        "barn"
+      ]
+    },
     "circuits": {
       "means": "A number, `any` for no limit, or an object that says what is counted.",
       "examples": [
@@ -714,8 +721,8 @@
       "fields": {
         "alliance": {"holds": "word alliance", "means": "`each`: blue and red each have one. Write blue's; red's is made by the symmetry. Left out, there is one and it belongs to neither."},
         "symmetry": {"holds": "word symmetry", "means": "This record's own symmetry, if it is not the field's."},
-        "at": {"holds": "point", "means": "Where it is: [x, y] or [x, y, z] in the field's frame. A solid stands on z: it is the height of its lowest point."},
-        "faces": {"holds": "angle", "means": "Which way it looks in plan: 0 deg is +X, 90 deg is +Y, anticlockwise from above. Shapes and outlines are turned by it. 0 deg if left out."},
+        "at": {"holds": "point", "means": "Where it is: [x, y] or [x, y, z] in the field's frame. A solid stands on z: it is the height of its lowest point.", "one": true},
+        "faces": {"holds": "angle", "means": "Which way it looks in plan: 0 deg is +X, 90 deg is +Y, anticlockwise from above. Shapes and outlines are turned by it. 0 deg if left out.", "one": true},
         "spots": {"holds": "spots", "means": "Several of the same thing: where each is."},
         "no_geometry": {"holds": "text", "means": "Why it has no position or shape, in words: no source gives it, or it needs none. `rules check` lists it. A zone, line, solid or hang that a rule or a score names must have an outline, `from` and `to`, a shape, an `at` or `spots`, or this. `unknown` is for anything else that no source gives."}
       }
@@ -730,7 +737,7 @@
         "assumed": {"holds": "text", "means": "Why this value was chosen, when no source prints it."},
         "differs": {"holds": "differs", "means": "What other sources say instead. `is` is the one to use."},
         "was": {"holds": "was", "means": "What the value was before."},
-        "each": {"holds": "text", "means": "What it is counted for each of: `spot`, `alliance` or an ID."}
+        "each": {"holds": "each", "means": "What it is counted for each of: `spot`, `alliance` or an ID."}
       }
     },
     "differs": {
@@ -800,7 +807,7 @@
     "period": {
       "means": "A part of a match.",
       "fields": {
-        "lasts": {"holds": "time", "means": "How long it is."},
+        "lasts": {"holds": "time", "means": "How long it is.", "one": true},
         "control": {"holds": "text", "means": "Who controls the robots in it, in words, such as `none` or `drivers`."}
       }
     },
@@ -810,8 +817,8 @@
       "one_of": ["first", "last", "timer"],
       "fields": {
         "in": {"holds": "period", "means": "The period that it is in."},
-        "first": {"holds": "time", "means": "It is the first so much of the period."},
-        "last": {"holds": "time", "means": "It is the last so much of the period."},
+        "first": {"holds": "time", "means": "It is the first so much of the period.", "one": true},
+        "last": {"holds": "time", "means": "It is the last so much of the period.", "one": true},
         "timer": {"holds": "timer", "means": "From and to, as the match timer counts down in that period: [\"1:15\", \"0:50\"]."}
       }
     },
@@ -830,8 +837,8 @@
     "size": {
       "means": "The size of the field.",
       "fields": {
-        "length": {"holds": "length", "means": "Along x, between the faces that look into the field and bound it."},
-        "width": {"holds": "length", "means": "Along y, between the faces that look into the field and bound it."},
+        "length": {"holds": "length", "means": "Along x, between the faces that look into the field and bound it.", "one": true},
+        "width": {"holds": "length", "means": "Along y, between the faces that look into the field and bound it.", "one": true},
         "surface": {"holds": "text", "means": "What the floor is, in words."}
       }
     },
@@ -848,7 +855,7 @@
       "placed": true,
       "geometry": true,
       "fields": {
-        "outline": {"holds": "outline", "means": "Its edge in plan."},
+        "outline": {"holds": "outline", "means": "Its edge in plan.", "one": true},
         "edge": {"holds": "word edge", "means": "Whether the tape is part of it. Left out, it is not said."},
         "height": {"holds": "height", "means": "How high it reaches from the carpet, or `none` for no limit. Left out, no source gives it."},
         "for": {"holds": "word for", "means": "`people` when no robot goes there."},
@@ -861,8 +868,8 @@
       "placed": true,
       "geometry": true,
       "fields": {
-        "from": {"holds": "point", "means": "One end."},
-        "to": {"holds": "point", "means": "The other end."},
+        "from": {"holds": "point", "means": "One end.", "one": true},
+        "to": {"holds": "point", "means": "The other end.", "one": true},
         "for": {"holds": "word for", "means": "`people` when no robot goes there."},
         "from_wall": {"holds": "length", "means": "A printed distance from the alliance wall."}
       }
@@ -872,7 +879,7 @@
       "placed": true,
       "geometry": true,
       "fields": {
-        "shape": {"holds": "shape", "means": "Its shape, around `at`, turned by `faces`."},
+        "shape": {"holds": "shape", "means": "Its shape, around `at`, turned by `faces`.", "one": true},
         "wide": {"holds": "length", "means": "A printed width. `of` says which way."},
         "tall": {"holds": "length", "means": "A printed height from its foot to its top."}
       }
@@ -917,8 +924,8 @@
     "tag": {
       "means": "One vision tag.",
       "fields": {
-        "at": {"holds": "point", "means": "Where its point is (`measured` says which point)."},
-        "faces": {"holds": "angle", "means": "Which way it looks in plan."},
+        "at": {"holds": "point", "means": "Where its point is (`measured` says which point).", "one": true},
+        "faces": {"holds": "angle", "means": "Which way it looks in plan.", "one": true},
         "tilt": {"holds": "angle", "means": "How far it leans from upright so that it looks downward."},
         "panel": {"holds": "length", "means": "Its own panel, when it is not like the others."}
       }
@@ -927,8 +934,8 @@
       "means": "One of several of the same thing.",
       "needs": ["at"],
       "fields": {
-        "at": {"holds": "point", "means": "Where it is."},
-        "faces": {"holds": "angle", "means": "Which way it looks in plan."}
+        "at": {"holds": "point", "means": "Where it is.", "one": true},
+        "faces": {"holds": "angle", "means": "Which way it looks in plan.", "one": true}
       }
     },
     "row": {
@@ -937,7 +944,7 @@
       "needs": ["row", "step", "first"],
       "fields": {
         "row": {"holds": "number", "means": "How many."},
-        "step": {"holds": "point", "means": "From each to the next."},
+        "step": {"holds": "point", "means": "From each to the next.", "one": true},
         "first": {"holds": "first spot", "means": "The first spot. It may hold several named spots, which makes 1.a, 1.b, 2.a and so on."},
         "names": {"holds": "list of texts", "means": "Names to use in place of numbers."}
       }
@@ -948,8 +955,8 @@
       "needs": ["ring", "around", "step", "first"],
       "fields": {
         "ring": {"holds": "number", "means": "How many."},
-        "around": {"holds": "point", "means": "The point in the middle."},
-        "step": {"holds": "angle", "means": "The angle from each to the next, anticlockwise from above."},
+        "around": {"holds": "point", "means": "The point in the middle.", "one": true},
+        "step": {"holds": "angle", "means": "The angle from each to the next, anticlockwise from above.", "one": true},
         "first": {"holds": "first spot", "means": "The first spot. It may hold several named spots, which makes 1.a, 1.b, 2.a and so on."},
         "names": {"holds": "list of texts", "means": "Names to use in place of numbers."}
       }
@@ -957,7 +964,7 @@
     "piece": {
       "means": "A kind of game piece.",
       "fields": {
-        "shape": {"holds": "shape", "means": "Its shape."},
+        "shape": {"holds": "shape", "means": "Its shape.", "one": true},
         "mass": {"holds": "mass", "means": "Its mass."},
         "stiff": {"holds": "flag", "means": "Whether it keeps its shape when pressed."},
         "still_one_if": {"holds": "text", "means": "What a worn or damaged one must still be like to count, in words."},
@@ -983,7 +990,7 @@
     "opening": {
       "means": "A hole that pieces go through.",
       "fields": {
-        "outline": {"holds": "outline", "means": "Its shape: a circle, a rectangle [width, height] or a hexagon."},
+        "outline": {"holds": "outline", "means": "Its shape: a circle, a rectangle [width, height] or a hexagon.", "one": true},
         "slope": {"holds": "angle", "means": "How the opening's plane stands: 0 deg is flat, 90 deg is upright. In between, it looks upward, toward `faces`."},
         "from": {"holds": "word opening_from", "means": "The side that pieces come from."},
         "bottom": {"holds": "length", "means": "Carpet to its lowest edge."},
@@ -1064,7 +1071,7 @@
       "fields": {
         "per": {"holds": "text", "means": "What it is earned once for each of, in words: `piece`, `robot` or `match`."},
         "points": {"holds": "list of points", "means": "The points, by when. Of the rows that are true, the one with the most entries in `when` counts (`not lit` is one); two that tie are refused."},
-        "rp": {"holds": "number", "means": "Ranking points."},
+        "rp": {"holds": "number", "means": "Ranking points.", "one": true},
         "needs": {"holds": "conditions", "means": "Conditions that must be true."},
         "looked_at": {"holds": "word looked_at", "means": "When a program looks whether its `needs` are true. Every award per robot has it."},
         "unless": {"holds": "awards", "means": "Awards that cancel this one."},
@@ -1079,7 +1086,7 @@
       "needs": ["when", "points"],
       "fields": {
         "when": {"holds": "when", "means": "When these points are earned."},
-        "points": {"holds": "number", "means": "How many."}
+        "points": {"holds": "number", "means": "How many.", "one": true}
       }
     },
     "easier": {
@@ -1096,13 +1103,13 @@
       "fields": {
         "awards": {"holds": "awards", "means": "The awards."},
         "or_sooner": {"holds": "text", "means": "What ends the looking sooner, in words."},
-        "after_": {"holds": "after period", "means": "`after_` and a period's ID: how long after that period they are still looked at."}
+        "after_": {"holds": "after period", "means": "`after_` and a period's ID: how long after that period they are still looked at.", "one": true}
       }
     },
     "foul": {
       "means": "What a broken rule may cost.",
       "fields": {
-        "points_to_them": {"holds": "number", "means": "The points that the other alliance gets."}
+        "points_to_them": {"holds": "number", "means": "The points that the other alliance gets.", "one": true}
       }
     },
     "conduct": {
@@ -1541,6 +1548,13 @@
         "relay": {"means": "A relay."},
         "pneumatics": {"means": "A pneumatics controller."},
         "own": {"means": "A controller built into one motor."}
+      }
+    },
+    "each": {
+      "means": "What a number is counted for each of, when it is not an ID.",
+      "words": {
+        "spot": {"means": "Each spot of the record."},
+        "alliance": {"means": "Each alliance."}
       }
     },
     "no_limit": {

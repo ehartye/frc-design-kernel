@@ -2,6 +2,7 @@
 
     Reader(book, faults)    read(entry, node, where, holds) and value(entry, node, kind, where): the Leaves of one field
     Leaf                    one value as it is written: a printed number, formula, count or flag
+    in_words(kind)          a kind in words, for a message
     is_group(node)          whether an object is a group of values, and not a value itself
 
 Values that are worked out later are left alone: a formula is a Leaf whose node starts with "=". A Leaf's kind is what its
@@ -31,6 +32,7 @@ class Leaf:
     where: str
     kind: str | None
     node: object
+    one: str = ""       # the place in which one number is needed, when that is no field: a compare of a condition
 
 
 def place(where, i, many):
@@ -120,7 +122,7 @@ class Reader:
         if got is None:
             self.fault(where, "is a list, not one value" if isinstance(node, list) else "is not a value", quantity.HOW_TO_WRITE + or_words)
         elif kind not in (None, got):
-            self.fault(where, f"holds {_a(got)}, not {_a(kind)}", f"Write {_a(kind)}{or_words}")
+            self.fault(where, f"holds {in_words(got)}, not {in_words(kind)}", f"Write {in_words(kind)}{or_words}")
         return got is not None and kind in (None, got)
 
     def _object_value(self, entry, node, kind, where, loose):
@@ -240,6 +242,12 @@ class Reader:
 
     def holds_was(self, entry, node, where):
         return self.holds_differs(entry, node, where, dated=True)
+
+    def holds_each(self, entry, node, where):
+        known = [*word_list("each"), *self.book.ids]
+        if not isinstance(node, str) or node not in known:
+            self.faults.append(unknown(where, "thing that it is counted for", node, known))
+        return ()
 
     def holds_date(self, entry, node, where):
         try:
@@ -361,7 +369,7 @@ class Reader:
             yield from self._drawn(entry, {k: v for k, v in one.items() if k != "at"}, at, names()["shapes"], "shape")
 
 
-def _a(kind):
+def in_words(kind):
     """A kind in words."""
     words = {"number": "a count", "flag": "true or false", "angle": "an angle"}
     return words.get(kind, f"a {kind}" if kind in names()["units"] else f"a number of {kind}")

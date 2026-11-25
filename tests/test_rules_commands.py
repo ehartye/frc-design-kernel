@@ -258,6 +258,36 @@ class Get(Command):
             self.assertEqual([answer[name] for name in ("kind", "value", "limit", "low", "high", "printed", "src")], [value.kind, value.value, value.limit, value.low, value.high, value.printed, value.src])
 
 
+class Each(Command):
+    """rules get and find of a count for each spot, and of a cap at some times."""
+
+    @staticmethod
+    def cap(d):
+        d["scoring"]["awards"]["hang"]["most"] = {"each": "alliance", "is": 2, "when": ["auto", "not lit"]}
+
+    def test_lines(self):
+        """Catches an answer that does not tell what its number is for each of, or when."""
+        self.assertEqual(self.lines("get", "near_bales.starts.bale")[:2], ["near_bales.starts.bale: 1", "  each: spot"])
+        self.assertEqual([line for line in self.lines("get", "hang.most", change=self.cap) if line.startswith(("  each", "  when"))], ["  each: alliance", "  when: auto, not my lit"])
+        self.assertNotIn("each", self.printed("get", "total.bale").partition("total.bale: ")[2].splitlines()[0])
+
+    def test_json(self):
+        """Catches a program that is not told, or that is given whole records in place of the names of times."""
+        def answer(path, change=None):
+            got = json.loads(self.printed("get", path, "--json", change=change))["answer"]
+            return got["value"], got["each"], got["when"]
+        self.assertEqual(answer("near_bales.starts.bale"), (1, "spot", []))
+        self.assertEqual(answer("hang.most", self.cap), (2, "alliance", ["auto", "not my lit"]))
+        self.assertEqual(answer("total.bale"), (60, None, []))
+
+    def test_find(self):
+        """Catches a record told in full without what a count is for each of, or when."""
+        self.assertIn("each: spot", self.printed("find", "near_bales"))
+        told = self.printed("find", "hang", change=self.cap)
+        self.assertIn("each: alliance", told)
+        self.assertIn("when: auto, not lit", told)
+
+
 class Json(Command):
     """rules get --json: the same as plain data."""
 
@@ -269,7 +299,7 @@ class Json(Command):
         self.assertEqual(self.json("barn.opening.bottom"), {
             "path": "barn.opening.bottom", "alliance": "blue", "spot": None, "variants": {},
             "means": {"key": "opening.bottom", "means": "Carpet to its lowest edge."},
-            "answer": {"kind": "length", "value": 1219.2, "unit": "mm", "limit": None, "low": None, "high": None, "printed": "48 in", "of": None, "assumed": None, "src": "manual 3.5", "differs": [], "name": None}})
+            "answer": {"kind": "length", "value": 1219.2, "unit": "mm", "limit": None, "low": None, "high": None, "printed": "48 in", "of": None, "assumed": None, "src": "manual 3.5", "differs": [], "each": None, "when": [], "name": None}})
 
     def test_in_another_unit(self):
         """Catches a value in the unit asked whose ends stay in mm."""

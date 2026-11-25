@@ -9,6 +9,7 @@ scores), starts and runs (how many), and records, outline and solid (what stands
 kg, every time in s and every angle in degrees. A variant that is not named is the first one in game.json.
 """
 import copy
+from pathlib import Path
 
 from ..errors import DesignError, unknown
 from . import alliances, conditions, derive, fields, outlines, parts, pieces, quantity, records, says, shapes, times, words
@@ -32,19 +33,22 @@ def faults(folder):
 
 def examine(folder):
     """(the Book or None when a file does not read, every DesignError)."""
-    book, found = words.load(folder)
-    return book, found + derive.faults(book, found) if book else found
+    try:
+        book, found = words.load(folder)
+        return book, found + derive.faults(book, found) if book else found
+    except RecursionError:
+        return None, [DesignError(Path(folder).resolve().name, "has data inside data inside data, too deep to read", "Write each value in as few objects and lists as it needs")]
 
 
 class Rules:
-    """Answers from one rules folder. Nothing is written, and nothing is judged."""
+    """Answers from one rules folder. Nothing is written, and nothing is judged. What is given is a copy: an asker may change it."""
 
     def __init__(self, book):
         self.book, self.season = book, Season(book)
 
     def get(self, path, /, alliance="blue", spot=None, **variants):
         """The value that a path names, such as "barn.opening.bottom"; a list of them for a list; a shape or an outline in mm."""
-        return copy.deepcopy(self.season.worker(**variants).get(path, alliance, spot))      # what is remembered stays as it is
+        return copy.deepcopy(self.season.worker(**variants).get(path, alliance, spot))
 
     def limit(self, name, **variants):
         """The limit of that name, such as "reach.far", or None when this season has no such limit."""
@@ -99,7 +103,7 @@ class Rules:
         """The conditions of a field, such as "G90.must_not", parsed: Conditions and Groups. True for a must_not that is true."""
         worker = self.season.worker(**variants)
         entry, node = conditions.node_of(worker, path, ("conditions", "must not"), "conditions")
-        return self._of(entry, lambda: conditions.conditions(worker, entry, node))
+        return copy.deepcopy(self._of(entry, lambda: conditions.conditions(worker, entry, node)))
 
     def when(self, asked):
         """The names of a `when`, such as "G95.when" or a list of them, as Moments; for the `true` of a state, a tuple for each way."""
@@ -107,7 +111,7 @@ class Rules:
         if isinstance(asked, str):
             _, node = conditions.node_of(self.season.worker(), asked, ("when", "list of whens"), "when")
             several = bool(node) and isinstance(node[0], list)
-        return [conditions.moments(self.book, one) for one in node] if several else conditions.moments(self.book, node)
+        return copy.deepcopy([conditions.moments(self.book, one) for one in node] if several else conditions.moments(self.book, node))
 
     def windows(self, **variants):
         """{name: Window}, with its period, and its start and end in seconds from the start of its period."""
@@ -122,7 +126,7 @@ class Rules:
         known = self.book.of_kind("award")
         if award not in known:
             raise unknown("", "award", award, known)
-        return self._of(known[award], lambda: conditions.rows(self.season.worker(**variants), known[award]))
+        return copy.deepcopy(self._of(known[award], lambda: conditions.rows(self.season.worker(**variants), known[award])))
 
     def starts(self, piece, **variants):
         """{record: how many of a piece it has at the start}, such as {"stall@blue": 20, "stall@red": 20}."""
@@ -138,7 +142,7 @@ class Rules:
 
     def records(self, file, **variants):
         """Every record of a file in the order written, with red's and every spot made: crate@red, rack@red.3.b."""
-        return records.records(self.season.worker(**variants), file)
+        return copy.deepcopy(records.records(self.season.worker(**variants), file))
 
     def outline(self, ident, alliance="blue", spot=None, **variants):
         """The outline of a record on the field: its points [(x, y), ...] in mm."""

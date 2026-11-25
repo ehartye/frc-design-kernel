@@ -102,6 +102,9 @@ class Conditions(Derived):
         self.assertIs(rules.conditions("G97.must_not"), True)
         words = self.rules(lambda d: d["scoring"]["awards"]["hang"]["needs"].__setitem__(1, ["my robot", "not touching", ["the yard", "my tall yard", "pond"]]))
         self.assertEqual([one if isinstance(one, str) else (one.whose, one.name) for one in words.conditions("hang.needs")[1].what], ["the yard", "my tall yard", (None, "pond")])
+        kinds = self.rules(lambda d: d["scoring"]["awards"]["hang"]["needs"].__setitem__(1, ["my robot", "not touching", ["hang", "auto", "minor", "G90", "carry", "bale", "bridge"]]))
+        self.assertEqual([one if isinstance(one, str) else one.name for one in kinds.conditions("hang.needs")[1].what], ["hang", "auto", "minor", "G90", "carry", "bale", "bridge"])
+        self.assertEqual([isinstance(one, str) for one in kinds.conditions("hang.needs")[1].what], [True] * 5 + [False] * 2)
         self.wrong(lambda: rules.conditions("G91.must_not"), "G91")
         self.wrong(lambda: rules.conditions("yard.deep"), "conditions")
 

@@ -75,9 +75,7 @@ class _Draw:
         return number
 
     def outline(self, node):
-        points = outlines.drawn(self.worker, self.entry, node, self.mirrored)
-        outlines.check(points)
-        return points
+        return outlines.checked(self.worker, self.entry, node, self.mirrored)
 
     def lift(self, node):
         """How far its lowest point is below its centre, for what is round; 0 for what stands on 0."""

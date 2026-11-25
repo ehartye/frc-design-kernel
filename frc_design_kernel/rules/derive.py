@@ -5,14 +5,11 @@
 One mistake is told once, where it is written. What needs a value that does not read, or that cannot be worked out, is passed
 over: so everything is looked at once, and then again without what uses a value that was at fault.
 """
-from ..errors import DesignError
+from ..errors import DesignError, unknown
 from . import alliances, conditions, fields, outlines, parts, pieces, quantity, says, shapes, ties, times, words
 from .read import names
-from .values import _a as a
-from .worker import Loop, Season, Wrong, inside
-
-ONE_NUMBER = ("point", "outline", "shape")     # what holds numbers that must each be one, and no range
-ONE_NUMBER_KEYS = ("placed.faces", "spot.faces", "tag.faces", "ring.step", "size.length", "size.width", "period.lasts", "window.first", "window.last", "judged.after_")
+from .values import in_words
+from .worker import Loop, Season, TooLong, Wrong, inside
 
 
 def faults(book, found=()):
@@ -24,6 +21,11 @@ def faults(book, found=()):
     first = _Check(book, all_of_it, bad).all()
     again = _Check(book, all_of_it, bad | {_place(f) for f in first}, bad).all() if len(first) > 1 else first
     return sorted(again, key=lambda fault: _files().index(fault.where.split(" ")[0]))
+
+
+def _first(leaf):
+    """The name of the field of its record that a Leaf is in."""
+    return leaf.where.removeprefix(f"{leaf.entry.where}.").partition(".")[0].partition("[")[0]
 
 
 def _place(fault):
@@ -39,7 +41,7 @@ class _Check:
     """Looks at everything. bad is where a value is at fault; unread, where it does not even read."""
 
     def __init__(self, book, all_of_it, bad, unread=None):
-        self.book, self.faults, self.loops = book, {}, set()
+        self.book, self.faults, self.told = book, {}, set()
         self.leaves, self.fields = all_of_it
         self.unread = set(bad if unread is None else unread)
         several = self.several()
@@ -48,11 +50,14 @@ class _Check:
 
     def several(self):
         """Where a range is written, or limits of which one is enough, and one number is needed."""
-        held = {field.where for field in self.fields if field.holds in ONE_NUMBER or field.key in ONE_NUMBER_KEYS}
+        held = [field.where for field in self.fields if field.one]
         found = set()
         for leaf in self.leaves:
-            where, any_of, _ = leaf.where.partition(".any[")
-            if (any_of or isinstance(leaf.node, str) and _is_range(leaf.node)) and any(inside(where, one) for one in held):
+            a_range = _is_range(leaf.node)
+            needed = leaf.one or next((one for one in held if inside(leaf.where, one)), None) if a_range or ".any[" in leaf.where else None
+            rest, any_of, _ = leaf.where.removeprefix(needed or "").partition(".any[")      # before the place there may be one of a group of conditions
+            if needed and (a_range or any_of):
+                where = needed + rest
                 found.add(where)
                 what = "lists limits of which one is enough" if any_of else f'"{leaf.node}" is a range'
                 self.fault(DesignError(where, f"{what}, and one number is needed here", "Write one number; with +/- it may have a tolerance"))
@@ -100,16 +105,31 @@ class _Check:
         """One formula: whether it can be worked out, and gives what its field holds."""
         def work(worker):
             try:
-                kind = worker.formula(leaf.node).kind
+                kind = worker.once(leaf.where, lambda: worker.formula(leaf.node)).kind     # as long a chain as for whoever asks for it
             except Wrong as problem:
-                if problem.text != leaf.node or isinstance(problem, Loop) and frozenset(problem.texts) in self.loops:
-                    return
-                if isinstance(problem, Loop):
-                    self.loops.add(frozenset(problem.texts))
-                raise DesignError(leaf.where, problem.problem, problem.fix) from None
+                return self.tell(problem, leaf.node, leaf.where)
+            if kind == "mass" and leaf.entry.path == "limits.weight" and (name := _first(leaf)) not in fields.spec_for(leaf.entry).known:
+                raise unknown(leaf.entry.where, "weight", name, names()["limits"]["weight"]["fields"])
             if leaf.kind not in (None, kind):
-                raise DesignError(leaf.where, f'the formula "{leaf.node}" gives {a(kind)}, not {a(leaf.kind)}', f"Write {a(leaf.kind)}")
+                raise DesignError(leaf.where, f'the formula "{leaf.node}" gives {in_words(kind)}, not {in_words(leaf.kind)}', f"Write {in_words(leaf.kind)}")
         self.over(work, leaf.where)
+
+    def words(self, worker, field, before):
+        """One text of words: whether each {name} in it can be filled in."""
+        try:
+            worker.once(field.where, lambda: says.fill(worker, field.entry, field.owner, before, field.node))
+        except Wrong as problem:
+            self.tell(problem, says.path_of(field.entry, before), field.where)
+
+    def tell(self, problem, own, where):
+        """Raise what is wrong with a formula or words at their own place. What another place tells is passed over, and a loop, or
+        a chain that is too long, is told once."""
+        told = frozenset(problem.texts) if isinstance(problem, Loop) else TooLong if isinstance(problem, TooLong) else None
+        if told in self.told or problem.text != own and told is not TooLong:
+            return
+        if told:
+            self.told.add(told)
+        raise DesignError(where, problem.problem, problem.fix) from None
 
     # -- records
 
@@ -139,8 +159,8 @@ class _Check:
             self.over(lambda worker: times.judged(worker, award), entry.where)
 
     def of_state(self, entry):
-        if self.reads(entry.where) and self._clock() and (found := ties.round(self.book, entry)) and frozenset(found) not in self.loops:
-            self.loops.add(frozenset(found))
+        if self.reads(entry.where) and self._clock() and (found := ties.round(self.book, entry)) and frozenset(found) not in self.told:
+            self.told.add(frozenset(found))
             self.fault(DesignError(f"{entry.where}.true", f"needs itself: {' needs '.join(found)}", "Say what makes one of them true without the others"))
 
     def _clock(self):
@@ -179,16 +199,16 @@ class _Check:
         if field.holds == "shape":
             self.over(lambda worker: shapes.drawn(worker, field.entry, field.node, False), field.where)
         elif field.holds == "outline":
-            self.over(lambda worker: outlines.check(outlines.drawn(worker, field.entry, field.node, False)), field.where)
+            self.over(lambda worker: outlines.checked(worker, field.entry, field.node, False), field.where)
         elif field.holds == "says":
             before = field.where.partition(" ")[2].removeprefix(field.entry.path + ".").split(".")[:-1]
-            self.over(lambda worker: says.fill(worker, field.entry, field.owner, before, field.node), field.where)
+            self.over(lambda worker: self.words(worker, field, before), field.where)
         elif field.key in ("tag.at", "tag.faces"):
             self.over(lambda worker: worker.get(field.where.partition(" ")[2]), field.where)
 
 
-def _is_range(text):
+def _is_range(node):
     try:
-        return quantity.read(text).value is None
+        return isinstance(node, str) and quantity.read(node).value is None
     except DesignError:
         return False

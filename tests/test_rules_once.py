@@ -1,7 +1,6 @@
 """Each value is written once: a number that changes changes all that is worked out from it, and nothing else."""
 import copy
 import json
-import re
 import unittest
 
 from .rules_cases import Checked, Derived, example, written
@@ -62,12 +61,14 @@ class Once(Derived):
         change = lambda d: d["field"]["size"]["length"].update(bolted="600 in")
         self.assertEqual(self.changed(change), set())
         got = self.changed(change, field="bolted")
-        red = {name for name in everything(self.rules()) if re.search(r"@red.*\.(at|outline|ends)$", name)} - {"stall@red.near.at", "stall@red.far.at"}     # red's stalls stand at 0
+        one = ["yard", "paddock", "fold", "crate", "manger", "boulder", "tyre", "culvert", "ramp", "barn_body", "trestle", "pen", "arch", "bar", "swing", "mast", "patch", "barn", "loft", "chimney", "bench"]
+        spots = {"gateway": ["near", "far"], "rope": ["front", "left", "right"], "near_bales": "1234", "rack": [f"{i}.{p}" for i in "123456" for p in "ab"], "hooks": ["left", "right"]}     # red's stalls stand at 0
+        red = {f"{name}@red.at" for name in one} | {f"{name}@red.{spot}.at" for name, known in spots.items() for spot in known}
+        red |= {f"{name}@red.outline" for name in ("yard", "paddock", "lane", "fold")} | {"gate_line@red.ends"}
         middle = {"pond.at", "pond.outline", "centre.ends", "silo.at", "bridge.at", "spare_hoops.at", "vine.at", *(f"centre_bales.spots.{i}.at" for i in "abcdef")}
         blue = {"loft@blue.at", "chimney@blue.at", "stall@blue.near.at", "stall@blue.far.at", "tags.t2.at"}
         formulas = {f"{name}.x" for name in ["pond.at", "centre.from", "centre.to", "silo.at", "bridge.at", "tags.t2.at", "centre_bales.spots.first.at", "stall.spots.near.at", "stall.spots.far.at", "loft.at", "chimney.at", "spare_hoops.at", "vine.at"]}
         self.assertEqual(got, red | middle | blue | formulas)
-        self.assertEqual(len(red), 26 + 23)     # of the field and of the places
 
     def test_a_variant(self):
         """Catches one variant that is worked out from another and keeps its old number."""
@@ -108,6 +109,18 @@ class Twice(Checked):
         """Catches a number typed in says that the record holds."""
         self.refused(lambda d: d["conduct"]["G89"].update(says="At most 3 bales in its own fold for longer than {longer_than}."), "conduct.json G89.says", "types 3")
         self.accepted(lambda d: d["conduct"]["G89"].update(says="At most {limit.bale} bales in its own fold for longer than {longer_than}."))
+
+    def test_in_says_at_any_depth(self):
+        """Catches a number typed in words deeper in a record, where the record holds it; what was once so, or others say, may hold it."""
+        barn = lambda d, where, text: d["places"]["barn"][where].update(says=text)
+        self.refused(lambda d: barn(d, "opening", "It is 5 in deep."), "places.json barn.opening.says", "types 5, which barn.opening.depth holds")
+        self.refused(lambda d: barn(d, "opening", "It stands 20 in out."), "places.json barn.opening.says", "types 20, which barn.out holds")
+        self.refused(lambda d: d["places"]["stall"]["spots"]["near"].update(says="It is 60 in along."), "places.json stall.spots.near.says", "types 60")
+        self.refused(lambda d: d["robot"]["limits"]["weight"]["bumpers"].update(says="At most 16 lb."), "robot.json limits.weight.bumpers.says", "types 16")
+        self.refused(lambda d: d["places"]["barn"]["takes"][0].update(says="Over 48 in."), "places.json barn.takes[0].says", "types 48")
+        self.accepted(lambda d: barn(d, "opening", "It is {depth} deep and 17 in wide."))
+        self.accepted(lambda d: d["places"]["barn"].update(was=[{"until": "2031-02-04", "says": "It was 20 in out.", "src": "update3 5"}]))
+        self.accepted(lambda d: d["places"]["barn"].update(differs=[{"says": "It is 20 in out.", "src": "drawings sheet 6"}]))
 
     def test_a_key(self):
         """Catches a field written twice, of which JSON keeps the last."""

@@ -2,7 +2,7 @@
 
     drawn(worker, entry, node)    its points about its own middle, or as they are listed: for an opening or inside a shape
     on_field(place, node)         its points on the field, for an alliance and a spot
-    check(points)                 a DesignError for an outline that has no area or that crosses itself
+    checked(worker, entry, node)  the same as drawn; a DesignError for an outline that has no area, or that crosses or touches itself
 
 A circle comes back as CIRCLE points on it. Between two of them the side is inside the true circle, by at most 0.1 % of its
 radius (1 - cos 2.5 deg): 0.02 in for a circle 40 in wide.
@@ -15,6 +15,7 @@ from . import worth
 from .alliances import Place
 
 CIRCLE = 72
+TOUCH = 0.001       # mm: nearer than this, a point lies on a side
 
 
 def drawn(worker, entry, node, mirrored):
@@ -53,13 +54,27 @@ def on_field(place, node):
     return [place.xy(*point) for point in points]
 
 
-def check(points):
-    """A DesignError for an outline that has no area or that crosses itself."""
+def checked(worker, entry, node, mirrored):
+    """The points of an outline that has an area, and neither crosses nor touches itself."""
+    points = drawn(worker, entry, node, mirrored)
     sides = list(zip(points, [*points[1:], points[0]]))
     if abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in sides)) < 1e-6:
         raise DesignError("", "has no area", "Check for a size of 0, or points on one line")
+    if not isinstance(worker.unwrap(node)[0], list):
+        return points       # a rectangle, a hexagon and a circle do neither
     if any(_cross(*one, *other) for one, other in itertools.combinations(sides, 2)):
         raise DesignError("", "crosses itself", "List its points in order, all the way round")
+    if any(_from(point, *side) < TOUCH for i, point in enumerate(points) for j, side in enumerate(sides) if j not in (i, (i - 1) % len(points))):
+        raise DesignError("", "touches itself", "List each point once, and no point that lies on another side")
+    return points
+
+
+def _from(point, a, b):
+    """How far a point is from a side, in mm."""
+    along = (b[0] - a[0], b[1] - a[1])
+    part = ((point[0] - a[0]) * along[0] + (point[1] - a[1]) * along[1]) / ((along[0] ** 2 + along[1] ** 2) or 1)
+    part = min(1, max(0, part))
+    return math.dist(point, (a[0] + part * along[0], a[1] + part * along[1]))
 
 
 def _cross(a, b, c, d):

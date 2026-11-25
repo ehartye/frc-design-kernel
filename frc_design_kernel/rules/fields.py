@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 
 from ..errors import DesignError, unknown
+from . import quantity
 from .read import Entry, inner_spots, is_pattern, names
 from .values import Reader, a_list, is_group, slip
 
@@ -23,6 +24,7 @@ class Property:
     key: str            # its kind and its name: "opening.bottom", "limits.reach.far", "game.variants"
     holds: str
     means: str
+    one: bool           # whether one number is needed there, and no range
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,7 @@ class Field:
     node: object
     owner: dict         # the object that the field is in
     key: str = ""       # the key of its Property; "" for an extra field
+    one: bool = False   # whether one number is needed in it
 
 
 @dataclass(frozen=True)
@@ -50,7 +53,7 @@ class Spec:
 
 
 def properties(label, about):
-    return {name: Property(f"{label}.{name}", one["holds"], one["means"]) for name, one in about.get("fields", {}).items()}
+    return {name: Property(f"{label}.{name}", one["holds"], one["means"], one.get("one", False)) for name, one in about.get("fields", {}).items()}
 
 
 @functools.lru_cache(maxsize=None)
@@ -129,7 +132,7 @@ def object_fields(entry, data, spec, where, faults):
         one = spec.known.get(name) or next((p for start, p in spec.known.items() if start.endswith("_") and name.startswith(start)), None)
         holds = one.holds if one else _rest(entry, spec, name, node, where, faults)
         if holds:
-            field = Field(entry, at, name, holds, node, data, one.key if one else "")
+            field = Field(entry, at, name, holds, node, data, one.key if one else "", bool(one and one.one))
             yield field
             yield from _inside(field, faults)
 
@@ -138,11 +141,22 @@ def _rest(entry, spec, name, node, where, faults):
     """What a name holds that this kind of record does not have in fields.json, or None when it is refused."""
     if spec.closed:
         faults.append(unknown(where, "field", name, spec.known))
-    elif entry.path == "limits.weight" and isinstance(node, dict) and "max" in node:
+    elif entry.path == "limits.weight" and where == entry.where and (is_group(node) or weighs(node)):
         faults.append(unknown(where, "weight", name, names()["limits"]["weight"]["fields"]))
     elif spec.rest != "extra" or not slip(where, name, spec.known, faults):
         return spec.rest
     return None
+
+
+def weighs(node):
+    """Whether a value reads as a mass, in any of its forms."""
+    if isinstance(node, str):
+        try:
+            return quantity.read(node).kind == "mass"
+        except DesignError:
+            return False
+    inner = node if isinstance(node, list) else [node["is"]] if isinstance(node, dict) and "is" in node else node.values() if isinstance(node, dict) and "text" not in node else ()
+    return any(weighs(one) for one in inner)
 
 
 def _inside(field, faults):

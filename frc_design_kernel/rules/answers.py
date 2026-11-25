@@ -7,7 +7,7 @@ A number is told in its base unit (mm, kg, s, deg), or in the unit asked. An out
 shape is in the library's own grammar, in mm.
 """
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from ..errors import DesignError
 from . import quantity
@@ -27,7 +27,7 @@ def plain(rules, got, unit=None):
         inner = [plain(rules, one, unit) for one in got]
         return {"any": inner} if isinstance(got, AnyOf) else inner
     shown_in, (number, low, high) = _numbers(rules, got, unit)
-    return {**asdict(got), "value": number, "low": low, "high": high, "unit": shown_in}
+    return {**asdict(replace(got, when=())), "value": number, "low": low, "high": high, "unit": shown_in, "when": [moment.words for moment in got.when]}
 
 
 def lines(rules, path, got, unit=None):
@@ -106,8 +106,9 @@ def _no_unit(unit):
 
 
 def _about(value):
-    """What is known of a value beside its number: what is measured, why it was chosen, its source and what others say."""
-    found = [f"  {name}: {text}" for name, text in (("of", value.of), ("assumed", value.assumed), ("src", _listed(value.src))) if text]
+    """What is known of a value beside its number: what it is for each of, when, what is measured, why it was chosen, its source and what others say."""
+    when = ", ".join(moment.words for moment in value.when)
+    found = [f"  {name}: {text}" for name, text in (("each", value.each), ("when", when), ("of", value.of), ("assumed", value.assumed), ("src", _listed(value.src))) if text]
     for other in value.differs:
         is_, where = other.get("is", other.get("says")), ", ".join(text for text in (other.get("of"), _listed(other["src"])) if text)
         found.append(f"  differs: {is_ if isinstance(is_, str) else json.dumps(is_)} ({where})")
