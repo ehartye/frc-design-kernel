@@ -28,7 +28,7 @@ enough for a reader who never opens the manual. Do not give structure to a rule 
 All nine files must be there. Each is one JSON object. IDs start with a letter and use letters, digits and underscores.
 An ID is used once in the folder. **A path is the ID and then field names,** with no file name: `bale.mass`,
 `barn.opening.bottom`. Some begin with a word instead: `size.length`, `limits.reach.far`, `tags.t4.at.x`, `total.bale`,
-`judged.late.after_teleop`, `parts.wire.main.thinnest`.
+`judged.late.after_teleop`, `parts.wire.main.thinnest`, `guardrail.height`, `accuracy.decimal`.
 
 ## 2. Fields any record may have
 
@@ -46,9 +46,10 @@ rule is a whole list in `parts`, its `says` gives the rule and names the group.
 
 **In `says` a limit prints without its words:** `{limits.height.max}` prints `4 ft`, so write "at most {limits.height.max}".
 
-**A record may hold more values than this page names,** such as `"gate_width": "38 in"`. Use a name of letters, digits and
+**A record may hold more values than this page names,** such as `"paint_width": "2 in"`. Use a name of letters, digits and
 underscores that says what it is, or add `of`. A name that is nearly one this page gives that kind of record is refused as
-a slip. An extra value is a number, a `true` or `false`, or `{"text": "words"}`.
+a slip. An extra value is a number, a `true` or `false`, or `{"text": "words"}`. At the top of `game.json`, `clock.json`,
+`field.json`, `scoring.json` and `robot.json` only the names that this page gives are allowed.
 
 ## 3. Values
 
@@ -58,7 +59,7 @@ a slip. An extra value is a number, a `true` or `false`, or `{"text": "words"}`.
 |---|---|
 | `"71 in"`, `"5 ft 4 3/8 in"`, `"1 min 50 s"`, `"17 deg"` | A quantity. Feet with inches, and minutes with seconds, may be joined |
 | `"6.4 oz +/- 0.3"`, `"290 in +5 -1"` | With a tolerance, in the same unit |
-| `"0.7 to 0.9 lb"` | A range: both ends are printed |
+| `"0.7 to 0.9 lb"` | A range: both ends are printed. It has a low and a high, and no one number between |
 | `"at most 96 in"`, `"at least 3/8 in"`, `"less than 2 1/4 in"`, `"more than 7 s"`, `"at most 6"`, `"1 to 2"` | A limit or a range, on a quantity or a count |
 | `{"any": [{"deep": "at most 1 in"}, {"wide": "at most 9 in"}]}` | One of these limits is enough |
 | `45` | A count |
@@ -90,12 +91,14 @@ conversion. A formula that names a value with variants has the same variants.
   "variants": {"field": ["welded", "bolted"], "event": ["regional", "championship"], "match": ["qualification", "playoff"], "gate": ["low", "high"]},
   "frame": {"origin": "blue wall, scoring table side, on the carpet", "x": "toward the red wall", "y": "away from the scoring table", "z": "up"},
   "people": {"coach": {"says": "Guides the team.", "most": 1}, "driver": {"says": "Runs the robot."}, "feeder": {"says": "Handles bales."},
-             "together": [{"of": ["driver", "feeder"], "most": 3}]}
+             "together": [{"of": ["driver", "feeder"], "most": 3}]},
+  "accuracy": {"says": "Sizes are nominal. Drawings hold {decimal} and {angle}.", "decimal": "0.4 in", "angle": "2 deg", "src": "manual 2"}
 }
 ```
 
 `variants` are the kinds of field, event and match, and anything that a team chooses, such as a gate's height. A question
-that names none gets the first.
+that names none gets the first. `accuracy` is how near the real field is to the numbers: `decimal` and `angle` are the
+drawings' tolerances.
 
 ## 5. Both alliances from one record
 
@@ -145,6 +148,7 @@ an `alliance`, a `robot`, a `piece`, a `place` or the `match`.
 ```json
 {
   "size": {"length": "612 in", "width": "300 in"}, "symmetry": "turn",
+  "guardrail": {"height": "22 in", "gates": 2, "gate_width": "41 in", "src": "manual 3"},
   "zones": {"yard": {"alliance": "each", "at": ["27 in", "40 in"], "outline": {"rectangle": ["54 in", "21 in"]}, "edge": "tape inside", "height": "none"}},
   "lines": {"centre": {"from": ["= size.length / 2", "0 in"], "to": ["= size.length / 2", "= size.width"]}},
   "solids": {"crate": {"alliance": "each", "at": ["131 in", "150 in", "0 in"], "faces": "0 deg", "shape": {"box": ["22 in", "55 in", "15 in"]}}},
@@ -163,11 +167,13 @@ an `alliance`, a `robot`, a `piece`, a `place` or the `match`.
 - **A zone, line, solid or hang that a rule or a score names must have an outline, `from` and `to`, a `shape`, or an `at`.**
   If no source gives it, it has `"no_geometry": "why"`, and the loader lists it.
 - `edge` is `tape inside` or `tape outside`. `height` is `none` (no limit) or a quantity. `for` is `people` when no robot goes there.
-- **A shape is drawn around its record's `at`, turned by `faces`,** and stands on the height in `at`. A box is `[along faces,
+- **A shape is drawn around its record's `at`, turned by `faces`,** and stands on the height in `at`: that is the
+  height of its lowest point, so a ball at `0 in` rests on the carpet. A box is `[along faces,
   across, up]`. Other shapes: `taper` `{bottom, top, tall}` (two outlines, for faces that lean), `cylinder` `{diameter, length, axis}`, `ball` `{diameter}`, `ring` `{inside, outside, thick}`, `tube` `{inside, outside, length}`, `prism`
-  `{outline, tall}`, and `join` or `cut`: lists of shapes, each with its own `at`.
+  `{outline, tall}`, and `join` or `cut`: lists of shapes, each with its own `at`, which is from the record's and stands the same way.
   Points of an outline inside a shape are from `at`, along `faces`. If no source gives the height a solid starts at, leave it
   out of `at` and put that in `unknown`.
+- `guardrail` is the wall along the long sides of the field: its `height`, how many `gates`, and each one's `gate_width`.
 - `equipment` is lights, station shelves, buttons and the like. A tag may have its own `panel`.
 - `passages` are `under` (`height`), `over` (`rise`, `slope`) or `between` (`width`).
 - `hangs` are `bar`, `chain`, `frame`, `post` or `ledge`. `at` is the middle of a bar, the lowest point of a chain, the middle
