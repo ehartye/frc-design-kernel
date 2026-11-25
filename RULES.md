@@ -315,6 +315,7 @@ No other names. Each also has `says` where the measuring needs it.
 | `about` | Of the whole group: `allow` is `only` (nothing else may be used) or `examples`; `one_of` is `true` if one of them is picked |
 | `name`, `part_numbers`, `number` | What it is called, its part numbers, and how many there must be |
 | `kind` | For a device that runs others: `controller`, `relay`, `pneumatics` or `own` (built into one motor) |
+| `only_for` | A list of loads: the device may run these and no others, whatever its `kind` allows |
 | `on` | For a motor or other load: how many one device of each kind may run. A kind that is left out may not run it. `"any"` is no limit, and `{"is": 1, "of": "each channel"}` is per channel |
 | `protection`, `each` | The breaker or fuse of a circuit, and how many circuits it may feed (a number, `any`, or an object) |
 | `thinnest`, `area` | The thinnest wire |
