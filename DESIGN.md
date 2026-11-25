@@ -163,7 +163,7 @@ frc_design_kernel/
     fields.py        the names that each record may use
     words.py         every word and every ID that a field names
     worth.py         one value: its number, limit, unit, source, and whether it uses a position
-    formulas.py      the arithmetic of one formula, its kinds, and whether it uses a position
+    formulas.py      the arithmetic of one formula, and its kinds
     worker.py        what is worked out, for one choice of variants
     alliances.py     where a record stands: for blue, for red and at each spot
     outlines.py      outlines as points
