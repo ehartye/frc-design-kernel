@@ -22,6 +22,7 @@ PATH = re.compile(r"(?<![\w.@])[A-Za-z][A-Za-z0-9_]*(?:@[a-z]+)?(?:\.[A-Za-z0-9_
 IN_SAYS = re.compile(r"\{([^{}]*)\}")
 WHEN = re.compile(r"(?:not )?(?:(my|their) )?([A-Za-z][A-Za-z0-9_]*)")
 TYPED = re.compile(r"(?<![\w.:/-])" + quantity.PLUS + r"(?![\w:/-]|\.\d)")
+OTHER = re.compile(r"\.(?:was|differs)\[")          # in the place of a Leaf that is not the value to use
 ONE_NUMBER = re.compile("(?<![A-Za-z0-9])" + quantity.NUMBER)
 
 
@@ -395,7 +396,7 @@ class Words:
         own = {}
         for leaf in found:
             number = _whole(leaf)
-            if number is not None and not re.search(r"\.(?:was|differs)\[", leaf.where):
+            if number is not None and not OTHER.search(leaf.where):
                 own.setdefault(leaf.entry.where, {}).setdefault(number, leaf.where)
         for entry in self.book.entries:
             says = entry.data.get("says")

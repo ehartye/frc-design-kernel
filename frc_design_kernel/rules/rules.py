@@ -2,6 +2,7 @@
 
     load_rules(folder)    a Rules, or the first DesignError raised
     faults(folder)        every DesignError
+    examine(folder)       (the Book, every DesignError)
 
 A Rules answers with get, limit, to and says (values and words), conditions, when, windows, judged and points (times and
 scores), starts and runs (how many), and records, outline and solid (what stands where). Every length is in mm, every mass in
@@ -18,7 +19,7 @@ from .worth import Value
 
 def load_rules(folder):
     """The Rules of a folder. The first thing that is wrong with it is raised."""
-    book, found = _read(folder)
+    book, found = examine(folder)
     if found:
         raise found[0]
     return Rules(book)
@@ -26,10 +27,11 @@ def load_rules(folder):
 
 def faults(folder):
     """Every DesignError of a folder: what does not read, and what cannot be worked out."""
-    return _read(folder)[1]
+    return examine(folder)[1]
 
 
-def _read(folder):
+def examine(folder):
+    """(the Book or None when a file does not read, every DesignError)."""
     book, found = words.load(folder)
     return book, found + derive.faults(book, found) if book else found
 

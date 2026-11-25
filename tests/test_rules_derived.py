@@ -196,6 +196,18 @@ class Get(Derived):
         self.assertEqual([get(f"fold.wide{end}").printed for end in ("", ".low", ".high")], ["5 ft +/- 1/4", "57 in", "63 in"])
         self.assertEqual([get(f"fold.long{end}").printed for end in ("", ".low", ".high")], ["5 to 6 ft", "5 ft", "6 ft"])
 
+    def test_minutes(self):
+        """Catches a worked-out time printed as a decimal minute, and one printed in minutes by its source that is not kept."""
+        def change(d):
+            d["scoring"]["judged"]["climbs"]["after_teleop"] = "= teleop.lasts / 10 + endgame.last"
+            d["clock"]["states"]["lit"].update(left="= teleop.lasts", shut="2 min +/- 1/4", rests="1 to 2 min")
+        get = self.rules(change).get
+        self.assertEqual((get("judged.climbs.after_teleop").printed, get("judged.climbs.after_teleop").unit), ("36 s", "s"))
+        self.assertEqual(get("lit.left").printed, "110 s")
+        self.assertEqual((get("teleop.lasts").printed, get("teleop.lasts").unit), ("1 min 50 s", "min"))
+        self.assertEqual([get(f"lit.shut{end}").printed for end in ("", ".low", ".high")], ["2 min +/- 1/4", "105 s", "135 s"])
+        self.assertEqual([get(f"lit.rests{end}").printed for end in ("", ".low", ".high")], ["1 to 2 min", "1 min", "2 min"])
+
     def test_how_a_number_is_printed(self):
         """Catches a number that prints with a tail of digits, with -0, or without its unit."""
         from frc_design_kernel.rules.worth import shown

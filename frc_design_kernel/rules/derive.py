@@ -5,8 +5,6 @@
 One mistake is told once, where it is written. What needs a value that does not read, or that cannot be worked out, is passed
 over: so everything is looked at once, and then again without what uses a value that was at fault.
 """
-import itertools
-
 from ..errors import DesignError
 from . import alliances, conditions, fields, outlines, parts, pieces, quantity, says, shapes, ties, times, words
 from .read import names
@@ -82,16 +80,10 @@ class _Check:
 
     def over(self, work, where):
         """Do work(worker) for each variant that it needs. What is wrong is a fault at where, or at the place it tells."""
-        kinds, before = [], None
-        while kinds != before:
-            before, asked = kinds, set()
-            for chosen in itertools.product(*(self.season.variants[kind] for kind in kinds)):
-                asked |= self._one(self.season.worker(**dict(zip(kinds, chosen))), work, where)
-            kinds = [kind for kind in self.season.variants if kind in asked or kind in kinds]
+        self.season.each(lambda worker: self._one(worker, work, where))
 
     def _one(self, worker, work, where):
-        """The kinds of variant that work(worker) needed."""
-        before, worker.asked, worker.own = worker.asked, set(), where
+        worker.own = where
         try:
             work(worker)
         except Wrong:
@@ -99,8 +91,7 @@ class _Check:
         except DesignError as problem:
             self.fault(problem if problem.where.split(" ")[0] in _files() else problem.under(where))
         finally:
-            asked, worker.asked, worker.own = worker.asked, before | worker.asked, None
-        return asked
+            worker.own = None
 
     def fault(self, problem):
         self.faults.setdefault(str(problem), problem)

@@ -199,6 +199,8 @@ class Asked(unittest.TestCase):
         from frc_design_kernel.rules import meanings, read
         for key in ["opening.bottom", "limits.reach.far", "game.variants", "judged.after_", "taper.tall"]:
             self.assertEqual(self.keys(key), [key])
+        for key, own in [("zone.at", "placed.at"), ("limits.reach.code", "every.code"), ("opening.says", "every.says"), ("row.says", None), ("post.at", None)]:
+            self.assertEqual(self.keys(key), [own] if own else [], key)
         one = meanings.find("opening.bottom")[0]
         self.assertEqual((one.holds, one.means), ("length", read.names()["kinds"]["opening"]["fields"]["bottom"]["means"]))
 
@@ -218,6 +220,104 @@ class Asked(unittest.TestCase):
                           ("total.bale", "total"), ("bale.mass.low", "piece.mass"), ("parts.wire.main.thinnest", "part.thinnest"), ("barn.out", None), ("yard", "zone"), ("limits.hold.bale", "limits.hold"), ("no.such", None)]:
             one = meanings.of_path(book, path)
             self.assertEqual(one.key if one else None, key, path)
+
+    def of_path(self, path, change=None):
+        from frc_design_kernel.rules import meanings, read
+        data = example()
+        if change:
+            change(data)
+        book, _ = read.gather("", data)
+        one = meanings.of_path(book, path)
+        return one.key if one else None
+
+    def test_of_a_spot(self):
+        """Catches a path to a spot that is told what spots are, or what its record is, and not what the property at its end is."""
+        for path, key in [("near_bales.spots.1.at", "spot.at"), ("near_bales.spots.1.at.x", "spot.at"), ("rack.spots.3.b.faces", "spot.faces"), ("rack.spots.3.b.post.tip", "post.tip"), ("gateway.spots.near.at.x", "spot.at"),
+                          ("rack@red.3.b.post.tip", "post.tip"), ("stall@red.near.opening.bottom", "opening.bottom"), ("stall.spots.far.opening.lip", "opening.lip"), ("rack@red.3.b.pair", None),
+                          ("rack@red.3.b", "spot"), ("barn@red.opening.bottom", "opening.bottom"), ("rack.spots.step", "ring.step"), ("rack.spots", "placed.spots")]:
+            self.assertEqual(self.of_path(path), key, path)
+
+    def test_of_an_extra_value_of_a_spot(self):
+        """Catches a value of a spot's own that is told what its record is."""
+        def change(d):
+            d["places"]["stall"]["spots"]["near"]["lean"] = "1 in"
+            d["places"]["rack"]["spots"]["first"]["a"]["lean"] = "1 in"
+            d["places"]["near_bales"]["spots"]["first"]["lean"] = "1 in"
+        for path in ["stall.spots.near.lean", "stall@red.near.lean", "rack.spots.3.a.lean", "rack@red.3.a.lean", "near_bales.spots.2.lean", "near_bales@red.2.lean"]:
+            self.assertIsNone(self.of_path(path, change), path)
+        self.assertEqual(self.of_path("stall@red.near.faces", change), "spot.faces")
+
+    def test_of_a_size(self):
+        """Catches a size in a shape or an outline that is told what the whole shape is."""
+        for path, key in [("pumpkin.shape.ball.diameter", "ball.diameter"), ("pumpkin.shape.ball.diameter.low", "ball.diameter"), ("bale.shape.tube.length", "tube.length"), ("hoop.shape.ring.inside", "ring.inside"),
+                          ("crate.shape", "solid.shape"), ("crate.shape.box.z", "shape: box"), ("crate@red.shape.box.z", "shape: box"), ("barn_body.shape.cut.y.box.x", "shape: box"), ("barn_body.shape.cut.y.at.z", "shape: cut"),
+                          ("pen.shape.prism.tall", "prism.tall"), ("pen.shape.prism.outline", "prism.outline"), ("manger.shape.taper.top.rectangle.x", "outline: rectangle"), ("trestle.shape.join.y.prism.outline.hexagon.flats", "hexagon.flats"),
+                          ("yard.outline.rectangle.x", "outline: rectangle"), ("loft.opening.outline.circle", "outline: circle"), ("lane.outline", "zone.outline"), ("yard.deep", "zone.deep")]:
+            self.assertEqual(self.of_path(path), key, path)
+
+    def test_of_a_size_by_variant(self):
+        """Catches the name of a variant on the way to a size that hides the size."""
+        def change(d):
+            d["field"]["zones"]["pond"]["outline"] = {"by": "gate", "low_gate": {"circle": "46 in"}, "high_gate": {"circle": {"is": "48 in"}}}
+        for path in ["pond.outline.high_gate.circle", "pond.outline.circle", "pond.outline.high_gate.circle.is"]:
+            self.assertEqual(self.of_path(path, change), "outline: circle", path)
+        self.assertEqual(self.of_path("pond.outline.high_gate", change), "zone.outline")
+
+    def test_what_must_be_there(self):
+        """Catches an author who is not told which names a record must have, and which others it may not."""
+        from frc_design_kernel.rules import meanings
+
+        def notes(key):
+            return [note for one in meanings.everything() if one.key == key for note in one.notes]
+        self.assertEqual(notes("window"), ["It must have `in`.", "It has exactly one of `first`, `last` and `timer`."])
+        self.assertEqual(notes("part"), ["It must have `src`.", "It has at least one of `name` and `for`."])
+        self.assertEqual(notes("zone"), ["It may have the fields of `placed`.", "It needs geometry, or `no_geometry`, when a rule or a score names it."])
+        self.assertEqual(notes("row"), ["It has no extra values.", "It must have `row`, `step` and `first`."])
+        self.assertEqual(notes("award"), ["With `per` robot it must have `looked_at`."])
+        self.assertEqual(notes("conduct"), ["It must have `says` and `cost`.", "With an `act` it has at least one of `must_not`, `only_if` and `limit`."])
+        self.assertEqual(notes("game.json"), ["It must have `name`, `season`, `edition`, `sources` and `frame`."])
+        self.assertEqual(notes("pieces.json"), ["Each name in it is the ID of a record of the kind `piece`."])
+        self.assertEqual((notes("limits.hold"), notes("total")), (["Its fields are the IDs of pieces."], ["Its fields are the IDs of pieces."]))
+        self.assertEqual((notes("cylinder.axis"), notes("cylinder.length")), (["It may be left out."], []))
+
+    def test_every_flag_is_told(self):
+        """Catches a new flag in fields.json that says what must be there and that nobody who asks is told."""
+        from frc_design_kernel.rules import meanings, read
+        self.assertEqual(not_told(read.names(), meanings.NOTES), [])
+
+    def test_a_flag_that_is_not_told_is_caught(self):
+        """Control: a flag of a kind and one of a field that no note tells are found."""
+        from frc_design_kernel.rules import meanings
+        self.data = {"kinds": {"zone": {"means": "x", "fields": {"at": {"holds": "x", "never": 1}}, "just_one": True}}}
+        self.assertEqual(not_told(self.data, meanings.NOTES), ["zone.just_one", "zone.at.never"])
+
+    def test_the_fields_of_a_kind(self):
+        """Catches a kind of record or a shape that is asked for and does not say what its fields are, or says another's."""
+        from frc_design_kernel.rules import meanings
+        fields = {one.key: [field.key for field in one.fields] for one in meanings.everything()}
+        self.assertEqual(fields["post"], ["post.tip", "post.slope", "post.diameter", "post.length"])
+        self.assertEqual(fields["shape: ring"], ["ring.inside", "ring.outside", "ring.thick"])
+        self.assertEqual(fields["ring"], ["ring.ring", "ring.around", "ring.step", "ring.first", "ring.names"])
+        self.assertEqual(fields["limits.reach"], ["limits.reach.far", "limits.reach.sides"])
+        self.assertEqual(fields["clock.json"], ["clock.periods", "clock.windows", "clock.states"])
+
+    def test_names_that_are_near(self):
+        """Catches a slip that is told nothing, and a name that is near nothing and is told something."""
+        from frc_design_kernel.rules import meanings
+        self.assertIn("bottom", meanings.near("botom"))
+        self.assertIn("opening.bottom", meanings.near("opening.botom"))
+        self.assertEqual(meanings.near("xyzzyq"), [])
+
+
+def not_told(data, notes):
+    """Each flag of fields.json, such as needs, that no note tells. What these names hold is told otherwise."""
+    told = {"means", "fields", "holds", "words", "examples", *notes}
+    found = []
+    for section in ("files", "kinds", "limits", "shapes", "outlines"):
+        for name, about in data.get(section, {}).items():
+            found += [f"{name}.{flag}" for flag in about if flag not in told]
+            found += [f"{name}.{field}.{flag}" for field, one in about.get("fields", {}).items() for flag in one if flag not in told]
+    return found
 
 
 if __name__ == "__main__":

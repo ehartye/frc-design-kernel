@@ -1385,7 +1385,7 @@
     "symmetry": {
       "means": "How red's copy is made from blue's, for a field length x width.",
       "words": {
-        "mirror": {"means": "Point (x, y) becomes (length - x, y), and direction a becomes 180 - a. It also swaps left and right in an outline that is not the same on both sides."},
+        "mirror": {"means": "Point (x, y) becomes (length - x, y), and direction a becomes 180 - a. It also swaps left and right in an outline, an opening or a shape that is not the same on both sides."},
         "turn": {"means": "Point (x, y) becomes (length - x, width - y), and direction a becomes a + 180."}
       }
     },

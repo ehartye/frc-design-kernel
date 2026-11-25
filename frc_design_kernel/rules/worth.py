@@ -14,6 +14,9 @@ from ..errors import DesignError
 from . import quantity
 
 BASE = {"length": "mm", "mass": "kg", "time": "s", "angle": "deg"}
+WORKED = {"ft": "in", "min": "s"}       # nobody reads a decimal foot or a decimal minute
+
+
 @dataclass(frozen=True)
 class Value:
     """One value. A range has no value of its own, only its ends."""
@@ -22,7 +25,7 @@ class Value:
     limit: str | None = None            # "at most", "at least", "less than" or "more than"
     low: float | None = None            # the ends of a range or a tolerance
     high: float | None = None
-    printed: str = ""                   # as it is printed; for what nobody printed, the number worked out, in inches and not in feet
+    printed: str = ""                   # as it is printed; for what nobody printed, the number worked out, in inches for feet and in seconds for minutes
     of: str | None = None               # what is measured
     assumed: str | None = None          # why it was chosen, when no source prints it
     src: object = None                  # where it is written: its own source, or its record's
@@ -52,8 +55,8 @@ class Wrong(DesignError):
 
 
 def worked(unit):
-    """The unit that a worked-out number is printed in: inches where its values are in feet, as nobody reads a decimal foot."""
-    return "in" if unit == "ft" else unit
+    """The unit that a worked-out number is printed in: inches where its values are in feet, and seconds where they are in minutes."""
+    return WORKED.get(unit, unit)
 
 
 def shown(number, kind, unit):

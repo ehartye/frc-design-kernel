@@ -6,6 +6,7 @@
 A Worker remembers what it has worked out, and which kinds of variant that needed.
 """
 import functools
+import itertools
 from dataclasses import replace
 
 from ..errors import DesignError, unknown
@@ -52,7 +53,7 @@ class Season:
     def variants(self):
         return self.book.variants
 
-    def worker(self, **variants):
+    def worker(self, /, **variants):
         for kind, name in variants.items():
             if kind not in self.variants:
                 raise unknown("", "kind of variant", kind, self.variants)
@@ -63,6 +64,22 @@ class Season:
         if key not in self.workers:
             self.workers[key] = Worker(self, choice)
         return self.workers[key]
+
+    def each(self, work):
+        """[(the names of the variants chosen, what work(worker) gives)] for each choice of the variants that the work needs."""
+        kinds, before, found = [], None, []
+        while kinds != before:
+            before, asked, found = kinds, set(), []
+            for chosen in itertools.product(*(self.variants[kind] for kind in kinds)):
+                worker = self.worker(**dict(zip(kinds, chosen)))
+                earlier, worker.asked = worker.asked, set()
+                try:
+                    found.append((chosen, work(worker)))
+                finally:
+                    asked |= worker.asked
+                    worker.asked |= earlier
+            kinds = [kind for kind in self.variants if kind in asked or kind in kinds]
+        return found
 
     def holds_at(self, entry, spot, rest):
         """What the field holds that a path's steps lead to or into, after its record and its spot."""
@@ -251,7 +268,7 @@ class Worker:
         self.doing.append(text)
 
     def formula(self, text):
-        """The Value that a formula gives, printed in the unit of the first value of its kind that it names; in inches for feet."""
+        """The Value that a formula gives, printed in the unit of the first value of its kind that it names; in inches for feet, in seconds for minutes."""
         self.begin(text)
         try:
             kind, number = formulas.work(text, lambda path: self._named(text, path))

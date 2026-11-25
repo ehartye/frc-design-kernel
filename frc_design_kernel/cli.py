@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from .errors import DesignError
+from .rules import commands as rules
 from .source.load import load
 from .version import generator
 
@@ -283,6 +284,7 @@ def main(argv=None):
     geometry.add_argument("--linear-mm", type=above_zero, default=0.2, help="the mesh's linear deflection for the hull, in mm (default 0.2)")
     geometry.add_argument("--angular-rad", type=above_zero, default=0.3, help="the mesh's angular deflection for the hull, in radians (default 0.3)")
     geometry.set_defaults(run=piece_geometry)
+    rules.add(commands)
     args = parser.parse_args(argv)
     if args.command == "try" and not (args.out or args.estimate):
         parser.error("try needs --out DIR, or --estimate")
