@@ -1,0 +1,82 @@
+{
+  "limits": {
+    "perimeter": {"code": "R90", "size": "at most 118 in", "bump": "less than 3/8 in", "says": "A string pulled tight around the robot without bumpers.", "src": "manual R90"},
+    "start": {
+      "code": ["R90", "G99"], "height": "at most 4 ft", "overhang": "none but bumpers and bolt heads", "where": [["my bumpers", "fully in", "my yard"], ["my robot", "not touching", "any crate"]], "src": "manual R90"
+    },
+    "height": {"code": "R91", "max": {"is": "= limits.start.height + limits.height.more", "of": "floor to the top, at any time"}, "more": "18 in", "src": "manual R91"},
+    "reach": {"code": "R91", "far": "at most 1 ft 2 in", "sides": 1, "src": "manual R91"},
+    "weight": {
+      "code": "R92",
+      "robot": {"max": {"is": "at most 112 lb", "was": [{"until": "2031-02-04", "is": "at most 110 lb", "src": "update3 R92"}]}, "without": ["bumpers", "battery"]},
+      "bumpers": {"max": "at most 16 lb", "without": []},
+      "with_bumpers": {"max": "at most 128 lb", "without": ["battery"]},
+      "inspected": {"max": "at most 140 lb", "without": ["bumpers", "battery", "console"]},
+      "src": "manual R92"
+    },
+    "hold": {"code": "G94", "bale": 1, "pumpkin": 2, "src": "manual G94"},
+    "preload": {"code": "G99", "bale": 1, "src": "manual G99"},
+    "bumpers": {
+      "code": "R93", "low": "2 in", "high": "7 1/4 in", "out": "at most 3 3/4 in", "hard": "at most 1 1/4 in", "gap": "less than 1 in", "corner": "at least 2 in",
+      "tolerance": "1/4 in", "padding": {"deep": "at least 2 1/8 in", "tall": "at least 5 in", "foam": {"text": "any closed foam"}}, "backing": {"tall": "4 1/2 in +/- 1/2"},
+      "cover": "canvas, red or blue", "numbers": {"height": "at least 3 7/8 in", "stroke": "at least 5/8 in", "places": "more than 2"},
+      "frame_gap": {"any": [{"deep": "at most 3/8 in"}, {"wide": "at most 9 in"}]}, "src": "manual R93"
+    },
+    "drive": {"code": "R94", "motors": "at most 6", "src": "manual R94"},
+    "price": {"code": "R95", "part": "at most 550 USD", "src": "manual R95"},
+    "console": {"code": "R96", "long": "at most 5 ft", "deep": "at most 400 mm", "tall": "at most 2 m", "mass": "at most 12 kg", "src": "manual R96"},
+    "radio": {"code": "R96", "part": "Crow 2", "rate": "at most 6 Mbit/s", "src": "manual R96"},
+    "air": {"code": "R97", "stored": "at most 110 psi", "working": "at most 4 bar", "flow": "at most 1 1/4 scfm", "pump": "at most 1.1 cfm", "src": "manual R97"},
+    "battery": {
+      "code": "R98", "volts": "12 V", "capacity": "17 to 18 Ah", "energy": "at most 220 Wh", "mass": "at most 6500 g", "size": ["7 in", "3 in", "16.8 cm"],
+      "density": "at most 165 lb/ft3", "case": "at least 900 kg/m3", "unknown": ["How the capacity is measured."], "src": "manual R98"
+    }
+  },
+  "parts": {
+    "motors": {
+      "about": {"allow": "only", "says": "Motors and other actuators.", "src": "manual R97"},
+      "mule": {"name": "Mule 12", "part_numbers": ["217-0000", "mu-12"], "on": {"controller": 2, "relay": 1}, "speed": "5300 rpm", "src": "manual R97 table 1"},
+      "pony": {"name": "Pony", "part_numbers": ["po-1"], "on": {"own": 1}, "src": "manual R97 table 1"},
+      "latch": {"name": "Any solenoid", "on": {"controller": "any", "relay": "any", "pneumatics": {"is": 1, "of": "each channel"}}, "power": "at most 45 W", "src": "manual R97 table 1"}
+    },
+    "loads": {"lantern": {"name": "Lamps and other circuits that move nothing", "on": {"controller": "any", "relay": "any", "pneumatics": "any"}, "src": "manual R97"}},
+    "controllers": {
+      "about": {"allow": "only"},
+      "reins": {"name": "Reins", "part_numbers": ["rn-1"], "kind": "controller", "src": "manual R97 table 2"},
+      "saddle": {"name": "Saddle", "kind": "own", "only_for": ["pony"], "says": "Built into the Pony.", "src": "manual R97 table 2"}
+    },
+    "relays": {
+      "about": {"allow": "only"},
+      "whistle": {"name": "Whistle", "kind": "relay", "src": "manual R97 table 2"},
+      "switch": {"name": "Panel switch", "kind": "relay", "only_for": ["lantern"], "says": "One channel of the panel.", "src": "manual R97 table 2"}
+    },
+    "valves": {"bellows": {"name": "Bellows", "kind": "pneumatics", "channels": 8, "src": "manual R97 table 2"}},
+    "power": {"about": {"allow": "only", "one_of": true}, "panel": {"name": "Panel", "number": 1, "src": "manual R98"}, "crossbar": {"name": "Crossbar", "number": 1, "src": "manual R98"}},
+    "batteries": {"about": {"allow": "examples"}, "acorn": {"name": "Acorn", "part_numbers": ["ac-18"], "src": "manual R98"}},
+    "lights": {"signal": {"name": "Signal light", "number": "1 to 2", "length": "at least 620 nm", "src": "manual R98"}},
+    "branch": {
+      "motor": {"for": "a motor controller", "protection": "at most 40 A", "each": 1, "src": "manual R98 table 3"},
+      "lamps": {"for": "lamps", "protection": "at most 15 A", "each": "any", "src": "manual R98 table 3"},
+      "valve": {
+        "for": "valves", "protection": "20 A", "each": {"is": 3, "of": "altogether"}, "src": "manual R98 table 3",
+        "was": [{"until": "2031-02-04", "says": "No such row.", "src": "update3 R98"}], "differs": [{"says": "The checklist allows two.", "src": "manual R98 checklist"}]
+      }
+    },
+    "wire": {
+      "main": {"for": "the battery to the panel", "thinnest": "6 AWG", "area": "16 mm2", "code": "R98", "says": "No thinner than {thinnest}.", "src": "manual R98 table 4"},
+      "signal": {"for": "signals", "thinnest": "28 AWG", "area": "0.08 mm2", "of": "each lead", "noise": "at most 1 uF", "unknown": ["Whether it must be copper."], "src": "manual R98 table 4"}
+    },
+    "guard": {"frame": {"name": "The frame", "to_battery": "more than 120 ohm", "src": "manual R98"}}
+  },
+  "rules": {
+    "R90": {"says": "The string is at most {limits.perimeter.size}; a bolt head may stick out less than {limits.perimeter.bump}. At the start a robot is at most {limits.start.height} tall.", "src": "manual R90"},
+    "R91": {"says": "Never taller than {limits.height.max}, and at most {limits.reach.far} out on {limits.reach.sides} side.", "src": "manual R91"},
+    "R92": {"says": "At most {limits.weight.robot.max}, and {limits.weight.with_bumpers.max} with bumpers.", "src": "manual R92"},
+    "R93": {"says": "Bumpers fill the zone from {limits.bumpers.low} to {limits.bumpers.high}. A gap behind them is at most {limits.bumpers.frame_gap.deep} deep or {limits.bumpers.frame_gap.wide} wide.", "src": "manual R93"},
+    "R94": {"says": "At most {limits.drive.motors} motors drive the robot.", "src": "manual R94"},
+    "R95": {"says": "No part costs more than {limits.price.part}.", "src": "manual R95"},
+    "R96": {"says": "The console is at most {limits.console.long} long; the radio sends at most {limits.radio.rate}.", "src": "manual R96"},
+    "R97": {"says": "Only parts.motors and parts.controllers may be used, at most {limits.air.stored} is stored, and a Mule is run at most {parts.motors.mule.on.controller} to a controller or {parts.motors.mule.on.relay} to a relay.", "src": "manual R97"},
+    "R98": {"says": "The main wire is no thinner than {parts.wire.main.thinnest}; a motor has {parts.branch.motor.protection}. The fuse holder is seen from {seen}.", "seen": "3 ft", "src": "manual R98"}
+  }
+}

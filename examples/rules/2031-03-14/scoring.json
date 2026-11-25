@@ -1,0 +1,49 @@
+{
+  "total": {"bale": 60, "pumpkin": {"is": 12, "differs": [{"says": "One page says a dozen or so.", "src": "manual 5.6"}]}, "hoop": 8, "src": "manual 5.6"},
+  "counts": {
+    "loft_points": {"of": "alliance", "adds": ["hang", "park", "pumpkin_in_loft"]},
+    "hanging_robots": {"of": "alliance", "counts": ["hang"]},
+    "early_bales": {"of": "alliance", "counts": ["bale_in_barn", "bale_on_bench"], "when": ["auto"]},
+    "banked_bales": {"of": "alliance", "says": "Bales put in since the lamp was last lit, at most {lit.bank}."},
+    "banked_pumpkins": {"of": "alliance", "counts": ["pumpkin_in_loft"]},
+    "pumpkins_everywhere": {"of": "alliance", "smallest_of": ["loft", "chimney"]},
+    "third_best": {"of": "alliance", "third_largest_of": ["barn", "bench", "cellar", "stall"]}
+  },
+  "awards": {
+    "bale_in_barn": {
+      "per": "piece", "points": [{"when": ["auto"], "points": 7}, {"when": ["teleop"], "points": 3}, {"when": ["teleop", "lit"], "points": 6}], "src": "manual 5.7"
+    },
+    "bale_on_bench": {"per": "piece", "points": [{"when": ["teleop"], "points": {"by": "event", "regional": 1, "championship": 2}}], "src": "manual 5.7"},
+    "pumpkin_in_loft": {"per": "piece", "points": [{"when": ["teleop"], "points": 4}, {"when": ["teleop", "high_gate"], "points": 5}], "src": "manual 5.7"},
+    "hoop_on_rack": {"per": "piece", "points": [{"when": ["auto"], "points": 4}, {"when": ["teleop"], "points": 2}], "src": "manual 5.7"},
+    "out_early": {"per": "robot", "points": [{"when": ["auto"], "points": 3}], "looked_at": "any time", "needs": [["my bumpers", "fully outside", "my yard"]], "src": "manual 5.8"},
+    "hang": {
+      "per": "robot", "points": [{"when": ["teleop"], "points": 9}], "looked_at": "at the end", "says": "Off the carpet on the bar.", "most": {"each": "alliance", "is": 2},
+      "needs": [
+        ["my robot", "touching", "my bar"], ["my robot", "not touching", ["carpet", "the base of my mast"]],
+        ["my robot", "touching only", ["my bar", "my mast", "pieces", "a robot that hangs"]]],
+      "src": "manual 5.8"
+    },
+    "swing_high": {"per": "robot", "points": [{"when": ["teleop"], "points": 12}], "looked_at": "at the end", "also_needs": ["hang"], "needs": [["my bumpers", "above", "my swing"]], "src": "manual 5.8"},
+    "park": {
+      "per": "robot", "points": [{"when": ["teleop"], "points": 4}], "looked_at": "at the end", "needs": [["my bumpers", "partly in", "my yard"]], "unless": ["hang", "swing_high"], "src": "manual 5.8"
+    },
+    "loft_rp": {
+      "per": "match", "rp": 1, "when": ["qualification"], "needed": {"by": "event", "regional": 12, "championship": 16},
+      "needs": [["my loft_points", "at least", "= loft_rp.needed"], ["my hanging_robots", "at least", 2]],
+      "easier": {"when": ["shared"], "needs": [["my loft_points", "at least", {"by": "event", "regional": 10, "championship": 14}]]}, "src": "manual 5.9"
+    },
+    "all_moved": {"per": "match", "rp": 1, "when": ["qualification"], "needs": [["my hanging_robots", "exactly", "every robot"], ["either hanging_robots", "at most", 6]], "src": "manual 5.9"},
+    "shared_bonus": {"per": "match", "ladder_points": 1, "when": ["qualification", "shared"], "src": "manual 5.9"}
+  },
+  "judged": {
+    "late": {"awards": ["bale_in_barn", "pumpkin_in_loft"], "after_auto": "2 s", "after_teleop": {"is": "3 s", "was": [{"until": "2031-02-04", "is": "2 s", "src": "update3 5.7"}]}, "src": "manual 5.7"},
+    "climbs": {"awards": ["park", "hang", "swing_high"], "after_teleop": "4 s", "or_sooner": "all robots rest", "says": "Looked at for up to {after_teleop}.", "src": "manual 5.8"}
+  },
+  "fouls": {
+    "minor": {"points_to_them": 3, "src": "manual 5.10"},
+    "major": {"points_to_them": 8, "src": "manual 5.10"},
+    "yellow_card": {"says": "A warning. A second becomes a red card.", "src": "manual 5.10"},
+    "red_card": {"says": "Out of the match.", "src": "manual 5.10"}
+  }
+}

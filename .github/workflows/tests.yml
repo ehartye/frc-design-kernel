@@ -30,6 +30,8 @@ jobs:
           python -m frc_design_kernel try "$GITHUB_WORKSPACE/examples/lifter/design.json" --out out
           python -m frc_design_kernel measure "$GITHUB_WORKSPACE/examples/lifter/design.json" --focus "carriage plate" --motion lift
           python -m frc_design_kernel screen "$GITHUB_WORKSPACE/examples/lifter/design.json" --out out
+          python -m frc_design_kernel rules check --rules "$GITHUB_WORKSPACE/examples/rules/2031-03-14"
+          python -m frc_design_kernel rules get limits.height.max --rules "$GITHUB_WORKSPACE/examples/rules/2031-03-14"
 
   tests-mujoco:
     runs-on: ubuntu-latest

@@ -1,0 +1,75 @@
+{
+  "robot_preload": {
+    "alliance": "each", "holds": {"bale": "= 3 * limits.preload.bale"}, "starts": {"bale": "= robot_preload.holds.bale"},
+    "says": "Each robot may start with {limits.preload.bale}. One not loaded goes to a stall.", "no_geometry": "It needs none: it is wherever the robots are.", "src": "manual 4.3"
+  },
+  "near_bales": {
+    "alliance": "each", "spots": {"row": 4, "step": ["0 in", "= near_bales.apart"], "first": {"at": ["90 in", "66 in"]}}, "apart": "48 in",
+    "starts": {"bale": {"each": "spot", "is": 1}}, "gives": [{"piece": "bale", "by": "field", "to": "robot", "how": "from the carpet"}], "src": "drawings sheet 5"
+  },
+  "centre_bales": {
+    "spots": {"row": 6, "step": ["0 in", "36 in"], "names": ["a", "b", "c", "d", "e", "f"], "first": {"at": ["= size.length / 2", "= size.width / 2 - 5 * centre_bales.spots.step.y / 2"]}},
+    "starts": {"bale": {"each": "spot", "is": 1}}, "gives": [{"piece": "bale", "by": "field", "to": "robot", "how": "from the carpet"}], "src": "drawings sheet 5"
+  },
+  "patch": {
+    "alliance": "each", "at": ["150 in", "= tags.t3.at.y + 12 * patch.hole"], "hole": "3 in", "starts": {"pumpkin": "left over"},
+    "gives": [{"piece": "pumpkin", "by": "field", "to": "robot", "how": "off the vine"}], "src": "drawings sheet 5"
+  },
+  "stall": {
+    "alliance": "each", "says": "At the other end. People feed bales down its slide.",
+    "spots": {"near": {"at": ["= size.length", "60 in"], "faces": "180 deg"}, "far": {"at": ["= size.length", "= size.width - stall.spots.near.at.y"], "faces": "180 deg"}},
+    "starts": {"bale": "left over"}, "holds": {"bale": 30},
+    "opening": {"outline": {"rectangle": ["30 in", "7 in"]}, "slope": "90 deg", "from": "front", "bottom": {"is": "37 in", "of": "carpet to its lower edge"}, "lip": "1/2 in"},
+    "slide": "50 deg",
+    "gives": [{"piece": "bale", "by": "human", "to": "robot", "how": "down the slide"}, {"piece": "bale", "by": "human", "to": "floor", "how": "down the slide"}],
+    "src": "manual 3.8"
+  },
+  "barn": {
+    "alliance": "each", "at": ["= tags.t1.at.x + barn.out", "= tags.t1.at.y"], "faces": "0 deg", "out": "20 in",
+    "opening": {
+      "outline": {"rectangle": ["36 in", {"is": "16 in", "differs": [{"is": "15 3/4 in", "src": "drawings sheet 6"}]}]}, "slope": "75 deg", "from": "front",
+      "bottom": "48 in", "top": "= barn.opening.bottom + barn.opening.outline.rectangle.y * sin(barn.opening.slope)", "depth": "5 in"},
+    "takes": [{"piece": "bale", "by": ["robot", "human"], "how": "enter", "counts": "it passes the beam", "score": "bale_in_barn"}],
+    "then": {"to": "cellar", "of": "theirs", "how": "rolls through"}, "src": "manual 3.5"
+  },
+  "cellar": {
+    "alliance": "each", "holds": {"bale": 8}, "no_geometry": "Off the field, and no drawing gives it.",
+    "takes": [{"piece": "bale", "by": ["field"], "how": "rest", "counts": "it came out of a barn"}],
+    "gives": [{"piece": "bale", "by": "human", "to": "stall", "how": "carried"}], "then": {"to": "stall", "of": "mine", "how": "carried"}, "src": "manual 3.5"
+  },
+  "loft": {
+    "alliance": "each", "at": ["= pond.at.x - loft.back", "= loft.back * tan(loft.look) + size.width / 2"], "faces": "0 deg", "back": "90 in", "look": "45 deg",
+    "opening": {"outline": {"circle": "26 in"}, "slope": "0 deg", "from": "above", "bottom": "70 in"},
+    "takes": [{"piece": "pumpkin", "by": ["robot"], "how": "enter", "counts": "it passes the ring", "score": "pumpkin_in_loft", "most": 5}],
+    "then": {"to": "out"}, "src": "manual 3.8"
+  },
+  "chimney": {
+    "alliance": "each", "at": ["= loft.at.x", "40 in"], "opening": {"outline": {"hexagon": {"flats": "20 in", "points": "0 deg"}}, "slope": "0 deg", "from": "below", "bottom": "30 in"},
+    "takes": [{"piece": "pumpkin", "by": "robot", "how": "enter", "counts": "it stays up", "score": "pumpkin_in_loft"}],
+    "then": {"to": "pond", "how": "falls out again"}, "src": "manual 3.8"
+  },
+  "rack": {
+    "alliance": "each", "says": "A ring of pegs, two on each side.",
+    "spots": {
+      "ring": 6, "around": ["= mast.at.x", "= mast.at.y"], "step": "60 deg",
+      "first": {
+        "a": {"at": ["= mast.at.x - rack.out", "= mast.at.y + rack.pair / 2"], "faces": "180 deg"},
+        "b": {"at": ["= mast.at.x - rack.out", "= mast.at.y - rack.pair / 2"], "faces": "180 deg"}}},
+    "out": "= rack.across * sqrt(3) / 2", "across": "24 in", "pair": {"is": "12 in", "of": "peg to peg on one side"},
+    "post": {"tip": "40 in", "slope": "35 deg", "diameter": "1 1/4 in", "length": "= min(rack.across, rack.pair) * cos(rack.post.slope)"},
+    "takes": [{"piece": "hoop", "by": ["robot"], "how": "surround", "counts": "the peg is inside it", "score": "hoop_on_rack", "most": {"each": "spot", "is": 1}}], "src": "manual 3.9"
+  },
+  "bench": {
+    "alliance": "each", "at": ["= crate.at.x", "= crate.at.y"], "faces": "0 deg",
+    "surface": {"edge": "= crate.shape.box.z", "size": ["= crate.shape.box.x", "= crate.shape.box.y"], "slope": "0 deg"},
+    "takes": [{"piece": "bale", "by": ["robot"], "how": "rest", "counts": "it touches nothing else", "score": "bale_on_bench"}],
+    "gives": [{"piece": "bale", "by": "field", "to": "robot", "how": "off the top"}], "src": "manual 3.9"
+  },
+  "hooks": {
+    "alliance": "each", "symmetry": "mirror", "spots": {"left": {"at": ["20 in", "200 in"], "faces": "45 deg"}, "right": {"at": ["20 in", "240 in"], "faces": "315 deg"}},
+    "starts": {"hoop": {"each": "spot", "is": 1}}, "gives": [{"piece": "hoop", "by": "human", "to": "rack", "how": "thrown"}], "src": "manual 3.9"
+  },
+  "spare_hoops": {"at": ["= silo.at.x", "= silo.at.y"], "starts": {"hoop": 4}, "says": "On top of the silo, {high} up.", "high": "= silo.shape.cylinder.length", "src": "manual 3.9"},
+  "vine": {"at": ["= size.length / 2", "20 in"], "starts": {"pumpkin": 2}, "src": "drawings sheet 5"},
+  "out_of_field": {"says": "A piece that leaves is put back near where it left.", "src": "manual 4.4"}
+}

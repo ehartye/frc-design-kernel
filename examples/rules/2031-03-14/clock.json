@@ -1,0 +1,29 @@
+{
+  "periods": {
+    "auto": {"lasts": "12 s", "control": "none", "src": "manual 4.1"},
+    "gap": {"lasts": "2 s", "control": "none", "says": "A pause in which nothing is counted.", "src": "manual 4.1"},
+    "teleop": {"lasts": "1 min 50 s", "control": "drivers", "src": "manual 4.1"}
+  },
+  "windows": {
+    "endgame": {"in": "teleop", "last": "25 s", "src": "manual 4.2"},
+    "early": {"in": "teleop", "first": "35 s", "src": "manual 4.2"},
+    "market": {"in": "teleop", "timer": ["1:15", "0:50"], "src": "manual 4.2"}
+  },
+  "states": {
+    "lit": {
+      "of": "alliance", "says": "The barn pays more. Its lamp blinks at {blink}. At most {bank} bales are banked toward the next time.",
+      "starts": "a person presses the lamp", "needs": [["my banked_bales", "at least", 3]], "lasts": "9 s", "or_until": "5 bales go in",
+      "grace": {"is": "2 s", "of": "added for bales that went in before it ended"}, "bank": 6, "blink": "2 Hz", "src": "manual 5.2",
+      "was": [{"until": "2031-02-04", "says": "The lamp did not blink.", "src": "update3 5.2"}]
+    },
+    "barn_open": {"of": "alliance", "true": [["auto"], ["market", "not lit"], ["endgame"]], "src": "manual 5.3"},
+    "quiet": {"of": "alliance", "says": "The barn is shut, or theirs is lit.", "true": [["teleop", "not barn_open"], ["their lit"]], "src": "manual 5.3"},
+    "shared": {
+      "of": "match", "says": "Both alliances have banked pumpkins.",
+      "needs": [["my banked_pumpkins", "at least", 1], ["their banked_pumpkins", "at least", 1]], "src": "manual 5.4"
+    },
+    "stuck": {"of": "robot", "says": "It has not moved for a while.", "src": "manual 5.5"},
+    "ripe": {"of": "piece", "says": "The pumpkin was on the vine at the start.", "src": "manual 5.5"},
+    "full": {"of": "place", "says": "It holds all it can.", "src": "manual 5.5"}
+  }
+}

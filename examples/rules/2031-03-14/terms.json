@@ -1,0 +1,4 @@
+{
+  "momentary": {"says": "Less than about {lasts}.", "lasts": "4 s", "src": "manual 11"},
+  "carry": {"says": "To hold a piece off the carpet, or to push it on purpose in a direction.", "src": "manual 11"}
+}

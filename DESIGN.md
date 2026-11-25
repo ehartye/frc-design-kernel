@@ -36,19 +36,23 @@ From then on:
 
 ## 2. Scope
 
-The owner's ruling: **build, measure, try — nothing else.**
+The owner's ruling: **build, measure, try, read a game's rules: nothing else.** Reading rules joined the other three
+so that an agent answers from the same data that a program computes from, and nobody types a rule twice. It judges
+nothing.
 
 | Layer | Job | Package | State |
 |---|---|---|---|
 | Build | Design source to named solids, poses, motions, STEP and manifest | `source/`, `motion/`, `kernel/`, `builder/` | Here now |
 | Measure | Clearance along a motion with a proof, what touches what, mass and centre of mass | `measure/` | Here now |
 | Try | Physics trials defined as data | `trials/` | Here now: planar trials. 3D is undecided (section 11) |
+| Read rules | A folder of a game's rules to values, places, times and counts, and answers about them (section 17) | `rules/` | Here now |
 
 Out of scope, for good: clearance guidelines, receipts, readiness criteria, review pages, publishing and CI policy.
 Those belong to tools that judge a design. This library reports numbers; it never says pass or fail.
 
 The library is **season-neutral and self-standing**. It holds no game, season, team or project names, and no paths
-from any machine. Its fixtures are invented. It does not import or mention any agent plugin. It is an ordinary
+from any machine. Its fixtures are invented. The format for a game's rules and its reader are here; a season's rules are
+a project's own folder. It does not import or mention any agent plugin. It is an ordinary
 library that a robot project and a tooling plugin can both import.
 
 ## 3. Module map
@@ -57,7 +61,7 @@ library that a robot project and a tooling plugin can both import.
 frc_design_kernel/
   __init__.py        the public functions: load, build, export
   __main__.py        python -m frc_design_kernel
-  cli.py             the validate, build, measure, screen, try and piece-geometry commands
+  cli.py             the validate, build, measure, screen, try, piece-geometry and rules commands
   workers.py         worker processes: answers as they finish, and a count from inside each task
   errors.py          DesignError: where, what is wrong, how to fix it
   version.py         library version and commit, for information
@@ -150,11 +154,39 @@ frc_design_kernel/
     mujoco_parts.py  the piece, moved groups and flaps of that model
     mujoco_contact.py  the library's own contact law at the points MuJoCo finds
     mujoco_run.py    run that model and report it like a planar run (the only module that imports MuJoCo)
+
+  rules/             a game's rules, read from a folder. No CAD kernel needed. See section 17.
+    fields.json      the format: every name, what it holds, what it means and how it is written
+    read.py          the nine files as plain data, every record in them, and paths
+    quantity.py      a number as it is printed, in base units
+    values.py        what a field holds: values, words of a list, sources, history, positions, shapes
+    fields.py        the names that each record may use
+    words.py         every word and every ID that a field names
+    worth.py         one value: its number, limit, unit, source, and whether it uses a position
+    formulas.py      the arithmetic of one formula, and its kinds
+    worker.py        what is worked out, for one choice of variants
+    alliances.py     where a record stands: for blue, for red and at each spot
+    outlines.py      outlines as points
+    shapes.py        shapes in the library's own grammar
+    times.py         windows in seconds, and how long after a period an award still counts
+    conditions.py    conditions and times, parsed
+    ties.py          which times and states can be true together
+    pieces.py        how many of each piece are where at the start
+    parts.py         what each device may run
+    says.py          words with their numbers filled in
+    records.py       every record of a file, with red's and every spot made
+    derive.py        the second pass of faults: everything worked out once
+    rules.py         load_rules, faults and Rules
+    meanings.py      what a property, word or form means
+    find.py          records by code, ID or words
+    answers.py       a value told as lines or as plain data
+    commands.py      the rules commands
 ```
 
 **Import direction.** `motion`, `motor` and `workers` import nothing from the rest. `source` imports `motion` (to check
 operations). `kernel` imports only OCP and the error type. `builder` imports `source`, `motion` and `kernel`.
-`measure` imports `builder`, `motion`, `motor`, `kernel`, `source` and `workers`; `trials` does too. Nothing imports upward,
+`measure` imports `builder`, `motion`, `motor`, `kernel`, `source` and `workers`; `trials` does too. `rules` imports only
+`source` and the error type, so rules are read without the CAD kernel; a test enforces that. Nothing imports upward,
 and nothing imports in a circle. A test enforces the no-circle rule.
 
 ## 4. The design source
@@ -763,10 +795,13 @@ nears 300 lines should already be asking whether it is two jobs.
 These were the simpler choice at the time. Any of them may change while the library is settling.
 
 1. **Expressions are a small arithmetic language in strings.** The alternative was a separate program per project to
-   compute numbers. If expressions grow conditions or loops, stop and rethink.
+   compute numbers. If expressions grow conditions or loops, stop and rethink. Formulas in rules (section 17) use the same
+   evaluator, with units and dotted names checked before it.
 2. **`each` is the only repetition.** There is no mirror or pattern command. A mirrored copy is an `each` row with a
-   sign.
-3. **Parameters are single numbers.** No lists or tables. Variants of a design are separate source files.
+   sign. A rules folder does have patterns (a row, a ring) and a red copy of what each alliance has, because a field is
+   made of them. Those are the rules' own, and no design can use them.
+3. **Parameters are single numbers.** No lists or tables. Variants of a design are separate source files. A rules folder
+   writes its variants (a kind of field, a kind of event) beside the value that differs.
 4. **Solids are drawn in robot coordinates.** `carriedBy` only passes poses and motions down; it does not move where
    a carried group is drawn.
 5. **A `through` motion shares the stroke evenly between poses.** There is no timing control yet.
@@ -1673,3 +1708,92 @@ engine for geometry and motion, apply the library's contact law, and run the who
 
 A trial that uses a part the engine does not run yet is refused by name; nothing is silently left out.
 
+## 17. Reading a game's rules
+
+A season's complete rules live in one dated folder of nine JSON files, in the project that plays the game. This layer
+reads the folder, works out every derived value and answers questions about it. A person or an agent asks the commands;
+a program asks the same data through `load_rules`. Nothing is judged.
+
+**The format is `frc_design_kernel/rules/fields.json`,** and there is no second description of it. It holds every name,
+what it holds, what it means, and how each form is written, with an example. `rules means` prints it, and `rules get`
+prints the meaning of what it answers. A test fails for a name, word or form with no meaning or with an example that
+does not read, and for one that the invented example (`examples/rules`) does not use.
+
+### 17.1 What is in a folder
+
+- **Each value once.** It has a source, and may have what other sources say, why it was chosen when none prints it, and
+  its history. A formula (`"= size.length / 2"`) or a name in words (`"At most {limits.reach.far}"`) uses it again.
+- **Every rule code has a record** whose `says` answers it. What a program computes from has named fields; what only
+  people judge stays words. Extra values are allowed inside a record, but a name that is nearly a known one is a slip.
+- **Blue is written; red is made** by the field's symmetry or the record's own. `at`, `faces`, `from`, `to` and the
+  points of an outline in the field's frame move. A shape and an opening keep their own frame, and left and right change
+  places in a mirror image.
+- **Positions are used only where they move.** In a record that each alliance has, and in the first spot of a pattern,
+  a formula or words may use a position or a direction only in what moves. Nothing else can then differ for red. A
+  distance between two things is refused too, because it is not the same for both when they move in different ways: the
+  sum is written in the `at`.
+- **Variants** (a kind of field, a kind of event) are written beside the value that differs. One not named is the first.
+- **Patterns.** A row steps and a ring turns; each spot is a place with a name.
+
+### 17.2 How it is read
+
+`rules.faults(folder)` gives every fault and `rules.load_rules(folder)` raises the first. It is a pure read: no network,
+no writing and no CAD kernel. Two passes, so that one mistake is told once, where it is written:
+
+1. **Reading** (`read`, `values`, `fields`, `words`): the JSON, with duplicate keys and numbers that are not ordinary
+   refused; every name, word, unit, ID and source; what must be there.
+2. **Working out** (`derive`): everything that is worked out is worked out once for each variant that it needs. What
+   uses a value at fault is passed over.
+
+**Values** are in mm, kg, s and degrees, with what is printed beside them. A limit keeps its side (`at most`), a range
+has a low and a high and no one value, and a count may be for each of something (`each`) or at some times only (`when`).
+A formula that names such a count is refused, because the number alone would be wrong. Formulas are checked for units
+first: adding needs the same kind, and a bare number only multiplies or divides.
+
+**Shapes** come back in the library's own grammar, about their own 0, 0, 0: what is round has its centre there, all else
+stands on 0. Placed on the field, the lowest point is at the height in `at`. A `taper` has no solid in that grammar: it
+comes back as two outlines and a height, and asking for its solid says so.
+
+**Red.** Every answer for red is the matching part of what `records`, `outline` and `solid` give, or the same for both
+alliances, or refused with what to ask in its place. A record that neither alliance has is told with no alliance. A path
+with no alliance is blue's. A test asks every path of the example for red.
+
+**Conditions and times** come back parsed, with their IDs resolved. Whether a condition holds in a match is not worked
+out: a simulation does that.
+
+### 17.3 From Python
+
+```python
+from frc_design_kernel.rules.rules import load_rules
+
+rules = load_rules("examples/rules/2031-03-14")
+rules.get("limits.reach.far").value             # 355.6, in mm
+rules.get("barn.at", alliance="red")            # two Values
+rules.limit("height.max")                       # a Value, or None for a limit that this season does not have
+rules.says("R92")                               # words with their numbers filled in
+rules.outline("yard", "red")                    # points in mm
+rules.solid("crate")                            # {"shape", "place"}, as a design's solid has them
+rules.starts("bale")                            # how many start where
+```
+
+`windows`, `judged`, `points`, `conditions`, `when`, `records`, `runs` and `to` are in `rules.py`. What is given is a
+copy.
+
+### 17.4 The commands
+
+| Command | What it tells |
+|---|---|
+| `rules find <code, ID or words> --rules DIR` | One record in full, or a line for each of several. `--words` looks for the words even when they are a code or an ID. |
+| `rules get <path> --rules DIR` | One value, its source, and what its property means. `--alliance`, `--spot`, `--unit`, `--json`, and a flag for each kind of variant. |
+| `rules check --rules DIR` | Every fault; and, without failing, what has no geometry and what numbers are in more than one record. |
+| `rules means [name]` | The format, or what one property, word or form means. It needs no folder. |
+
+`DIR` is a dated folder, or a folder of dated ones, of which the newest by name is read.
+
+### 17.5 What it cannot see
+
+- **A position typed as a plain number,** or worked out from the field's size alone, is a length like any other.
+- **Words.** `says`, `how`, `if`, `unless` of a conduct rule and what is put in `text` are not checked against anything,
+  but for a number in `says` that the record holds as a whole value.
+- **Whether a value is what the manual says.** A source is a pointer; nothing opens it.
+- **Many free states.** Whether two rows of points can tie is tried for every combination of the states they need.
