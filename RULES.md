@@ -27,7 +27,8 @@ enough for a reader who never opens the manual. Do not give structure to a rule 
 
 All nine files must be there. Each is one JSON object. IDs start with a letter and use letters, digits and underscores.
 An ID is used once in the folder. **A path is the ID and then field names,** with no file name: `bale.mass`,
-`barn.opening.bottom`. Four begin with a word instead: `size.length`, `limits.reach.far`, `tags.t4.at.x`, `total.bale`.
+`barn.opening.bottom`. Some begin with a word instead: `size.length`, `limits.reach.far`, `tags.t4.at.x`, `total.bale`,
+`judged.late.after_teleop`, `parts.wire.main.thinnest`.
 
 ## 2. Fields any record may have
 
@@ -38,9 +39,12 @@ An ID is used once in the folder. **A path is the ID and then field names,** wit
 | `src` | Where it is written: `"manual 3.2"`, or a list. The first word is an ID in `sources` |
 | `unknown` | A list: what a reader would look for and **no source gives**. A known fact never goes here |
 | `differs` | Another source that says something different (section 3) |
-| `was` | Earlier values: `{"until": "2031-02-04", "is": "104 lb", "src": "update3 R7"}` |
+| `was` | Earlier values or wording, on a record or on one value: a list of `{"until": "2031-02-04", "is": "104 lb", "src": "update3 R7"}`, or with `says` |
 
-**Every rule code has a record of its own, with its own `says`.** A number that a limit holds is named there, not typed.
+**Every rule code has a record of its own, with its own `says`.** A number that a limit holds is named there, not typed. If a
+rule is a whole list in `parts`, its `says` gives the rule and names the group.
+
+**In `says` a limit prints without its words:** `{limits.height.max}` prints `4 ft`, so write "at most {limits.height.max}".
 
 **A record may hold more values than this page names,** such as `"gate_width": "38 in"`. Use a name of letters, digits and
 underscores that says what it is, or add `of`. A name that is nearly one this page gives that kind of record is refused as
@@ -55,12 +59,13 @@ a slip. An extra value is a number, a `true` or `false`, or `{"text": "words"}`.
 | `"71 in"`, `"5 ft 4 3/8 in"`, `"1 min 50 s"`, `"17 deg"` | A quantity. Feet with inches, and minutes with seconds, may be joined |
 | `"6.4 oz +/- 0.3"`, `"290 in +5 -1"` | With a tolerance, in the same unit |
 | `"0.7 to 0.9 lb"` | A range: both ends are printed |
-| `"at most 96 in"`, `"at least 3/8 in"`, `"less than 2 1/4 in"`, `"more than 7 s"`, `"at most 6"` | A limit, on a quantity or a count |
+| `"at most 96 in"`, `"at least 3/8 in"`, `"less than 2 1/4 in"`, `"more than 7 s"`, `"at most 6"`, `"1 to 2"` | A limit or a range, on a quantity or a count |
+| `{"any": [{"deep": "at most 1 in"}, {"wide": "at most 9 in"}]}` | One of these limits is enough |
 | `45` | A count |
 | `"= size.length / 2"` | Worked out (below) |
 
-Units that convert: `in ft mm cm m`, `lb oz kg g`, `s min`, `deg`. Units kept as printed: `A V W Wh Ah ohm psi bar cfm AWG
-mm2 USD Mbit/s lb/ft3 kg/m3 nm Hz`. No others.
+Units that convert: `in ft mm cm m`, `lb oz kg g`, `s min`, `deg`. Units kept as printed: `A V W Wh Ah ohm psi bar cfm scfm
+uF AWG mm2 USD Mbit/s lb/ft3 kg/m3 nm Hz rpm`. No others. A thicker wire has a smaller AWG, so use `thinnest`.
 
 A value that needs more is an object:
 
@@ -84,7 +89,8 @@ conversion. A formula that names a value with variants has the same variants.
   "sources": {"manual": {"title": "Game manual", "edition": "4", "url": "https://..."}},
   "variants": {"field": ["welded", "bolted"], "event": ["regional", "championship"], "match": ["qualification", "playoff"], "gate": ["low", "high"]},
   "frame": {"origin": "blue wall, scoring table side, on the carpet", "x": "toward the red wall", "y": "away from the scoring table", "z": "up"},
-  "people": {"coach": {"says": "Guides the team.", "most": 1}, "driver": {"says": "Runs the robot.", "most": 3}}
+  "people": {"coach": {"says": "Guides the team.", "most": 1}, "driver": {"says": "Runs the robot."}, "feeder": {"says": "Handles bales."},
+             "together": [{"of": ["driver", "feeder"], "most": 3}]}
 }
 ```
 
@@ -108,7 +114,8 @@ A record may have its own `"symmetry"`. `mirror` also swaps left and right in an
 
 **Several of one thing.** `spots` names each: `{"near": {"at": [...]}, "far": {"at": [...]}}`. Or a pattern:
 `{"row": 4, "step": ["0 in", "48 in"], "first": {...}}`, `{"ring": 6, "around": [x, y], "step": "60 deg", "first": {...}}`,
-numbered from 1 or named by `"names"`. `first` may hold several named spots, which makes `1.a`, `1.b`, `2.a` and so on.
+numbered from 1 or named by `"names"`. `first` may hold several named spots, which makes `1.a`, `1.b`, `2.a` and so on. A ring
+turns each spot's `faces` too.
 
 **A count belongs to the record** of one alliance, all its spots together: `"starts": {"bale": 12}`. For one spot, write
 `{"each": "spot", "is": 1}`. Do not type a count that the spots already make.
@@ -142,6 +149,7 @@ an `alliance`, a `robot`, a `piece`, a `place` or the `match`.
   "lines": {"centre": {"from": ["= size.length / 2", "0 in"], "to": ["= size.length / 2", "= size.width"]}},
   "solids": {"crate": {"alliance": "each", "at": ["131 in", "150 in", "0 in"], "faces": "0 deg", "shape": {"box": ["22 in", "55 in", "15 in"]}}},
   "passages": {"arch": {"alliance": "each", "kind": "under", "at": ["200 in", "30 in"], "width": "44 in", "height": "26 3/4 in"}},
+  "equipment": {"barn_light": {"alliance": "each", "says": "On while the barn is open."}},
   "hangs": {"bar": {"alliance": "each", "kind": "bar", "at": ["40 in", "150 in", "33 in"], "faces": "0 deg", "diameter": "1 1/2 in", "width": "29 1/2 in"}},
   "tags": {"family": "36h11", "black": "5 1/2 in", "panel": "9 in", "t1": {"at": ["480 in", "12 in", "40 in"], "faces": "135 deg", "tilt": "0 deg"}}
 }
@@ -155,9 +163,12 @@ an `alliance`, a `robot`, a `piece`, a `place` or the `match`.
 - **A zone, line, solid or hang that a rule or a score names must have an outline, `from` and `to`, a `shape`, or an `at`.**
   If no source gives it, it has `"no_geometry": "why"`, and the loader lists it.
 - `edge` is `tape inside` or `tape outside`. `height` is `none` (no limit) or a quantity. `for` is `people` when no robot goes there.
-- A box is `[along faces, across, up]`, its middle at `at` in plan and standing on it. Other shapes: `cylinder` `{diameter,
-  length, axis}`, `ball` `{diameter}`, `ring` `{inside, outside, thick}`, `tube` `{inside, outside, length}`, `prism`
+- **A shape is drawn around its record's `at`, turned by `faces`,** and stands on the height in `at`. A box is `[along faces,
+  across, up]`. Other shapes: `taper` `{bottom, top, tall}` (two outlines, for faces that lean), `cylinder` `{diameter, length, axis}`, `ball` `{diameter}`, `ring` `{inside, outside, thick}`, `tube` `{inside, outside, length}`, `prism`
   `{outline, tall}`, and `join` or `cut`: lists of shapes, each with its own `at`.
+  Points of an outline inside a shape are from `at`, along `faces`. If no source gives the height a solid starts at, leave it
+  out of `at` and put that in `unknown`.
+- `equipment` is lights, station shelves, buttons and the like. A tag may have its own `panel`.
 - `passages` are `under` (`height`), `over` (`rise`, `slope`) or `between` (`width`).
 - `hangs` are `bar`, `chain`, `frame`, `post` or `ledge`. `at` is the middle of a bar, the lowest point of a chain, the middle
   of the bottom of a frame or post. `may_touch` and `may_not_touch` list IDs, or words for a part that has none.
@@ -199,7 +210,7 @@ an `alliance`, a `robot`, a `piece`, a `place` or the `match`.
     "park": {"per": "robot", "points": [{"when": ["teleop"], "points": 4}], "needs": [["my bumpers", "partly in", "my yard"]], "unless": ["hang"]},
     "loft_rp": {"per": "match", "rp": 1, "when": ["qualification"], "needs": [["my loft_points", "at least", 12], ["my hanging_robots", "at least", 2]]}
   },
-  "judged": [{"awards": ["bale_in_barn"], "after_auto": "2 s", "after_teleop": "2 s"}, {"awards": ["park", "hang"], "after_teleop": "4 s", "or_sooner": "all robots rest"}],
+  "judged": {"late": {"awards": ["bale_in_barn"], "after_auto": "2 s", "after_teleop": "2 s"}, "climbs": {"awards": ["park", "hang"], "after_teleop": "4 s", "or_sooner": "all robots rest"}},
   "fouls": {"minor": {"points_to_them": 3}, "yellow_card": {"says": "A warning. A second becomes a red card."}}
 }
 ```
@@ -227,20 +238,21 @@ A condition is `[who, how, what]`. It reads as English, and only these words are
 
 ## 12. `conduct.json`
 
-Keyed by rule code, or by an ID when the manual gives no code.
+Keyed by rule code, or by an ID when the manual gives no code (setup, cards, the order of placing robots).
 
-**Every rule has `says` and `cost`.** A rule that a program computes from has one of five `act`s as well:
+**Every rule has `says` and `cost`.** A rule that costs nothing has `"cost": []`. A rule that a program computes from has one of five `act`s as well:
 
 | `act` | For | Fields |
 |---|---|---|
 | `touch` | Contact that depends on a zone, a time or a thing | `what` (`their robot` or IDs), `through_pieces`, `whoever_starts` |
 | `launch` | Where a piece may be launched or put | `piece`, `into` (an ID, if it matters) |
-| `hold` | How many pieces | `limit`: a number for each piece; `where` (IDs), if it is about keeping them somewhere |
+| `hold` | How many pieces | `limit`: a number for each piece; `longer_than` (a term or a time); `where` (IDs), if it is about keeping them somewhere |
 | `cross` | Where a robot may be, or how many robots | `limit` (robots of one alliance), if any |
 | `feed` | How pieces may enter or be kept | `piece`, `who`, `limit` |
 
 with `must_not` (`true`, or the conditions that make it wrong) or `only_if` (those that make it right), `when`, and `unless`
-(exceptions, in words). `who` is `robot` if left out, or a list of people from `game.json`.
+(exceptions, in words). `who` is `robot` if left out, or a list of `robot`, people from `game.json`, or `anyone`. `who` and
+`when` may be on any rule.
 
 ```json
 {
@@ -250,12 +262,22 @@ with `must_not` (`true`, or the conditions that make it wrong) or `only_if` (tho
     "must_not": [["either bumpers", "partly in", "their yard"]], "when": ["endgame"],
     "cost": ["minor", {"award": "loft_rp", "to": "their alliance", "when": ["qualification"]}]
   },
-  "G91": {"says": "A robot may not be unsafe.", "cost": [{"foul": "yellow_card", "if": "it happens again"}, {"words": "the match does not start"}]}
+  "G91": {"says": "A robot may not be unsafe.", "cost": [{"foul": "yellow_card", "again": "event"}, {"words": "the match does not start"}]}
 }
 ```
 
-`cost` is a list of foul IDs, or objects: `foul` (with `times`, `each`, `every`, `if`), `award` (given `to` someone), `deny` (a list
-of awards lost), or `words`, each with an optional `when` and `if`.
+`cost` is a list, and all of it adds up. Each is a foul ID, or an object with one of `foul`, `award` (given `to` someone),
+`deny` (a list of awards lost), `either` (a list of fouls, one of which is given) or `words`; and, when needed:
+
+| Field | Meaning |
+|---|---|
+| `if` | Only then (words) |
+| `again` | Only when it happens again in the same `match`, `phase` or `event` |
+| `instead_of` | A foul in this list that is then not given |
+| `times`, `each`, `every` | How many; once per this (words); once more for every time that passes (a time) |
+| `against` | `robot`, `team`, `alliance` or `person`, if it is not the one that broke the rule |
+| `next_match` | `true`: given in the next match |
+| `when` | As everywhere |
 
 ## 13. `robot.json`
 
@@ -266,26 +288,37 @@ limit.
 |---|---|
 | `perimeter` | `size` (string around it), `bump` (how far a bolt head may stick out) |
 | `start` | `height`, and `where`: conditions true when the match starts |
-| `height` | `max` |
+| `height` | `max`: the tallest it may ever be |
 | `reach` | `far` (beyond the perimeter), `sides` (how many at once) |
-| `weight` | Named limits: `{"robot": {"max": "at most 105 lb", "without": ["bumpers", "battery"]}}` |
+| `weight` | Named limits: `robot`, `bumpers`, `with_bumpers`, `inspected` (all that is brought to inspection). Each has `max` and `without`: what is left off the scale |
 | `hold`, `preload` | The most pieces, by piece |
-| `bumpers` | `low` and `high` (the zone), `out`, `hard`, `gap`, `corner`, `tolerance`, `padding`, `backing`, `numbers` |
-| `drive` | `motors` |
+| `bumpers` | `low` and `high` (the zone, from the floor), `out` (their outside from the perimeter), `hard` (hard parts from the perimeter), `gap` (between segments), `corner` (padding out from a corner), `tolerance` (allowed on each size at inspection), `padding`, `backing`, `numbers` |
+| `drive` | `motors`: how many may drive it |
 | `price`, `console`, `radio`, `air`, `battery` | Their numbers |
 
-**`parts`** lists what may be used, each with an ID: `motors`, `controllers`, `relays`, `batteries`, `breakers` and so on.
+No other names. Each also has `says` where the measuring needs it.
+
+**`parts`** is groups of records: what may be used, and how it is wired. An ID is used once in a group.
 
 ```json
 {
-  "motors": {"mule": {"name": "Mule 12", "part_numbers": ["217-0000", "mu-12"]}},
-  "controllers": {"reins": {"name": "Reins", "part_numbers": ["rn-1"], "runs": {"mule": 2}}},
-  "branch": [{"for": "a motor controller", "breaker": "at most 40 A", "each": 1}],
-  "wire": [{"for": "31 to 40 A", "thinnest": "12 AWG", "area": "4 mm2"}]
+  "motors": {"about": {"allow": "only"}, "mule": {"name": "Mule 12", "part_numbers": ["217-0000", "mu-12"], "on": {"controller": 2, "relay": 1}}},
+  "controllers": {"about": {"allow": "only"}, "reins": {"name": "Reins", "part_numbers": ["rn-1"], "kind": "controller"}},
+  "power": {"about": {"allow": "only", "one_of": true}, "panel": {"name": "Panel", "number": 1}},
+  "branch": {"motor": {"for": "a motor controller", "protection": "at most 40 A", "each": 1}},
+  "wire": {"main": {"for": "the battery to the panel", "thinnest": "6 AWG"}}
 }
 ```
 
-`runs` is how many of each motor one controller may run; a motor that is not there may not be run.
+| Field | Holds |
+|---|---|
+| `about` | Of the whole group: `allow` is `only` (nothing else may be used) or `examples`; `one_of` is `true` if one of them is picked |
+| `name`, `part_numbers`, `number` | What it is called, its part numbers, and how many there must be |
+| `kind` | For a device that runs others: `controller`, `relay`, `pneumatics` or `own` (built into one motor) |
+| `on` | For a motor or other load: how many one device of each kind may run. A kind that is left out may not run it. `"any"` is no limit, and `{"is": 1, "of": "each channel"}` is per channel |
+| `protection`, `each` | The breaker or fuse of a circuit, and how many circuits it may feed (a number, `any`, or an object) |
+| `thinnest`, `area` | The thinnest wire |
+| `for` | What a row is about, in words |
 
 **`rules`** has a record for every construction and inspection rule, keyed by code, each with its own `says`. Numbers come
 from `limits`, `parts` or its own fields.
@@ -295,6 +328,8 @@ from `limits`, `parts` or its own fields.
 ```json
 {"momentary": {"says": "Less than about {lasts}.", "lasts": "4 s"}}
 ```
+
+A word that is already the ID of something else (a zone, a piece) has no term: its `says` is there.
 
 ## 15. Reading the sources
 
