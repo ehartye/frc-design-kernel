@@ -12,8 +12,9 @@ Short rules for people and coding agents who change this library. The reasons ar
   soft contact. An added engine goes into `ENGINES` in `tests/trial_cases.py` and must pass the whole calibration
   set, the squeeze case included; an engine that runs pieces in 3D also goes into `ENGINES_3D` and must seat the
   standing seating case (DESIGN.md section 16).
-- Scope is **build, measure, try**. Do not add guidelines, pass or fail verdicts, receipts, review pages, publishing
-  or CI policy. Tools that judge a design own those.
+- Scope is **build, measure, try**, and **read a game's rules** as data. Reading rules answers what they say, never
+  whether a design meets them. Do not add guidelines, pass or fail verdicts, receipts, review pages, publishing or CI
+  policy. Tools that judge a design own those.
 
 ## Keep it neutral
 

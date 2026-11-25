@@ -6,15 +6,16 @@
 A small Python library for the first stage of robot design: the **blockout**. A blockout is the whole robot drawn as
 about 30 to 80 simple named solids, the ways its parts move, what they weigh, and a few physics trials.
 
-The library does three things and nothing else:
+The library does four things and nothing else:
 
 | Layer | What it does | State |
 |---|---|---|
 | **Build** | Turns one design source (a JSON file, or a top file and one file per subsystem) into named solids, poses, motions, a STEP file and a manifest. | Here now |
 | **Measure** | Clearance along a motion with a proof that nothing was missed, what touches what, mass and centre of mass. | Here now |
 | **Try** | Physics trials described as data: one round piece in a plane, with a control, brackets and a half-step repeat. | Here now (planar) |
+| **Read rules** | A game's complete rules, written once as data in a project's folder: values, places, times and counts, and answers about them. | Here now |
 
-It builds and measures. It does not judge. Clearance guidelines, pass or fail criteria, review pages and publishing
+It builds, measures, tries and reads. It does not judge. Clearance guidelines, pass or fail criteria, review pages and publishing
 belong to the tools that use it. The full design is in [DESIGN.md](DESIGN.md).
 
 ## The two periods
@@ -145,7 +146,21 @@ python -m frc_design_kernel piece-geometry pieces.json --out geometry.json
 volume, symmetry, a convex hull that holds the whole piece, and any hole straight through it. See
 [DESIGN.md](DESIGN.md) section 12.6c.
 
-The same thing from Python:
+To ask a game's rules, which a project keeps as a dated folder of JSON files:
+
+```
+python -m frc_design_kernel rules find R92 --rules examples/rules/2031-03-14
+python -m frc_design_kernel rules get limits.reach.far --unit in --rules examples/rules/2031-03-14
+python -m frc_design_kernel rules get barn.at --alliance red --rules examples/rules/2031-03-14
+python -m frc_design_kernel rules check --rules examples/rules/2031-03-14
+python -m frc_design_kernel rules means limits.reach.far
+```
+
+`find` prints a rule in full by its code, its ID or words of it. `get` prints one value with its source and what it
+means. `check` prints every fault of a folder. `means` prints what any name of the format means; the format itself is
+`frc_design_kernel/rules/fields.json`. The example is invented. See [DESIGN.md](DESIGN.md) section 17.
+
+Building and measuring from Python:
 
 ```python
 import frc_design_kernel as kernel
