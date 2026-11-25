@@ -61,3 +61,33 @@ class Checked(unittest.TestCase):
 
     def accepted(self, change):
         self.assertEqual(self.faults(change), [])
+
+
+@functools.lru_cache(maxsize=1)
+def as_it_is():
+    """The Rules of the example, read once: nothing that is asked of them changes them."""
+    from frc_design_kernel.rules.rules import load_rules
+    return load_rules(EXAMPLE)
+
+
+class Derived(unittest.TestCase):
+    """Help for tests that ask the example, as it is or with one thing changed, for what is worked out."""
+
+    def rules(self, change=None):
+        from frc_design_kernel.rules.rules import load_rules
+        if not change:
+            return as_it_is()
+        data = example()
+        change(data)
+        return load_rules(written(data))
+
+    def is_(self, value, kind, number, places=6):
+        self.assertEqual(value.kind, kind)
+        self.assertAlmostEqual(value.value, number, places=places)
+
+    def wrong(self, does, *says):
+        from frc_design_kernel.errors import DesignError
+        with self.assertRaises(DesignError) as caught:
+            does()
+        for word in says:
+            self.assertIn(word, str(caught.exception))

@@ -176,6 +176,8 @@ class Ids(unittest.TestCase):
             self.assertEqual((found.node, found.end), (node, None), path)
         self.assertEqual(book.look("stall.at.y", {"gate": "high"}).node, "4 in")
         self.assertEqual((book.look("bale.mass.low").node, book.look("bale.mass.low").end), ("1 to 2 lb", "low"))
+        self.assertEqual((book.look("loft.spots.2.a.at.x").node, book.look("loft.spots.2.a.at.x").spot), (book.look("loft@red.2.a.at.x").node, "2.a"))
+        self.assertEqual(book.look("loft.spots.first.a.at.x").spot, None)
         found = book.look("loft@red.2.a.at.x")
         self.assertEqual((found.entry.path, found.alliance, found.spot), ("loft", "red", "2.a"))
 

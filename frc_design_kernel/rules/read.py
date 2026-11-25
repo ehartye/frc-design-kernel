@@ -130,7 +130,7 @@ class Found:
     entry: Entry | None     # the record it is in; None for a whole group, such as "limits"
     end: str | None         # "low" or "high" when the path asks for one end of a range
     alliance: str | None    # "blue" or "red" when the path says it: stall@red.at.x
-    spot: str | None        # the spot when the path says it: branch@red.3.b.at.x
+    spot: str | None        # the spot when the path says it: branch@red.3.b.at.x or branch.spots.3.b.at.x
 
 
 @dataclass(frozen=True)
@@ -198,7 +198,10 @@ class Book:
                 raise unknown(where, "alliance", alliance, ALLIANCES)
             if not entry or entry.data.get("alliance") != "each":
                 raise DesignError(where, f'"{head}" is not one of the things of each alliance', f'Write "{head}" without @, or give it "alliance": "each"')
-            spot, node, steps = _at_spot(node, steps)
+            spot, node, steps = at_spot(node, steps)
+        elif entry and steps[:1] == ["spots"] and is_pattern(node.get("spots")) and at_spot(node, steps[1:])[0]:
+            spot, _, steps = at_spot(node, steps[1:])
+            node = spot_data(node["spots"], spot)
         while entry is None and steps and not self._entry(head) and isinstance(node, dict) and isinstance(node.get(steps[0]), dict):
             node, head, steps = node[steps[0]], f"{head}.{steps[0]}", steps[1:]
             entry = self._entry(head)
@@ -246,7 +249,7 @@ class Book:
         return None
 
 
-def _at_spot(record, steps):
+def at_spot(record, steps):
     """(spot name or None, the data that the rest of the path is in, the rest of the path)."""
     spots = record.get("spots")
     for name in sorted(spot_names(spots), key=len, reverse=True):

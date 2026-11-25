@@ -48,7 +48,7 @@
     "boulder": {"alliance": "each", "at": ["200 in", "280 in", "0 in"], "shape": {"ball": {"diameter": "14 in"}}, "src": "manual 3.4"},
     "tyre": {"alliance": "each", "at": ["240 in", "20 in", "0 in"], "shape": {"ring": {"inside": "12 in", "outside": "22 in", "thick": "5 in"}}, "src": "manual 3.4"},
     "culvert": {
-      "alliance": "each", "at": ["240 in", "280 in", "0 in"], "faces": "90 deg",
+      "alliance": "each", "at": ["240 in", "270 in", "0 in"], "faces": "90 deg",
       "shape": {"tube": {"inside": "16 in", "outside": "18 in", "length": "48 in"}}, "src": "manual 3.4"
     },
     "ramp": {
