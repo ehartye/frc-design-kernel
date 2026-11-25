@@ -8,6 +8,7 @@
     book.entries               every Entry, in the order written: records, limits, tags, parts, people and sources
     book.ids                   {ID: Entry} for what a path may begin with
     book.look(path, choice)    what a path names, as a Found: the data itself, not worked out
+    book.opened(node, choice)  what a node stands for through `is` and `by`, and what is said beside it: the one place that gathers that
     spot_names(spots)          the names that spots or a pattern make, such as "near" or "3.b"
 
 Nothing here works anything out. A Found's node is data as it is written: a printed number, a formula, or an object with
@@ -224,6 +225,10 @@ class Book:
         node, end, about = self._follow(node, steps, choice or {}, where)
         return Found(node, entry or self._entry(head), end, alliance or None, spot, about)
 
+    def begins(self, steps):
+        """Whether some steps are a path: an ID is first, and no place in a list is among them."""
+        return steps[0] in self.ids and not any("[" in step for step in steps)
+
     def within(self, data, path, entry, choice=None, start=""):
         """What a path names that begins with a field of data, an object in the record entry; start is what to tell in front of it."""
         node, end, about = self._follow(data, path.split("."), choice or {}, f'the path "{start}{path}"')
@@ -233,7 +238,7 @@ class Book:
         """(a path's steps without `is` and the names of variants, {kind: the variant that they name}), as far as it leads."""
         found, chosen = [], {}
         for i, name in enumerate(steps):
-            inner, _ = self._to(node, name, choice)
+            inner, _ = self.opened(node, choice, name)
             if isinstance(inner, dict) and name == "is" and "is" in inner:
                 node = inner["is"]
             elif isinstance(inner, dict) and name in inner and isinstance(inner.get("by"), str) and name in self.variants.get(inner["by"], ()):
@@ -262,7 +267,7 @@ class Book:
     def _step(self, node, name, choice, where, last, about):
         """(the data one step further, None), or (the data itself, "low" or "high") when the last step asks for an end. What is said
         beside an `is` that it goes through is added to about."""
-        whole, (node, said) = node, self._to(node, name, choice)
+        whole, (node, said) = node, self.opened(node, choice, name)
         if isinstance(node, (list, dict)):
             about.update(said)
         if isinstance(node, list) and name in tuple(AXES[:len(node)]):
@@ -273,24 +278,25 @@ class Book:
             return whole, name
         raise unknown(where, "field", name, AXES[:len(node)] if isinstance(node, list) else node if isinstance(node, dict) else ())
 
-    def _to(self, node, name, choice):
-        """(the object or list that has a name, inside those that stand for it; what is said beside each `is` on the way)."""
-        said = {}
-        while isinstance(node, dict) and name not in node and (inner := self._inside(node, name, choice)) is not None:
-            said.update({k: v for k, v in node.items() if k != "is"} if "is" in node else {})
+    def opened(self, node, choice, name=None, about=None):
+        """(what a node stands for, through `is` and `by`; what is said beside it, over what is said around it already). With a name it
+        goes on, through `any` too, to the object or the list that has that name. Every path and every value comes through here."""
+        about = dict(about or {})
+        while isinstance(node, dict) and (name is None or name not in node):
+            if "by" in node:
+                kind = node["by"] if isinstance(node["by"], str) else ""
+                inner = node.get(choice.get(kind, next(iter(self.variants.get(kind, ())), None)))
+            elif "is" in node:
+                inner = node["is"]
+                about.update({k: v for k, v in node.items() if k != "is"})
+            else:
+                inner = next((one for one in node["any"] if isinstance(one, dict) and name in one), None) if name and isinstance(node.get("any"), list) else None
+                if inner is None:
+                    break
             node = inner
-        return node, said
-
-    def _inside(self, node, name, choice):
-        """What an object that stands for a value holds: its `is`, its variant, or the limit of that name in its `any`."""
-        if "is" in node:
-            return node["is"]
-        if isinstance(node.get("by"), str):
-            kinds = self.variants.get(node["by"], [])
-            return node.get(choice.get(node["by"], kinds[0] if kinds else None))
-        if isinstance(node.get("any"), list):
-            return next((one for one in node["any"] if isinstance(one, dict) and name in one), None)
-        return None
+        if name is None and isinstance(node, dict) and "text" in node:
+            about.update({k: v for k, v in node.items() if k != "text"})
+        return node, about
 
 
 def at_spot(record, steps):

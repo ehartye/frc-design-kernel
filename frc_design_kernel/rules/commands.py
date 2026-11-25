@@ -214,7 +214,7 @@ def get(args):
     try:
         if args.json:
             print(json.dumps({
-                "path": args.path, "alliance": alliance, "spot": args.spot, "variants": taken,
+                "path": args.path, "alliance": alliance, "spot": own_spot or args.spot, "variants": taken,
                 "means": {"key": meaning.key, "means": meaning.means} if meaning else None, "answer": answers.plain(rules, got, args.unit)}))
             return
         lines = answers.lines(rules, args.path, got, args.unit)

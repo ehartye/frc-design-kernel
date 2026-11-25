@@ -746,7 +746,7 @@
         "of": {"holds": "text", "means": "What is measured, from where to where, when the name does not say."},
         "src": {"holds": "src", "means": "The source of this value, when it is not the record's."},
         "assumed": {"holds": "text", "means": "Why this value was chosen, when no source prints it."},
-        "differs": {"holds": "differs", "means": "What other sources say instead. `is` is the one to use."},
+        "differs": {"holds": "differs", "means": "What other sources say instead. `is` is the one to use. A number that is moved, for red or for a spot of a pattern, is told without it."},
         "was": {"holds": "was", "means": "What the value was before."},
         "each": {"holds": "each", "means": "What it is counted for each of: `spot`, `alliance` or an ID."}
       }

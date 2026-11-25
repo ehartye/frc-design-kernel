@@ -7,6 +7,7 @@ import random
 import unittest
 
 from .rules_cases import example, rename, written
+from .test_rules_refusals import Refused
 
 
 def limits(d):
@@ -101,6 +102,40 @@ def nodes(data, way=()):
     for name in data if isinstance(data, dict) else range(len(data)) if isinstance(data, list) else ():
         yield (*way, name)
         yield from nodes(data[name], (*way, name))
+
+
+class Beside(Refused):
+    """A slip beside a value, or in it, when the value is named past it."""
+
+    CAP = {"by": "event", "regional": 2, "championship": 3}
+
+    def test_a_slip_beside_a_value(self):
+        """Catches a slip in what differs, or when, that stops the reader, or is told again, when the value is named past it: by a formula or
+        words, through is, a variant, a list or any."""
+        for slip in (5, None, True, "auto", {}, ["auto and teleop"], [5], [None], ["zebra"], [{}]):
+            def change(d, beside=True):
+                d["scoring"]["awards"]["hang"].update(most={"is": self.CAP, **({"when": slip} if beside else {})}, says="{most.regional} {most.is}")
+                d["robot"]["rules"]["R98"].update(says="{hang.most.regional} {hang.most.is} {hang.most.is.championship} {hang.most}")
+                d["places"]["cellar"]["holds"].update(bale="= hang.most.regional * 2")
+            self.refused(change, "scoring.json hang.most.when")
+        self.accepted(lambda d: change(d, beside=False))
+        for slip in (5, None, True, "133 in", {}, {"is": "133 in", "src": "drawings sheet 6"}):
+            def change(d):
+                d["field"]["solids"]["crate"].update(at={"is": ["131 in", "150 in", "0 in"], "differs": slip})
+                d["field"]["zones"]["pond"].update(own={"is": {"any": [{"a": "1 in"}, {"b": "2 in"}]}, "differs": slip}, says="{own.a} {own.is.b} {pond.own.a}", k="= pond.own.b")
+                d["game"]["people"]["coach"].update(step={"is": "1 in", "differs": slip}, says="{step.is}")
+            self.assertEqual([one.partition(":")[0] for one in self.faults(change)], ["game.json people.coach.step.differs", "field.json pond.own.differs", "field.json crate.at.differs"])
+
+    def test_a_slip_in_a_value(self):
+        """Catches a value at fault that is told again where it is named without the is, the any or the place in a list that it is in."""
+        most = lambda d: d["scoring"]["awards"]["hang"].update(most={"is": {**self.CAP, "regional": "two"}})
+        for path in ("hang.most.regional", "hang.most.is.regional"):
+            self.refused(lambda d: most(d) or d["places"]["cellar"]["holds"].update(bale=f"= {path} * 2"), "scoring.json hang.most.is.regional:")
+        self.refused(lambda d: d["field"]["zones"]["pond"].update(own={"is": ["1 zz", "2 in"]}, k="= pond.own.x * 2"), "field.json pond.own.is.x:")
+        self.refused(lambda d: d["field"]["zones"]["pond"].update(own={"any": [{"a": "1 zz"}, {"b": "2 in"}]}, k="= pond.own.a * 2"), "field.json pond.own.any[0].a:")
+        self.refused(lambda d: d["field"]["zones"]["fold"].update(outline=[["1 in", "2 in"], ["9 zz", "2 in"], ["9 in", "8 in"], ["1 in", "8 in"]]) or d["field"]["zones"]["pond"].update(k="= fold.outline.y.x"), "field.json fold.outline[1].x:")
+        both = self.faults(lambda d: d["field"]["solids"]["crate"].update(differs=5) or d["field"]["zones"]["pond"].update(k="= crate.at.x + hoop.mass"))
+        self.assertEqual(len(both), 2, both)      # beside a record, it is no slip of its values
 
 
 class Slips(unittest.TestCase):

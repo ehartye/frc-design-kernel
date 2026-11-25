@@ -421,7 +421,8 @@ class Words:
         head = path.partition(".")[0]
         for data in (field.owner, field.entry.data):
             if head in data:
-                return self.book.within(data, path, field.entry)
+                whole = f"{field.entry.path}.{path}"
+                return self.book.look(whole) if data is field.entry.data and self.book.begins(whole.split(".")) else self.book.within(data, path, field.entry)
         if head in self.missing:
             return None
         return self.book.look(path)

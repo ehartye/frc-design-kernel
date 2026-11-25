@@ -245,6 +245,18 @@ class Red(Derived):
                 rules.get(path, alliance="red")
             self.assertIn(ask, caught.exception.fix, path)
             self.assertTrue(rules.get(ask))
+        data = changed("mirror")
+        data["places"]["barn"]["opening"]["outline"] = {"is": {"by": "field", "welded": {"circle": "20 in"}, "bolted": {"hexagon": {"flats": "20 in", "points": "10 deg"}}}}
+        data["field"]["solids"]["ramp"]["shape"] = {"by": "gate", "low_gate": {"box": ["1 in", "2 in", "3 in"]}, "high_gate": {"is": data["field"]["solids"]["ramp"]["shape"]}}
+        from frc_design_kernel.rules.rules import load_rules
+        rules = load_rules(written(data))
+        for path, ask, many in [("barn@red.opening.outline.bolted.hexagon.points", "barn@red.opening.outline.bolted", 6), ("barn@red.opening.outline.is.bolted.hexagon.points", "barn@red.opening.outline.bolted", 6),
+                                ("ramp@red.shape.high_gate.is.prism.outline.x.y", "ramp@red.shape.high_gate", None)]:
+            with self.assertRaises(DesignError) as caught:
+                rules.get(path)
+            self.assertTrue(caught.exception.fix.endswith(ask), caught.exception.fix)
+            got = rules.get(ask)
+            self.assertEqual(len(got) if many else got["kind"], many or "prism")
 
     def test_a_formula_of_red(self):
         """Catches a formula that names a point of red's outline, or a coordinate of red's by variant, and is given blue's."""
@@ -256,6 +268,67 @@ class Red(Derived):
         self.is_(rules.get("pond.other"), "length", (611.75 - 130) * IN)
         self.is_(rules.get("pond.third"), "length", (66 + 2 * 48) * IN)
         self.assertEqual(round(rules.get("fold@red.outline.y.y.low").value / IN, 6), 249)
+
+    def test_a_lopsided_tolerance(self):
+        """Catches the ends of a tolerance that are blue's where red's number is the same, on the middle of the field or straight across it."""
+        from frc_design_kernel.rules.rules import load_rules
+        data = changed("mirror")
+        data["field"]["size"].update(length="600 in")
+        data["field"]["solids"]["tyre"].update(at=["300 in +2 -1", "150 in +2 -1", "0 in"], faces="90 deg +5 -1")
+        rules = load_rules(written(data))
+        ends = lambda value, unit=IN: tuple(round(one / unit, 6) for one in (value.value, value.low, value.high))
+        self.assertEqual([ends(one) for one in rules.get("tyre@red.at")[:2]], [(300, 298, 301), (150, 149, 152)])
+        self.assertEqual((ends(rules.get("tyre@red.faces"), 1), rules.get("tyre@red.faces.low").value, ends(rules.get("tyre.faces"), 1)), ((90, 85, 91), 85, (90, 89, 95)))
+        self.assertEqual((rules.get("tyre@red.at.x").printed, rules.get("tyre@red.at.y").printed), ("300 in", "150 in +2 -1"))
+        data["field"]["symmetry"] = "turn"
+        rules = load_rules(written(data))
+        self.assertEqual([ends(one) for one in rules.get("tyre@red.at")[:2]], [(300, 298, 301), (150, 148, 151)])
+        self.assertEqual(ends(rules.get("tyre@red.faces"), 1), (270, 269, 275))
+
+    def test_what_others_say_of_a_moved_number(self):
+        """Catches another source's number, which is blue's, or the first spot's, as it is written, told beside a number that was moved."""
+        from frc_design_kernel.rules.rules import load_rules
+        data, other = changed("mirror"), lambda text: {"is": text, "differs": [{"is": "133 in" if "in" in text else "5 deg", "src": "drawings sheet 6"}]}
+        data["field"]["solids"]["tyre"].update(at=[other("240 in"), other("20 in"), "0 in"], faces=other("30 deg"), own=other("7 in"))
+        data["field"]["zones"]["lane"]["outline"][1] = ["60 in", other("0 in")]
+        data["field"]["zones"]["lane"]["outline"][2][0] = other("60 in")
+        data["places"]["near_bales"]["spots"]["first"]["at"][1] = other("66 in")
+        data["field"]["solids"]["culvert"].update(at=[other("306.20 in"), other("270 in"), "0 in"], faces=other("90 deg"))     # red's numbers are the same
+        data["field"]["solids"]["boulder"].update(at=[other("= size.length / 2"), {"is": "25 ft", "src": "manual 3.4"}, "0 in"])
+        rules = load_rules(written(data))
+        self.assertEqual([rules.get(f"culvert@red.{path}").printed for path in ("at.x", "at.y", "faces")], ["306.20 in", "270 in", "90 deg"])
+        for path, many in [("culvert.at.x", 1), ("culvert@red.at.x", 0), ("culvert@red.at.y", 1), ("culvert@red.faces", 0), ("boulder@red.at.x", 0), ("tyre.at.x", 1), ("tyre@red.at.x", 0), ("tyre@red.at.y", 1), ("tyre.faces", 1), ("tyre@red.faces", 0), ("tyre@red.own", 1), ("lane.outline.z.x", 1), ("lane@red.outline.z.x", 0), ("lane@red.outline.y.y", 1),
+                           ("near_bales.spots.1.at.y", 1), ("near_bales.spots.3.at.y", 0), ("near_bales@red.1.at.y", 1)]:
+            self.assertEqual(len(rules.get(path).differs), many, path)
+
+    def test_the_spot_of_the_path(self):
+        """Catches a spot that is asked for and goes over the spot that the path names."""
+        rules = as_it_is()
+        for path in ("stall.spots.near.at.y", "stall@blue.near.at.y"):
+            self.is_(rules.get(path, spot="far"), "length", 60 * IN)
+        self.is_(rules.get("stall.at.y", spot="far"), "length", 240 * IN)
+
+    def test_words_of_a_spot(self):
+        """Catches the record's words, asked at a spot, that print the record's value where the spot has its own."""
+        from frc_design_kernel.rules.rules import faults, load_rules
+        data = example()
+        data["places"]["stall"].update(says="Down a slide of {slide}, {stall.slide} by its path.")
+        data["places"]["stall"]["spots"]["near"].update(slide="40 deg")
+        rules = load_rules(written(data))
+        said = lambda degrees: f"Down a slide of {degrees} deg, 50 deg by its path."
+        self.assertEqual([rules.get(path).value for path in ("stall.spots.near.says", "stall@red.near.says", "stall.spots.far.says", "stall.says")], [said(40), said(40), said(50), said(50)])
+        self.assertEqual(rules.get("stall.says", spot="near").value, said(40))
+        data["places"]["stall"]["opening"]["says"] = "Over {slide}, {lip} of lip."
+        rules = load_rules(written(data))
+        self.assertEqual([rules.get(f"stall{path}.opening.says").value for path in (".spots.near", "@red.far", "")], ["Over 40 deg, 1/2 in of lip.", "Over 50 deg, 1/2 in of lip.", "Over 50 deg, 1/2 in of lip."])
+        data["places"]["stall"]["spots"]["near"]["slope"] = "5 deg"
+        data["places"]["stall"]["opening"]["says"] = "It leans {slope}, over {slide}."
+        self.assertEqual(load_rules(written(data)).get("stall.spots.near.opening.says").value, "It leans 90 deg, over 40 deg.")      # the opening's own slope
+        data["places"]["stall"]["opening"].pop("says")
+        data["places"]["stall"]["spots"]["near"].pop("slope")
+        data["places"]["stall"]["spots"]["near"]["slide"] = {"wide": "1 in", "deep": "2 in"}
+        found = faults(written(data))       # else it passes, and fails when the spot's words are asked for
+        self.assertEqual([one.where for one in found], ["places.json stall.says"], found)
 
     def test_a_wrong_answer_is_caught(self):
         """Control: with red's points of an outline given as blue's, and nothing refused as turned round, the test of every path fails."""

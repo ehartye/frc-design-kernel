@@ -7,6 +7,7 @@ A Worker remembers what it has worked out, and which kinds of variant that neede
 """
 import functools
 import itertools
+import re
 from dataclasses import replace
 
 from ..errors import DesignError, unknown
@@ -21,6 +22,7 @@ WORDS = {"text", "texts", "list of texts", "says", "src", "date", "timer", "peri
          "touchable", "given to", "goes to", "several people", "who", "loads"}
 NOT_VALUES = {"conditions", "must not", "when", "list of whens", "spots", "first spot", "cost", "shapes", "differs", "was", "people", "tags", "limits", "parts"}
 TOLD_WHOLE = {"conditions": "conditions", "must not": "conditions", "when": "when", "list of whens": "when", "cost": "", "differs": "", "was": ""}     # and the method of Rules that gives it
+SAID = ("differs", "when")      # what is said beside a value and must read before the value can be told
 
 LONGEST = 50        # a value is worked out from a chain of so many others at most, one from another; a real one needs a few
 
@@ -34,11 +36,20 @@ class Loop(Wrong):
         super().__init__(texts[0], "", f'needs itself: {" needs ".join(f'"{text}"' for text in texts)}', fix)
 
 
+class Turned(Exception):
+    """A part of a drawing that a mirror image turns round, asked for red."""
+
+
 class TooLong(Wrong):
     """A chain of values that is longer than any reader can follow."""
 
     def __init__(self):
         super().__init__("", "", f"needs a chain of more than {LONGEST} values, one from another", "Write one of them as a number")
+
+
+def as_named(where):
+    """A place as a path names it: without `is` and `any`, and with .x for the first of a list."""
+    return re.sub(r"\[([0-2])\]", lambda found: f".{AXES[int(found[1])]}", re.sub(r"\.is(?=[.\[]|$)|\.any\[[0-9]+\]", "", where))
 
 
 def inside(one, where):
@@ -54,7 +65,7 @@ class Season:
     needs one can not be worked out."""
 
     def __init__(self, book, bad=()):
-        self.book, self.workers, self.bad = book, {}, frozenset(bad)
+        self.book, self.workers, self.bad = book, {}, [(as_named(one), one) for one in bad]
         self.inside = 0         # how many values are being worked out, one inside another
         self.doing = []         # the formulas and the words being worked out, to see one that needs itself
         self.own = None         # where what is worked out is written, while faults are looked for
@@ -120,9 +131,10 @@ class Season:
             name in ("outline", "bottom", "top") and step in AXES for name, step in zip(inner, inner[1:])))
 
     def whole(self, entry, spot, rest):
-        """The steps to the whole drawing that a path leads into."""
-        _, inner = self.field_at(entry, spot, rest)
-        return ".".join([*([spot] if spot else []), *rest[:len(rest) - len(inner)]])
+        """The steps to the whole drawing that a path leads into, of the variant that the path names."""
+        field, inner = self.field_at(entry, spot, rest)
+        _, chosen = self.book.plain(field.owner, [field.name, *inner], {})
+        return ".".join([*([spot] if spot else []), *rest[:len(rest) - len(inner)], *(step for step in inner if step in chosen.values())])
 
     def starts(self, entry, spot):
         """The paths in which a field of a record, or of one of its spots, may be written: the spot's own first."""
@@ -130,9 +142,10 @@ class Season:
         return [f"{spots}.{spot}", f"{spots}.first", f"{spots}.first.{spot.rpartition(".")[2]}", entry.path] if spot else [entry.path]
 
     def sound(self, entry, spot, rest, own):
-        """Whether nothing is at fault where a path leads, in it or around it, but what is at own."""
-        wheres = [f"{entry.file}.json {'.'.join([start, *rest])}" for start in self.starts(entry, spot)]
-        return not any(inside(one, where) or inside(where, one) for one in self.bad if one != own for where in wheres)
+        """Whether nothing is at fault where a path leads, in it or around it, nor in what is said beside it on the way, but what is at own."""
+        wheres = [as_named(f"{entry.file}.json {'.'.join([start, *rest])}") for start in self.starts(entry, spot)]
+        wheres += [f"{where.rsplit('.', i)[0]}.{name}" for where in wheres for i in range(len(rest)) for name in SAID]
+        return not any(inside(at, where) or inside(where, at) for at, one in self.bad if one != own for where in wheres)
 
 
 class _Choice(dict):
@@ -208,19 +221,23 @@ class Worker:
             if rest[0] == "spots" and place.red:
                 names = alliances.spots(entry)
                 raise DesignError("", "is what blue's spots are made from", f"Ask for a spot of red's, such as {entry.id}@red.{names[0]}.at, of: {', '.join(names)}")
-            plain, chosen = self.book.plain(self._data(place), rest, self.choice)
             try:
-                if not chosen:
-                    return self._at(place, plain)
-                return self.of_variant(chosen, (entry.path, alliance, spot, *plain), lambda worker: worker._at(alliances.Place(worker, entry, alliance, spot), plain))
+                return self.along(self._data(place), rest, (entry.path, alliance, spot), lambda worker, plain: worker._at(alliances.Place(worker, entry, alliance, spot), plain))
             except NotOne:
                 raise self.not_one(self.book.within(self._data(place), ".".join(rest), entry, self.choice).node, entry, spot, rest) from None
+            except Turned:
+                raise DesignError("", "is turned round for red, whose copy is a mirror image", f"Ask for the whole of it: {entry.id}@red.{self.season.whole(entry, spot, rest)}") from None
         except DesignError as problem:
             raise problem if problem.where else problem.under(f"{entry.file}.json {path}")
 
     def _data(self, place):
         """What a path goes on into from its record. What all the tags share is a record, and each tag is in the same group."""
         return self.book.part("field", "tags") if place.entry.kind == "tags" else place.data
+
+    def along(self, data, steps, key, work):
+        """What work(worker, steps) gives: the steps without `is` and the names of variants, and the worker of the variants that they name."""
+        plain, chosen = self.book.plain(data, steps, self.choice)
+        return self.of_variant(chosen, (*key, *plain), lambda worker: work(worker, plain)) if chosen else work(self, plain)
 
     def of_variant(self, chosen, key, work):
         """What work(worker) gives for the variants that a path names, whichever were chosen."""
@@ -237,10 +254,14 @@ class Worker:
             return outlines.on_field(place, place.data.get("outline"))
         if alliances.moves(entry, rest[0]) and (place.listed if rest[0] == "outline" else not (place.as_written and rest[0] in place.data)):
             return self.season.marked(self._moved(place, rest), entry, spot, rest)
-        found = self.book.within(self._data(place), ".".join(rest), entry, self.choice, f"{entry.path}.")
         if place.swapped and self.season.turned(entry, spot, rest):
-            raise DesignError("", "is turned round for red, whose copy is a mirror image", f"Ask for the whole of it: {entry.id}@red.{self.season.whole(entry, spot, rest)}")
-        return self.season.marked(self.field(found.node, entry, rest, found.end, place, found.about), entry, spot, rest)
+            raise Turned()
+        return self.written(self._data(place), entry, [], rest, place)
+
+    def written(self, data, entry, start, rest, place=None):
+        """What a path gives that begins in data, the object that some steps lead to in a record."""
+        found, steps = self.book.within(data, ".".join(rest), entry, self.choice, f"{'.'.join([entry.path, *start])}."), [*start, *rest]
+        return self.season.marked(self.field(found.node, entry, steps, found.end, place, found.about), entry, place.spot if place else None, steps)
 
     def check(self, entry, spot, rest):
         """That the value which a path leads to is not at fault."""
@@ -250,16 +271,16 @@ class Worker:
     def field(self, node, entry, rest, end=None, place=None, about=None):
         """What a field of a record gives: rest are the steps to it from its record, and about what was said on the way."""
         place = place or alliances.Place(self, entry, "blue")
-        holds, (inner, _) = self.season.holds_at(entry, place.spot, rest), self.unwrap(node)
+        holds, (inner, said) = self.season.holds_at(entry, place.spot, rest), self.unwrap(node, about)
         if holds == "shape" and shapes.is_shape(inner):
             return shapes.drawn(self, entry, inner, place.swapped)
         if holds in (*OUTLINES, "shape") and rest[-1] in ("outline", "bottom", "top") and isinstance(inner, (list, dict)):
             return outlines.drawn(self, entry, inner, place.swapped)
         if holds == "starts" and isinstance(inner, str) and inner in word_list("starts"):
             number = pieces.left_over(self, entry, rest[-1])
-            return Value("number", number, printed=str(number), src=entry.data.get("src"))
+            return self.told(Value("number", number, printed=str(number)), said, entry)
         if holds == "says" and isinstance(inner, str):
-            filled = says.fill(self, self.season.field_at(entry, place.spot, rest)[0])
+            filled = says.fill(self, self.season.field_at(entry, place.spot, rest)[0], place.spot)
             return replace(self.value(filled.value, entry, holds), moves=filled.moves)
         return self.value(node, entry, holds, end, about=about)
 
@@ -306,10 +327,7 @@ class Worker:
     def value(self, node, entry, holds="", end=None, name=None, about=None):
         """The Value of a node as it is written; a list for a list, and AnyOf for limits of which one is enough. about is what is said
         around it, to which its own is added."""
-        node, own = self.unwrap(node)
-        said = about = {**(about or {}), **own}
-        about = {"of": about.get("of"), "assumed": about.get("assumed"), "src": about.get("src", entry.data.get("src")), "differs": tuple(about.get("differs", ())),
-                 "each": about.get("each"), "when": conditions.moments(self.book, about.get("when", ())), "name": name}
+        node, said = self.unwrap(node, about)
         if holds in NOT_VALUES and not isinstance(node, (bool, str)) or holds.startswith("list of ") and holds != "list of texts":
             raise self.no_value(node)
         if isinstance(node, list):
@@ -317,22 +335,20 @@ class Worker:
         if isinstance(node, dict) and isinstance(node.get("any"), list):
             return AnyOf(self.value(inner, entry, holds, name=n, about=said) for one in node["any"] for n, inner in one.items())
         if isinstance(node, dict) and isinstance(node.get("text"), str):
-            return Value("text", node["text"], printed=node["text"], **about)
+            return self.told(Value("text", node["text"], printed=node["text"]), said, entry, name)
         if isinstance(node, dict) or node is None:
             raise self.no_value(node)
         got = self._plain(node, holds)
-        return replace(one_end(got, end) if end else got, **about)
+        return self.told(one_end(got, end) if end else got, said, entry, name)
 
-    def unwrap(self, node):
-        """(the node that another one stands for, through `is` and `by`; what was said about it on the way)."""
-        about = {}
-        while isinstance(node, dict) and ("is" in node or "by" in node):
-            if "by" in node:
-                node = node.get(self.choice.get(node["by"])) if isinstance(node["by"], str) else None
-            else:
-                about.update({k: v for k, v in node.items() if k != "is"})
-                node = node["is"]
-        return node, about
+    def told(self, got, said, entry, name=None):
+        """A Value with what is said beside it and around it: the one place where that becomes part of a Value."""
+        return replace(got, of=said.get("of"), assumed=said.get("assumed"), src=said.get("src", entry.data.get("src")), differs=tuple(said.get("differs", ())),
+                       each=said.get("each"), when=conditions.moments(self.book, said.get("when", ())), name=name)
+
+    def unwrap(self, node, about=None):
+        """(the node that another one stands for, through `is` and `by`; what is said beside it, over what is said around it)."""
+        return self.book.opened(node, self.choice, about=about)
 
     def _plain(self, node, holds):
         """The Value of a number, a flag, a printed number, a formula or a word."""
@@ -357,11 +373,12 @@ class Worker:
     # -- formulas
 
     def begin(self, text):
-        """Note that something is being worked out, until season.doing.pop(). What needs itself is a Loop."""
+        """Note that something is being worked out, until season.doing.pop(). What needs itself is a Loop; the same text for other
+        variants is something else."""
         doing = self.season.doing
-        if text in doing:
-            raise Loop([*doing[doing.index(text):], text])
-        doing.append(text)
+        if (self, text) in doing:
+            raise Loop([*(one for _, one in doing[doing.index((self, text)):]), text])
+        doing.append((self, text))
 
     def formula(self, text):
         """The Value that a formula gives, printed in the unit of the first value of its kind that it names; in inches for feet, in seconds for minutes."""

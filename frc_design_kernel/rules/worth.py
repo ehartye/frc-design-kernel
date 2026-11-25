@@ -116,14 +116,16 @@ def one_end(value, end):
 
 def moved(value, number, sign=None):
     """A position's number somewhere else. The ends of a tolerance go along: sign is -1 where the direction turns round; None
-    drops them, where a direction is no longer along an axis."""
-    if number == value.value:
+    drops them, where a direction is no longer along an axis. What other sources say is of the number as it is written, and stays there."""
+    if number == value.value and sign == 1:
         return value
     low = high = None
     if sign is not None and value.low is not None:
         low, high = sorted(number + sign * (end - value.value) for end in (value.low, value.high))
+    if number == value.value and value.low is None:
+        return replace(value, differs=())       # it was turned round, and is the same number
     unit = worked(value.unit)
-    return replace(value, value=number, limit=None, low=low, high=high, printed=shown(number, value.kind, unit), unit=unit)
+    return replace(value, value=number, limit=None, low=low, high=high, printed=shown(number, value.kind, unit), unit=unit, differs=())
 
 
 def moves(got):

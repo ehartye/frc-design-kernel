@@ -129,6 +129,7 @@ class _Full:
 
     def __init__(self, finder, entry):
         self.finder, self.entry = finder, entry
+        self.chosen = {}        # {kind of variant: the name under which what is told stands}
 
     def lines(self):
         return self.object(self.entry.data, ())
@@ -140,6 +141,9 @@ class _Full:
     def object(self, data, steps):
         found = []
         for name, node in data.items():
+            before = self.chosen
+            if isinstance(data.get("by"), str) and name in self.finder.rules.book.variants.get(data["by"], ()):
+                self.chosen = {**before, data["by"]: name}
             if name == "says" and id(data) in self.finder.said:
                 found += [f"says{f' ({', '.join(chosen)})' if chosen else ''}: {text}" for chosen, text in self.finder.said[id(data)]]
             elif steps == ("starts",) and isinstance(node, str) and node in word_list("starts"):
@@ -149,6 +153,7 @@ class _Full:
             else:
                 inner = self.object(node, (*steps, name)) if isinstance(node, dict) else self.items(node, (*steps, name))
                 found += [f"{name}:", *("  " + one for one in inner)]
+            self.chosen = before
         return found
 
     def items(self, node, steps):
@@ -167,7 +172,8 @@ class _Full:
         if isinstance(node, dict):
             return f"{{{', '.join(f'{name}: {self.row(one, True)}' for name, one in node.items())}}}" if node else NOTHING
         if isinstance(node, str) and node.startswith("="):
-            return f"{self.worked(lambda worker: worker.formula(node))} ({node})"
+            chosen = self.chosen
+            return f"{self.worked(lambda worker: worker.of_variant(chosen, ('told', node), lambda own: own.formula(node)))} ({node})"
         return str(node).lower() if isinstance(node, bool) else str(node)
 
     def worked(self, work):

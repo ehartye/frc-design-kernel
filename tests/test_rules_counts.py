@@ -126,6 +126,37 @@ class Each(Derived):
             self.assertEqual([f.where for f in found], ["places.json cellar.holds.bale"], found)
             self.assertIn("for the whole", str(found[0]))
 
+    def test_own_names_in_words(self):
+        """Catches a name of a record's own in its words that gives less, or another variant's number, than its whole path does: through is, a
+        variant, a list, what is left over, an opening, a spot of a pattern or a person, who has no path."""
+        def change(d):
+            d["scoring"]["awards"]["hang"].update(most={"is": {"by": "event", "regional": 2, "championship": 3}, "when": ["auto"], "each": "alliance"}, says="{most.is}; {most.regional}; {most.championship}")
+            d["field"]["zones"]["pond"].update(own={"by": "field", "welded": "= size.length / 2", "bolted": "= size.length / 2"}, two={"is": ["1 in", "2 in"], "each": "spot"}, other={"by": "field", "welded": "5 in", "bolted": "6 in"},
+                                              says="{own.bolted}; {own.welded}; {own}; {two.is.x}; {two.y}; {other.bolted}; {other.welded}")
+            d["places"]["stall"].update(starts={"bale": {"is": "left over", "src": "update3 5", "of": "all of them"}}, says="{starts.bale.is}; {starts.bale}")
+            d["places"]["near_bales"].update(says="{starts.bale.is}")
+            d["places"]["centre_bales"].update(says="{spots.b.at.y}; {spots.first.at.y}")
+            d["places"]["barn"]["opening"].update(lean={"by": "field", "welded": {"is": "1 in", "each": "spot"}, "bolted": "2 in"}, says="{lean.welded}; {lean.bolted}")
+            d["game"]["people"]["coach"].update(step={"is": {"by": "field", "welded": "1 in", "bolted": "= size.length"}, "each": "spot"}, says="{step.bolted}; {step.is}; {most}")
+            d["game"]["people"]["driver"].update(step={"by": "field", "welded": "1 in", "bolted": "9 in"}, says="{step.bolted}")
+            d["places"]["barn"]["takes"][0].update(slot={"is": "4 in", "each": "spot"}, says="{slot.is} by {barn.out}")
+        rules = self.rules(change)
+        for variant, coach, own in [("welded", "1 in each spot", "306.2 in"), ("bolted", "611.75 in each spot", "305.875 in")]:
+            said = {path: rules.says(path, field=variant) for path in ("hang", "pond", "stall", "near_bales", "centre_bales", "people.coach", "people.driver")}
+            self.assertEqual(said, {"hang": "2 each alliance when auto; 2 each alliance when auto; 3 each alliance when auto", "pond": f"305.875 in; 306.2 in; {own}; 1 in each spot; 2 in each spot; 6 in; 5 in", "stall": "20; 20", "near_bales": "1 each spot",
+                                    "centre_bales": "96 in; 60 in", "people.coach": f"611.75 in each spot; {coach}; 1", "people.driver": "9 in"})
+            self.assertEqual(rules.get("barn.opening.says", field=variant).value, "1 in each spot; 2 in")
+        self.assertEqual([(v.src, v.of) for v in map(rules.get, ("stall.starts.bale", "stall.starts.bale.is"))], [("update3 5", "all of them")] * 2)
+        from frc_design_kernel.rules import says
+        self.assertEqual(says.fill(rules.season.worker(), rules.season.fields["barn.takes[0].says"]).value, "4 in each spot by 20 in")
+        self.assertEqual([rules.get(f"pond.{name}").printed for name in ("own.bolted", "other.bolted", "own.welded", "other.welded")], ["305.875 in", "6 in", "306.2 in", "5 in"])
+
+    def test_beside_words(self):
+        """Catches what is said beside a value in words that is lost, so that the record's source is told."""
+        rules = self.rules(lambda d: d["field"]["zones"]["pond"].update(own={"text": "laid", "src": "drawings sheet 2", "of": "a mat"}, two={"is": {"text": "flat", "of": "it"}, "src": "drawings sheet 2", "each": "spot"}, three={"text": "dry"}))
+        self.assertEqual([(v.value, v.src, v.of, v.each) for v in map(rules.get, ("pond.own", "pond.two", "pond.two.is", "pond.three"))],
+                         [("laid", "drawings sheet 2", "a mat", None), ("flat", "drawings sheet 2", "it", "spot"), ("flat", "drawings sheet 2", "it", "spot"), ("dry", "manual 3.2", None, None)])
+
     def test_beside_a_list(self):
         """Catches what is said beside a list, a point or limits of which one is enough that the values inside lose, or that goes over what they say themselves."""
         beside = {"src": "drawings sheet 2", "of": "two marks", "assumed": "a guess", "each": "spot", "differs": [{"is": "3 in", "src": "manual 3.2"}]}

@@ -5,6 +5,7 @@
     holds_places(key, steps)                whether a property is for positions or a direction
     uses_place(key, steps)                  whether what is at some steps inside a property is a position or a direction
     spots(entry)                            the names of its spots
+    own_of(field)                           the spots that have their own value for a name in their record's words
     size(worker, i)                         the field's length (0) or width (1) in mm
 
 Red is made from blue by the record's own symmetry, or else the field's. A spot of a pattern is made from its first one:
@@ -15,6 +16,7 @@ import math
 from ..errors import DesignError, unknown
 from . import fields, worth
 from .read import AXES, is_pattern, names, spot_data, spot_names
+from .words import IN_SAYS
 
 MOVES = ("at", "faces", "from", "to", "outline")
 POSITIONS = ("placed.at", "spot.at", "tag.at", "line.from", "line.to", "row.step", "ring.around", "zone.outline")       # properties that hold positions
@@ -44,6 +46,12 @@ def uses_place(key, steps):
 
 def spots(entry):
     return spot_names(entry.data.get("spots"))
+
+
+def own_of(field):
+    """The spots of a record that have a value of their own for a name in some words of the record."""
+    heads, entry = {path.partition(".")[0] for path in IN_SAYS.findall(field.node)}, field.entry
+    return [spot for spot in spots(entry) if heads & set(spot_data(entry.data["spots"], spot))]
 
 
 def check_spot(entry, spot):
@@ -109,8 +117,7 @@ class Place:
         if name not in self.data and "." not in name:
             raise unknown("", "field", name, self.data)
         found = self.worker.book.within(self.data, name, self.entry, self.worker.choice)
-        node, about = self.worker.unwrap(found.node)
-        return node, {**found.about, **about}
+        return self.worker.unwrap(found.node, found.about)
 
     def point(self, name):
         """Its at, from or to, or a point of its outline, where it is: two Values or three."""
@@ -140,7 +147,7 @@ class Place:
         if "faces" in self.data:
             got = self.worker.value(self.data["faces"], self.entry, "angle")
         else:
-            got = worth.Value("angle", 0.0, printed="0 deg", src=self.entry.data.get("src"), unit="deg")
+            got = self.worker.told(worth.Value("angle", 0.0, printed="0 deg", unit="deg"), {}, self.entry)
         angle = worth.one_number(got)
         if self.pattern and "ring" in self.pattern and self._index:
             angle = direction(angle + self._number(self.pattern["step"], "angle") * self._index)

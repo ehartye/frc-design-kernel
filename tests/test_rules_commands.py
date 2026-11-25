@@ -424,6 +424,11 @@ class Json(Command):
         self.assertEqual(self.json("rack@red.spots.3.b.post.tip")["means"]["key"], "post.tip")
         self.assertIsNone(self.json("barn.out")["means"])
 
+    def test_which_spot_it_is(self):
+        """Catches an answer that tells the spot that was asked for where the path names another, or none where it names one."""
+        for path, more, spot in [("stall.spots.near.at", [], "near"), ("stall.spots.near.at", ["--spot", "far"], "near"), ("stall@red.near.at", ["--spot", "far"], "near"), ("rack@red.spots.3.b.at", [], "3.b"), ("stall.at", ["--spot", "far"], "far"), ("barn.at", [], None)]:
+            self.assertEqual(self.json(path, *more)["spot"], spot, (path, more))
+
     def test_whose_it_is(self):
         """Catches an answer about a thing that neither alliance has that is told as one alliance's, or one whose path says red that is told as blue's."""
         from frc_design_kernel.rules.rules import load_rules

@@ -60,6 +60,9 @@ class Formulas(Refused):
         self.refused(lambda d: d["scoring"]["total"].update(bale="= stall.starts.bale * 2"), "scoring.json total.bale", "needs itself")
         self.refused(lambda d: size(d, length={"by": "field", "welded": "= size.length.bolted", "bolted": "= size.length.welded"}), "needs itself", '"= size.length.bolted"', '"= size.length.welded"')
         self.accepted(lambda d: size(d, length={"by": "field", "welded": "612.40 in", "bolted": "= size.length.welded"}))
+        pond = lambda d, **more: d["field"]["zones"]["pond"].update(k="= pond.a", a={"by": "field", "welded": "= pond.b.bolted", "bolted": "3 in"}, b={"by": "field", "welded": "1 in", "bolted": "= pond.a"}, **more)
+        self.accepted(lambda d: pond(d, says="{k}: {a}, {b}"))     # one text is worked out for two variants, and needs itself for neither
+        self.refused(lambda d: pond(d) or d["field"]["zones"]["pond"]["a"].update(bolted="= pond.b.bolted"), "needs itself")
         self.accepted(lambda d: d["field"]["solids"]["crate"].update(at=["= crate.at.y", "150 in", "0 in"]))
 
     def test_what_a_formula_may_name(self):

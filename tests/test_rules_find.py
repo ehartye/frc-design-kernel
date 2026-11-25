@@ -219,6 +219,20 @@ class InFull(Command):
         self.assertIn("    - my loft_points, at least, 12 (regional) or 16 (championship) (= loft_rp.needed)", self.lines("find", "loft_rp"))
         self.assertIn("      high_gate: 30 in (= swing.at.z.low_gate + swing.lift)", self.lines("find", "swing"))
 
+    def test_under_a_variant(self):
+        """Catches a formula under a variant's name that is told for every variant: it is worked out for its own."""
+        half, both = "= size.length / 2", "= size.length + swing.at.z"
+        own = {"by": "field", "welded": half, "bolted": {"is": half, "of": "it"}}
+        told = self.lines("find", "pond", change=lambda d: d["field"]["zones"]["pond"].update(own=own, far={"by": "gate", "low_gate": own, "high_gate": [half, half]}, near={"by": "gate", "low_gate": {"by": "field", "welded": both, "bolted": both}, "high_gate": both}))
+        at = told.index("  own:")
+        self.assertEqual(told[at:at + 6], ["  own:", "    by: field", f"    welded: 306.2 in ({half})", "    bolted:", f"      is: 305.875 in ({half})", "      of: it"])
+        at = told.index("  far:")
+        self.assertEqual(told[at + 3:at + 9], ["      by: field", f"      welded: 306.2 in ({half})", "      bolted:", f"        is: 305.875 in ({half})", "        of: it",
+                                               f"    high_gate: 306.2 in (welded) or 305.875 in (bolted) ({half}), 306.2 in (welded) or 305.875 in (bolted) ({half})"])
+
+        at = told.index("  near:")
+        self.assertEqual(told[at + 2:at + 7], ["    low_gate:", "      by: field", f"      welded: 624.4 in ({both})", f"      bolted: 623.75 in ({both})", f"    high_gate: 642.4 in (welded) or 641.75 in (bolted) ({both})"])
+
     def test_says_by_variant(self):
         """Catches words whose number depends on a variant and is given for one of them only."""
         told = self.lines("find", "pond", change=lambda d: d["field"]["zones"]["pond"].update(says="It is in the middle of {size.length}."))

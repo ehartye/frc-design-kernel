@@ -148,14 +148,14 @@ class _Check:
             shown = f'the formula "{leaf.node}" gives {got.printed}, which' if str(leaf.node).startswith("=") else f'"{got.printed}"'
             raise DesignError(leaf.where, f"{shown} {says}", f"Write what is {least}")
 
-    def words(self, worker, field):
+    def words(self, worker, field, spot):
         """One text of words: whether each {name} in it can be filled in, and is the same for red."""
         try:
-            got = worker.once(field.where, lambda: says.fill(worker, field))
+            got = worker.once((field.where, spot), lambda: says.fill(worker, field, spot))
         except Wrong as problem:
             return self.tell(problem, says.path_of(field), field.where)
         if got.moves and self.red_is_blue(field.entry, field.where):
-            path = next(path for path in words.IN_SAYS.findall(field.node) if moves(says.named(worker, field, path)))
+            path = next(path for path in words.IN_SAYS.findall(field.node) if moves(says.named(worker, field, path, spot)))
             raise DesignError(field.where, f"names {{{path}}}, which is, or uses, a position or a direction: another one for red, and at another spot", "Say it in words, or name what is the same for red")
 
     def tell(self, problem, own, where):
@@ -238,7 +238,8 @@ class _Check:
         elif field.holds in OUTLINES:
             self.over(lambda worker: outlines.checked(worker, field.entry, field.node, False), field.where)
         elif field.holds == "says":
-            self.over(lambda worker: self.words(worker, field), field.where)
+            for spot in [None, *alliances.own_of(field)]:
+                self.over(lambda worker: self.words(worker, field, spot), field.where)
         elif field.key in ("tag.at", "tag.faces"):
             self.over(lambda worker: worker.get(field.where.partition(" ")[2]), field.where)
 
