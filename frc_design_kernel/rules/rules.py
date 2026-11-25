@@ -15,7 +15,7 @@ from ..errors import DesignError, unknown
 from . import alliances, conditions, derive, fields, outlines, parts, pieces, quantity, records, says, shapes, times, words
 from .read import ALLIANCES, names
 from .worker import Season
-from .worth import Value
+from .worth import Told, Value
 
 
 def load_rules(folder):
@@ -48,7 +48,11 @@ class Rules:
 
     def get(self, path, /, alliance="blue", spot=None, **variants):
         """The value that a path names, such as "barn.opening.bottom"; a list of them for a list; a shape or an outline in mm."""
-        return copy.deepcopy(self.season.worker(**variants).get(path, alliance, spot))
+        worker = self.season.worker(**variants)
+        try:
+            return copy.deepcopy(worker.get(path, alliance, spot))
+        except Told as problem:
+            raise problem.for_a_program() from None
 
     def limit(self, name, **variants):
         """The limit of that name, such as "reach.far", or None when this season has no such limit."""
@@ -170,4 +174,5 @@ class Rules:
         try:
             return work()
         except DesignError as problem:
-            raise problem if problem.where else problem.under(entry.where)
+            problem = problem if problem.where else problem.under(entry.where)
+            raise problem.for_a_program() if isinstance(problem, Told) else problem

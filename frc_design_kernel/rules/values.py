@@ -16,12 +16,14 @@ from dataclasses import dataclass
 
 from ..errors import DesignError, unknown
 from . import quantity
-from .read import AXES, ID, Entry, names, word_list
+from .read import AXES, ID, Entry, names, no_id, word_list
 
 NEARLY = 0.85                               # a name this close to a known one is a slip (difflib's ratio)
 DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 TIMER = re.compile(r"([0-9]+):([0-5][0-9])")
+OUTLINES = ("outline", "opening outline")   # what a field holds that is an outline
 STANDS_FOR = {"is", "by", "any", "text"}    # a JSON object with one of these is a value; any other is a group of values
+DRAWN = '{"rectangle": [...]}, {"hexagon": {...}} or {"circle": ...}'
 A_TEXT = 'Write an extra text as {"text": ...}'
 
 
@@ -244,9 +246,8 @@ class Reader:
         return self.holds_differs(entry, node, where, dated=True)
 
     def holds_each(self, entry, node, where):
-        known = [*word_list("each"), *self.book.ids]
-        if not isinstance(node, str) or node not in known:
-            self.faults.append(unknown(where, "thing that it is counted for", node, known))
+        if not isinstance(node, str) or node not in (*word_list("each"), *self.book.ids):
+            self.faults.append(no_id(where, "thing that it is counted for", node, self.book.ids, word_list("each"), f"Write {', '.join(word_list('each'))} or an ID"))
         return ()
 
     def holds_date(self, entry, node, where):
@@ -314,16 +315,20 @@ class Reader:
             for i, one in enumerate(inner):
                 yield from self.value(entry, one, "length", place(at, i, len(inner)))
 
-    def holds_outline(self, entry, node, where):
+    def holds_outline(self, entry, node, where, points=True):
         for inner, at in self.unwrapped(entry, node, where):
-            if isinstance(inner, list) and len(inner) >= 3:
+            if isinstance(inner, list) and not points:
+                self.fault(at, "is a list of points, and nothing says what their two numbers are in an opening", f"Write {DRAWN}")
+            elif isinstance(inner, list) and len(inner) >= 3:
                 for i, one in enumerate(inner):
                     yield from self.holds_point(entry, one, f"{at}[{i}]", sizes=(2,))
             elif isinstance(inner, dict):
                 yield from self._drawn(entry, inner, at, names()["outlines"], "outline")
             else:
-                self.fault(at, "is not an outline", 'Write three points or more, or {"rectangle": [...]}, {"hexagon": {...}} or {"circle": ...}')
+                self.fault(at, "is not an outline", f"Write {'three points or more, or ' if points else ''}{DRAWN}")
 
+    def holds_opening_outline(self, entry, node, where):
+        return self.holds_outline(entry, node, where, points=False)
     def holds_shape(self, entry, node, where):
         for inner, at in self.unwrapped(entry, node, where):
             yield from self._drawn(entry, inner, at, names()["shapes"], "shape")

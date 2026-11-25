@@ -5,7 +5,8 @@
 A device has a `kind`; a load has `on`, how many of it one device of each kind may run. A kind that is left out of `on` may
 not run the load. With `only_for` the device runs those loads and no others.
 """
-from ..errors import DesignError, unknown
+from ..errors import DesignError
+from .read import no_id
 
 
 def loads(book):
@@ -17,7 +18,7 @@ def device(book, name):
     known = {entry.path: entry for entry in book.entries if entry.kind == "part"}
     found = [path for path in known if name in (path, path.removeprefix("parts."), path.rpartition(".")[2])]
     if not found:
-        raise unknown("", "part", name, [path.removeprefix("parts.") for path in known] + [entry.id for entry in known.values()])
+        raise no_id("", "part", name, [entry.id for entry in known.values()], [path.removeprefix("parts.") for path in known])
     if len(found) > 1:
         raise DesignError("", f'"{name}" is in more than one group', f"Name one: {', '.join(path.removeprefix('parts.') for path in found)}")
     return known[found[0]]

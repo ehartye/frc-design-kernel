@@ -67,6 +67,15 @@ class Each(Derived):
             bale={"is": "at most 8", "each": "barn"}))
         self.assertEqual(rules.says("R98"), "1 each spot; 2 each alliance; 60; 3/8 in (deep) or 9 in (wide); 8 each barn")
 
+    def test_says_when(self):
+        """Catches words in which a cap at some times reads as one for always, or one of several limits as one for the whole."""
+        def change(d):
+            d["robot"]["rules"]["R98"].update(says="{hang.most}; {park.most}; {cellar.either}")
+            d["scoring"]["awards"]["hang"].update(most=self.CAP)
+            d["scoring"]["awards"]["park"].update(most={"is": "at most 3", "when": ["endgame"]})
+            d["places"]["cellar"].update(either={"any": [{"deep": {"is": "at most 1 in", "each": "spot"}}, {"wide": "2 in"}]})
+        self.assertEqual(self.rules(change).says("R98"), "2 each alliance when auto and not my lit; 3 when endgame; 1 in each spot (deep) or 2 in (wide)")
+
     def test_a_formula(self):
         """Catches a formula that takes a count for each spot, or a cap at some times, for the whole."""
         from frc_design_kernel.rules.rules import faults
@@ -111,7 +120,7 @@ class Runs(Derived):
         """Catches something that runs nothing and comes back as if it might run nothing yet, and an ID in two groups."""
         rules = self.rules(lambda d: d["robot"]["parts"]["valves"].update(reins={"name": "Reins", "kind": "relay", "src": "manual R97"}))
         self.wrong(lambda: rules.runs("panel"), "panel", "kind")
-        self.wrong(lambda: rules.runs("riens"), "reins")
+        self.wrong(lambda: rules.runs("riens"), 'Did you mean "reins"')
         self.wrong(lambda: rules.runs("reins"), "controllers.reins", "valves.reins")
         self.assertEqual(self.runs(rules, "valves.reins"), self.runs(rules, "parts.relays.whistle"))
 

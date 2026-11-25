@@ -1,7 +1,10 @@
 """The rules commands: which folder is read, get with each of its flags, and means. Expected numbers are worked out by hand from the example."""
 import contextlib
+import functools
 import io
 import json
+import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -10,7 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 from frc_design_kernel.cli import main
-
+from frc_design_kernel.errors import DesignError
 from .rules_cases import EXAMPLE, ROOT, as_it_is, example, small, written
 
 
@@ -143,7 +146,7 @@ class Get(Command):
     def test_lists(self):
         """Catches a list that prints as one value, or as code."""
         self.assertEqual(self.lines("get", "barn.at"),
-                         ["barn.at:", "  x: 20 in (508 mm)", "  y: 150 in (3810 mm)", "  src: manual 3.5", "  placed.at: Where it is: [x, y] or [x, y, z] in the field's frame. A solid stands on z: it is the height of its lowest point."])
+                         ["barn.at:", "  x: 20 in (508 mm)", "  y: 150 in (3810 mm)", "  src: manual 3.5", "  placed.at: Where it is: [x, y] or [x, y, z] in the field's frame. A solid stands on z: it is the height of its lowest point. A position is written here, or in `from` and `to` of a line, and nowhere else."])
         self.assertEqual(self.lines("get", "parts.motors.mule.part_numbers")[0], "parts.motors.mule.part_numbers: 217-0000, mu-12")
         self.assertEqual(self.lines("get", "limits.battery.size")[:4], ["limits.battery.size:", "  x: 7 in (177.8 mm)", "  y: 3 in (76.2 mm)", "  z: 16.8 cm (168 mm)"])
         self.assertEqual(self.lines("get", "barn.frames", change=lambda d: d["places"]["barn"].update(frames=["1 in", "2 in", "3 in", "4 in"]))[:5],
@@ -266,10 +269,19 @@ class Each(Command):
         d["scoring"]["awards"]["hang"]["most"] = {"each": "alliance", "is": 2, "when": ["auto", "not lit"]}
 
     def test_lines(self):
-        """Catches an answer that does not tell what its number is for each of, or when."""
-        self.assertEqual(self.lines("get", "near_bales.starts.bale")[:2], ["near_bales.starts.bale: 1", "  each: spot"])
-        self.assertEqual([line for line in self.lines("get", "hang.most", change=self.cap) if line.startswith(("  each", "  when"))], ["  each: alliance", "  when: auto, not my lit"])
-        self.assertNotIn("each", self.printed("get", "total.bale").partition("total.bale: ")[2].splitlines()[0])
+        """Catches an answer whose first line tells a number without what it is for each of, or when; in its base unit, in another, with no limit, or as one of several."""
+        self.assertEqual(self.lines("get", "near_bales.starts.bale")[:2], ["near_bales.starts.bale: 1 each spot", "  src: drawings sheet 5"])
+        self.assertEqual(self.lines("get", "hang.most", change=self.cap)[:2], ["hang.most: 2 each alliance when auto and not my lit", "  src: manual 5.8"])
+        self.assertEqual(self.lines("get", "total.bale")[0], "total.bale: 60")
+
+        def change(d):
+            d["places"]["cellar"].update(room={"is": "at most 2 ft", "each": "barn"}, either={"any": [{"deep": {"is": "1 in", "each": "spot"}}, {"wide": "2 in"}]})
+            d["robot"]["parts"]["branch"]["lamps"]["each"] = {"is": "any", "each": "spot"}
+            d["scoring"]["awards"]["hang"]["most"] = {"is": 2, "when": ["auto"]}
+        for path, told in [("cellar.room", "at most 2 ft (609.6 mm) each barn"), ("parts.branch.lamps.each", "any (no limit) each spot"), ("hang.most", "2 when auto")]:
+            self.assertEqual(self.lines("get", path, change=change)[0], f"{path}: {told}")
+        self.assertEqual(self.lines("get", "cellar.room", "--unit", "in", change=change)[0], "cellar.room: at most 24 in each barn")
+        self.assertEqual(self.lines("get", "cellar.either", change=change)[:3], ["cellar.either: one of these is enough", "  deep: 1 in (25.4 mm) each spot", "  wide: 2 in (50.8 mm)"])
 
     def test_json(self):
         """Catches a program that is not told, or that is given whole records in place of the names of times."""
@@ -286,6 +298,78 @@ class Each(Command):
         told = self.printed("find", "hang", change=self.cap)
         self.assertIn("each: alliance", told)
         self.assertIn("when: auto, not lit", told)
+
+
+class NotOneValue(Command):
+    """What get cannot give: a list, conditions, times, a cost, or a place that stands at several spots. Whoever asked is told how to ask."""
+
+    @staticmethod
+    def changed(d):
+        d["scoring"]["awards"]["hang"]["most"] = {"is": 2, "when": ["auto"]}
+        d["field"]["zones"]["fold"].pop("at")
+        d["field"]["zones"]["fold"]["spots"] = {"a": {"at": ["1 in", "2 in"]}, "b": {"at": ["9 in", "2 in"]}}
+        d["field"]["solids"]["post"] = {"shape": {"box": ["1 in", "1 in", "1 in"]}, "spots": {"c": {"at": ["131 in", "150 in", "0 in"]}, "d": {"at": ["131 in", "250 in", "0 in"]}}}
+        d["places"]["hutch"] = {"starts": {}}
+
+    @functools.cached_property
+    def rules(self):
+        from frc_design_kernel.rules.rules import load_rules
+        data = example()
+        self.changed(data)
+        return load_rules(written(data))
+
+    TOLD = [    # a path, the record that a find must give, and what a program must call
+        ("barn.takes", "barn", 'records("places")'), ("stall.gives", "stall", 'records("places")'), ("barn_open.true", "barn_open", 'when("barn_open.true")'), ("barn_open.true.y", "barn_open", 'when("barn_open.true")'),
+        ("limits.start.where", "limits.start", 'conditions("limits.start.where")'), ("G95.cost", "G95", 'records("conduct")'), ("G92.cost.x", "G92", 'records("conduct")'), ("G92.cost.z", "G92", 'records("conduct")'),
+        ("G92.cost.z.if", "G92", 'records("conduct")'), ("placing_order.cost", "placing_order", 'records("conduct")'), ("G90.must_not", "G90", 'conditions("G90.must_not")'), ("G90.must_not.x.y", "G90", 'conditions("G90.must_not")'),
+        ("G95.must_not.x.any", "G95", 'conditions("G95.must_not")'), ("G93.only_if", "G93", 'conditions("G93.only_if")'), ("G90.when", "G90", 'when("G90.when")'), ("G90.when.x", "G90", 'when("G90.when")'),
+        ("hang.points", "hang", 'points("hang")'), ("hang.points.x", "hang", 'points("hang")'), ("loft_rp.easier.needs", "loft_rp", 'conditions("loft_rp.easier.needs")'), ("loft_rp.easier.when", "loft_rp", 'when("loft_rp.easier.when")'),
+        ("hang.most.when", "hang", 'get("hang.most")'), ("hang.most.when.x", "hang", 'records("scoring")'), ("fold.differs", "fold", 'records("field")'), ("G92.was", "G92", 'records("conduct")'), ("trestle.shape.join", "trestle", 'records("field")'),
+        ("hutch.starts", "hutch", 'records("places")'), ("fold@red.differs", "fold", 'records("field")')]
+
+    def test_a_command_is_told_what_to_run(self):
+        """Catches a list, a condition, a when or a cost that get sends on to a value that is not there, or to a command that does not tell it."""
+        with mock.patch(f"{__name__}.once_read", lambda _: self.rules):
+            for path, record, _ in self.TOLD:
+                code, out, err = run("get", path, "--rules", str(EXAMPLE))
+                self.assertEqual((code, out, len(err.splitlines())), (1, "", 1), err)
+                self.assertIn(f"{path}: is not one value", err)
+                code, out, err = run("find", *shlex.split(err.strip().partition("rules find ")[2]))
+                self.assertEqual((code, err, out.split(" (")[0]), (0, "", record))
+
+    def test_a_program_is_told_what_to_call(self):
+        """Catches a program that is told a command, or a call that does not give what was asked for."""
+        for path, _, call in [*self.TOLD, ("start.where", "", 'conditions("limits.start.where")')]:
+            with self.assertRaises(DesignError) as caught:
+                self.rules.get(path) if path != "start.where" else self.rules.limit(path)
+            self.assertIn("is not one value", caught.exception.problem, path)
+            self.assertNotIn("rules find", caught.exception.fix)
+            told = re.search(r'rules\.(\w+)\("([^"]+)"\)', caught.exception.fix)
+            self.assertEqual(told and f'{told[1]}("{told[2]}")', call, (path, caught.exception.fix))
+            self.assertTrue(getattr(self.rules, told[1])(told[2]), path)
+
+    def test_what_has_fields(self):
+        """Control: a record, or a group in it, has values to name, and they are named; a value in a list is given; and an author is told of no command and no call."""
+        for path, fields in [("barn.opening", "outline, slope"), ("yard", "alliance, at"), ("loft_rp.easier", "when, needs"), ("limits", "perimeter"), ("parts.motors.mule.on", "controller"), ("near_bales.spots", "row, step")]:
+            self.wrong("get", path, says=["is not one value", f"Name one of its fields: {fields}"])
+        for path, value in [("G97.must_not", "true"), ("G95.cost.x.every", "5 s"), ("hang.most", "2 each alliance")]:
+            self.assertEqual(self.lines("get", path)[0], f"{path}: {value}")
+        code, _, err = run("check", "--rules", self.folder(lambda d: d["robot"]["rules"]["R98"].update(says="It is {barn.takes}.")))
+        self.assertEqual((code, len(err.splitlines())), (1, 1))
+        self.assertIn("is not one value", err)
+        for word in ("rules.records", "rules find"):
+            self.assertNotIn(word, err)
+
+    def test_spots(self):
+        """Catches several spots that a command, or a program, is not told how to name."""
+        self.wrong("get", "stall.at", says=["stands at 2 spots", "--spot", "near, far"])
+        self.wrong("get", "rack.at.x", "--alliance", "red", says=["stands at 12 spots", "--spot", "1.a"])
+        for ask in (lambda **more: self.rules.get("stall.at", **more), lambda **more: self.rules.outline("fold", **more), lambda **more: self.rules.solid("post", **more)):
+            with self.assertRaises(DesignError) as caught:
+                ask()
+            self.assertIn("stands at 2 spots", caught.exception.problem)
+            self.assertNotIn("--spot", caught.exception.fix)
+            self.assertTrue(ask(spot=re.search(r'spot="(\w+)"', caught.exception.fix)[1]))
 
 
 class Json(Command):
@@ -365,6 +449,11 @@ class Means(Command):
         """Catches a property whose words are not listed."""
         self.assertEqual(self.means("zone.edge"), ["zone.edge", "  Whether the tape is part of it. Left out, it is not said.", "  Holds: word edge. One of a list of words.",
                                                    "  tape inside: The tape is part of the zone.", "  tape outside: The tape is not part of the zone."])
+        told = self.means("opening.outline")
+        self.assertEqual([line.partition(": ")[2] for line in told if line.startswith("  Written")], ['{"rectangle": ["36 in", "16 in"]}', '{"circle": "26 in"}', '{"hexagon": {"flats": "20 in", "points": "0 deg"}}'])
+        self.assertNotIn("in the field's frame", "\n".join(told))
+        told = self.means("award.per")
+        self.assertEqual((told[2], [line.partition(":")[0].strip() for line in told[3:]]), ("  Holds: word per. One of a list of words.", ["piece", "robot", "match"]))
 
     def test_a_form(self):
         """Catches a form with no example to copy."""

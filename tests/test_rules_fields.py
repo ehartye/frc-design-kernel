@@ -137,6 +137,30 @@ class FieldNames(Checked):
         self.accepted(lambda d: awards(d)["hoop_on_rack"].update(looked_at="any time"))
         self.accepted(lambda d: awards(d)["park"].update(looked_at="any time"))
 
+    def test_an_opening_drawn_as_points(self):
+        """Catches an opening drawn as a list of points, whose axes nobody could tell; the same list draws a zone."""
+        points = [["0 in", "0 in"], ["10 in", "0 in"], ["0 in", "5 in"]]
+        outline = lambda d, drawn: d["places"]["loft"]["opening"].update(outline=drawn)
+        self.refused(lambda d: outline(d, points), "places.json loft.opening.outline:", "list of points", "rectangle", "hexagon", "circle")
+        self.refused(lambda d: outline(d, {"is": points, "src": "manual 3.8"}), "places.json loft.opening.outline.is:", "list of points")
+        self.refused(lambda d: outline(d, {"by": "field", "welded": {"circle": "26 in"}, "bolted": points}), "places.json loft.opening.outline.bolted:", "list of points")
+        self.refused(lambda d: outline(d, []), "places.json loft.opening.outline:", "rectangle")
+        self.refused(lambda d: outline(d, {"oval": "26 in"}), "places.json loft.opening.outline", '"oval"')
+        for drawn in [{"circle": "26 in"}, {"rectangle": ["30 in", "7 in"]}, {"hexagon": {"flats": "20 in", "points": "10 deg"}}, {"by": "field", "welded": {"circle": "26 in"}, "bolted": {"is": {"circle": "27 in"}, "src": "manual 3.8"}}]:
+            self.accepted(lambda d: outline(d, drawn))
+        self.accepted(lambda d: d["field"]["zones"]["fold"].update(outline=points))
+        self.accepted(lambda d: d["field"]["solids"]["ramp"]["shape"]["prism"].update(outline=points))
+
+    def test_what_an_award_is_earned_for_each_of(self):
+        """Catches an award per robot that is spelt in another way, and so needs no looked_at; or one per something that a program does not know."""
+        awards = lambda d: d["scoring"]["awards"]
+        for other in ["robots", "each robot", "Robot", "alliance", "", 3, ["robot"], {"text": "robot"}, {"is": "robot"}]:
+            self.refused(lambda d: awards(d)["hang"].pop("looked_at") and awards(d)["hang"].update(per=other), "scoring.json hang.per", "match, piece, robot")
+        self.refused(lambda d: awards(d)["hang"].update(per="robots"), "scoring.json hang.per", 'Did you mean "robot"', "match, piece, robot")
+        for right in ["piece", "match", "robot"]:
+            self.accepted(lambda d: awards(d)["hang"].update(per=right))
+        self.accepted(lambda d: awards(d)["shared_bonus"].pop("per"))
+
     def test_a_surface_has_two_sizes(self):
         """Catches a surface with one size or three, which nobody could place along and across."""
         surface = lambda d: d["places"]["bench"]["surface"]

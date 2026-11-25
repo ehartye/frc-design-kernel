@@ -32,6 +32,7 @@ def count(worker, entry, piece):
     """How many the record of one alliance has, or the one record when neither owns it: all its spots together."""
     if is_left_over(worker, entry, piece):
         return left_over(worker, entry, piece)
+    worker.check(entry, None, ["starts", piece])
     node, about = worker.unwrap(entry.data["starts"][piece])
     number, each, many = one_number(worker.value(node, entry, "number")), about.get("each"), len(spots(entry))
     if each == "spot" and many:

@@ -144,7 +144,7 @@ class Places(Refused):
         from frc_design_kernel.rules import read
         flagged = [f"{kind}.{name}" for kind, about in read.names()["kinds"].items() for name, one in about["fields"].items() if one.get("one")]
         self.assertEqual(sorted(flagged), sorted(self.ONE))
-        drawn = [f"{kind}.{name}" for kind, about in read.names()["kinds"].items() for name, one in about["fields"].items() if one["holds"] in ("point", "outline", "shape")]
+        drawn = [f"{kind}.{name}" for kind, about in read.names()["kinds"].items() for name, one in about["fields"].items() if one["holds"] in ("point", "outline", "opening outline", "shape")]
         self.assertEqual(set(drawn) - set(flagged), set())
 
     def test_the_number_of_a_compare(self):
@@ -189,7 +189,6 @@ class Places(Refused):
                         ((7, -3), (37, 7), (37, 27), (22, 2), (7, 17)), ((5, 20), (35, 5), (35, 30), (15, 15), (5, 30))]:
             self.refused(lambda d: zone(d).update(outline=points(*touches)), "field.json fold.outline", "touches itself")
         self.refused(lambda d: d["field"]["solids"]["ramp"]["shape"]["prism"].update(outline=points((0, 0), (10, 0), (10, 10), (5, 0), (0, 10))), "field.json ramp.shape", "touches itself")
-        self.refused(lambda d: d["places"]["loft"]["opening"].update(outline=points((0, 0), (10, 0), (10, 10), (5, 0), (0, 10))), "places.json loft.opening.outline", "touches itself")
         self.refused(lambda d: d["places"]["barn"]["opening"]["outline"]["rectangle"].__setitem__(0, "0 in") or d["field"]["solids"]["barn_body"].update(shape={"box": ["1 in", "1 in", "1 in"]}), "places.json barn.opening.outline", "no area")
         self.accepted(lambda d: zone(d).update(at=["1 in", "1 in"]))
         self.accepted(lambda d: zone(d).pop("at") and zone(d).update(no_geometry="No drawing gives it."))
@@ -265,8 +264,9 @@ class Scores(Refused):
         self.refused(self.rows(["quiet", "auto"], ["not lit", "auto"]), "both be true")
 
     def test_rows_of_a_state_of_the_match(self):
-        """Catches a state of the match that is mine or theirs: it is the same for both."""
-        self.accepted(self.rows(["my shared"], ["not their shared"]))
+        """Catches a state of the match that is not the same for both."""
+        self.accepted(self.rows(["shared"], ["not shared"]))
+        self.accepted(self.rows(["their both"], ["not shared"], also=lambda d: d["clock"]["states"].update(both={"of": "alliance", "true": [["shared"]]})))
         self.refused(self.rows(["my lit"], ["not their lit"]), "both be true")
 
     def test_rows_of_three_variants_and_of_a_period_with_no_end(self):
@@ -319,6 +319,8 @@ class Scores(Refused):
         self.refused(lambda d: starts(d, "vine").update(pumpkin={"each": "spot", "is": 2}), "places.json vine.starts.pumpkin", "each spot")
         self.refused(lambda d: starts(d, "vine").update(pumpkin={"each": "barn", "is": 2}), "places.json vine.starts.pumpkin", '"barn"', "spot", "alliance")
         self.refused(lambda d: starts(d, "vine").update(pumpkin={"is": "left over"}), "places.json vine.starts.pumpkin", "left over", "patch")
+        self.refused(lambda d: starts(d, "stall").update(bale={"each": "spot", "is": "left over"}) or d["places"]["stall"]["holds"].update(bale="= stall.starts.bale * 2"), "places.json stall.starts.bale:", "each")
+        self.refused(lambda d: starts(d, "stall").update(bale={"each": "zebra", "is": "left over"}), "places.json stall.starts.bale.each", '"zebra"')
         self.accepted(lambda d: starts(d, "vine").update(pumpkin=12))
         self.accepted(lambda d: starts(d, "patch").update(pumpkin={"is": "left over"}))
         self.accepted(lambda d: starts(d, "spare_hoops").update(hoop=3))
@@ -327,6 +329,72 @@ class Scores(Refused):
         """Catches a device that is only for a load, when nobody says how many of it one such device may run."""
         self.refused(lambda d: d["robot"]["parts"]["relays"]["switch"].update(only_for=["pony"]), "robot.json parts.relays.switch", "pony", "relay")
         self.accepted(lambda d: d["robot"]["parts"]["relays"]["switch"].update(only_for=["mule"]))
+
+
+class MoreThanNothing(Refused):
+    """Sizes and times that are not more than 0, and counts below 0."""
+
+    PUT = {     # what must be more than 0: how to put a value there, its unit, and where it is told
+        "size.length": (lambda d, v: d["field"]["size"].update(length=v), "in", "field.json size.length"),
+        "size.width": (lambda d, v: d["field"]["size"].update(width=v), "in", "field.json size.width"),
+        "period.lasts": (lambda d, v: d["clock"]["periods"]["teleop"].update(lasts=v), "s", "clock.json teleop.lasts"),
+        "window.first": (lambda d, v: d["clock"]["windows"]["early"].update(first=v), "s", "clock.json early.first"),
+        "window.last": (lambda d, v: d["clock"]["windows"]["endgame"].update(last=v), "s", "clock.json endgame.last"),
+    }
+
+    @staticmethod
+    def minus(unit):
+        """A formula that gives less than nothing."""
+        return "= -pen.side" if unit == "in" else "= gap.lasts - auto.lasts"
+
+    def test_not_more_than_0(self):
+        """Catches a field with no size, or a period or a window that lasts no time: printed, worked out or for one variant; each is told once, at its own place."""
+        def put(d, value, only=None):
+            for name, (change, unit, _) in self.PUT.items():
+                if only in (None, name):
+                    change(d, value(unit, "9 ft" if unit == "in" else "80 s"))
+        for value, at in [(lambda unit, good: f"0 {unit}", ""), (lambda unit, good: f"-5 {unit}", ""), (lambda unit, good: f"0 {unit} +/- 1", ""), (lambda unit, good: self.minus(unit), ""), (lambda unit, good: f"at most 0 {unit}", ""),
+                          (lambda unit, good: {"by": "event", "regional": good, "championship": f"0 {unit}"}, ".championship"), (lambda unit, good: {"by": "event", "regional": self.minus(unit), "championship": good}, ".regional"),
+                          (lambda unit, good: {"is": f"-1 {unit}", "src": "manual 3.1"}, ".is")]:
+            found = self.faults(lambda d: put(d, value))
+            self.assertEqual(sorted(one.partition(":")[0] for one in found), sorted(f"{where}{at}" for _, _, where in self.PUT.values()))
+            self.assertTrue(all("more than 0" in one for one in found), found)
+        for name, (_, unit, where) in self.PUT.items():
+            self.refused(lambda d: put(d, lambda unit, good: f"-5 {unit}", name), f"{where}:", f'"-5 {unit}"')
+        self.accepted(lambda d: put(d, lambda unit, good: {"is": good, "was": [{"until": "2031-02-04", "is": f"0 {unit}", "src": "update3 3.1"}], "differs": [{"is": f"-1 {unit}", "src": "manual 3.1"}]}))
+
+    def test_a_little_more_than_0(self):
+        """Control: what is more than 0 passes, however little, and so does a time or a length of which nobody says that it must be. What is of another kind, or a range, is told as that alone."""
+        self.refused(lambda d: d["field"]["size"].update(width="= -hoop.mass"), "field.json size.width", "a mass, not a length")
+        self.refused(lambda d: d["places"]["vine"]["starts"].update(pumpkin="-2 to -1"), "places.json vine.starts.pumpkin", "is a range")
+        self.accepted(lambda d: d["clock"]["windows"]["early"].update(first="0.001 s"))
+        self.accepted(lambda d: d["clock"]["windows"]["early"].update(first="1 s +/- 2"))
+        self.accepted(lambda d: d["clock"]["windows"]["early"].update(first="= auto.lasts - gap.lasts"))
+        self.accepted(lambda d: d["clock"]["states"]["lit"].update(grace="0 s"))
+        self.accepted(lambda d: d["field"]["zones"]["fold"].update(deep="-2 in"))
+
+    def test_a_variant_of_a_formula(self):
+        """Catches a formula that gives nothing only for a variant that nobody asked first."""
+        for variant in ["regional", "championship"]:
+            self.refused(lambda d: d["scoring"]["awards"]["loft_rp"].update(spare={"by": "event", "regional": "3 s", "championship": "3 s", variant: "12 s"}) or d["clock"]["windows"]["early"].update(
+                first="= auto.lasts - loft_rp.spare"), "clock.json early.first:", "more than 0")
+
+    def test_how_many_start(self):
+        """Catches fewer pieces than none at the start, printed, worked out or for one variant, told once; none at all is a count."""
+        start = lambda d, place, many: d["places"][place]["starts"].update({"bale": many})
+        for many, at in [(-2, ""), (-3, ""), ({"each": "spot", "is": -1}, ".is"), ("= robot_preload.holds.bale - 4", ""), ("less than -1", ""), ({"by": "event", "regional": 4, "championship": -4}, ".championship"),
+                         ({"by": "event", "regional": 4, "championship": {"each": "spot", "is": "= 2 - 3"}}, ".championship.is")]:
+            self.refused(lambda d: start(d, "near_bales", many), f"places.json near_bales.starts.bale{at}:", "below 0")
+        self.refused(lambda d: start(d, "robot_preload", "= -robot_preload.holds.bale"), "places.json robot_preload.starts.bale:", "below 0", '"= -robot_preload.holds.bale"')
+        self.refused(lambda d: d["places"]["vine"]["starts"].update(pumpkin=-1), "places.json vine.starts.pumpkin:", "below 0")     # and not that what is left over for the patch is not whole
+        for many in [0, "= robot_preload.holds.bale - 3", {"each": "spot", "is": 0}, {"by": "event", "regional": 0, "championship": 2}]:
+            self.accepted(lambda d: start(d, "near_bales", many))
+
+    def test_which_places_say_so(self):
+        """Catches a property that fails to say that it must be more than 0, or not below 0, or a new one that has no case above."""
+        from frc_design_kernel.rules import read
+        flagged = lambda least: sorted(f"{kind}.{name}" for kind, about in read.names()["kinds"].items() for name, one in about["fields"].items() if one.get("least") == least)
+        self.assertEqual((flagged("more than 0"), flagged("0 or more")), (sorted(self.PUT), ["place.starts"]))
 
 
 class Says(Refused):

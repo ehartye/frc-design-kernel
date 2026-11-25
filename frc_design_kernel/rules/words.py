@@ -4,6 +4,7 @@
     check(book)      [DesignError] for a Book: what fields.py finds, and every word and ID that is wrong
     leaves(book)     every Leaf (values.py) of the fields, and those inside conditions and longer_than
     paths_in(text)   the paths that a formula names
+    unit_in(text)    a unit that a formula has, which it may not
 
 What a condition means, when a name is true and what a formula gives are not worked out here: only that each of them is
 written with words of the lists, and names things that are there.
@@ -22,6 +23,9 @@ PATH = re.compile(r"(?<![\w.@])[A-Za-z][A-Za-z0-9_]*(?:@[a-z]+)?(?:\.[A-Za-z0-9_
 IN_SAYS = re.compile(r"\{([^{}]*)\}")
 WHEN = re.compile(r"(?:not )?(?:(my|their) )?([A-Za-z][A-Za-z0-9_]*)")
 TYPED = re.compile(r"(?<![\w.:/-])" + quantity.PLUS + r"(?![\w:/-]|\.\d)")
+UNIT = "|".join(re.escape(unit) for unit in sorted(quantity.all_units(), key=len, reverse=True))
+WITH_UNITS = re.compile(rf"(?<![\w.@])(?:{quantity.PLUS}\s*(?:{UNIT})(?![\w.@(])\s*)+")
+EVERY = "every robot"                               # of the words of `what`, the one that stands for a number
 OTHER = re.compile(r"\.(?:was|differs)\[")          # in the place of a Leaf that is not the value to use
 ONE_NUMBER = re.compile("(?<![A-Za-z0-9])" + quantity.NUMBER)
 
@@ -61,6 +65,12 @@ def leaves(book, faults=None):
 def paths_in(text):
     """The paths that a formula names, in order. A name before a bracket is a function."""
     return [found[0] for found in PATH.finditer(text)]
+
+
+def unit_in(formula):
+    """The first unit in a formula, with its number if it has one; or None."""
+    found = WITH_UNITS.search(formula)
+    return found[0].strip() if found else next((path for path in paths_in(formula) if path in quantity.all_units()), None)
 
 
 class Words:
@@ -147,6 +157,16 @@ class Words:
             many = given.get("is") if isinstance(given, dict) and "each" not in given else given
             if spots and many == spots:
                 self.fault(f"{where}.{piece}", f"types {many}, which its {spots} spots already make", 'Write {"each": "spot", "is": 1}')
+            self._left_over_each(given, f"{where}.{piece}")
+
+    def _left_over_each(self, node, where, each=None):
+        """A fault where what is left over stands beside an each, or inside what does: each is the place of that."""
+        if isinstance(node, dict) and ("is" in node or "by" in node):
+            each = where if isinstance(node.get("each"), str) and node["each"] in (*word_list("each"), *self.book.ids) else each
+            for name in ["is"] if "is" in node else [name for name in node if name != "by"]:
+                self._left_over_each(node[name], f"{where}.{name}", each)
+        elif each and node in word_list("starts"):
+            self.fault(each, "is what is left over, and has an each: what is left over is shared out already", 'Write "left over" without the each')
 
     def left_over(self):
         """Only one place starts with what is left over of a piece."""
@@ -210,6 +230,9 @@ class Words:
         elif owner not in word_list("owners") or not space:
             self.fault(where, f'"{node}" does not name a thing', f"Write {', '.join(word_list('owners'))} and then an ID")
             return
+        elif owner in word_list("state_owners") and name in self.things and not self.of_each(name):
+            self.fault(where, f'"{node}" is one that neither alliance has', f"Write {f'{name} or ' if bare else ''}any {name}")
+            return
         self.one(name, [*self.things, *also], "thing", where)
         kind = self.things[name].kind if name in self.things else None
         if kind in NEED_GEOMETRY or measured and kind in PLACED:
@@ -248,6 +271,8 @@ class Words:
                 self.fault(at, f'"{one}" is not a name of a period, window, state or variant', 'Write the name, with "not", "my" or "their" in front if need be')
             elif got[1] and got[2] in known and got[2] not in self.ids["state"]:
                 self.fault(at, f'"{got[2]}" is nobody\'s: only a state can be my or their', f'Write "{got[2]}"')
+            elif got[1] and got[2] in known and self.ids["state"][got[2]].data.get("of") == "match":
+                self.fault(at, f'"{got[2]}" is of the whole match, and the same for both alliances', f'Write "{"not " if one.startswith("not ") else ""}{got[2]}"')
             elif "periods" not in self.missing:
                 self.one(got[2], known, "period, window, state or variant", at)
 
@@ -299,34 +324,62 @@ class Words:
 
     def _condition(self, field, condition, where):
         who, how, what = condition
-        self._someone(who, where)
-        self.one(how, [*word_list("measures"), *word_list("compares")], "word", where)
+        counted = self._someone(who, where)
+        number = not isinstance(what, (str, list)) or what == EVERY or isinstance(what, str) and re.match(r"=|-?[0-9]", what)
+        shown = "a list" if isinstance(what, list) else "a value" if isinstance(what, (dict, bool)) or what is None else f'"{what}"'
+        if how in word_list("compares"):
+            if counted is False:
+                self.fault(where, f'"{how}" compares a count with a number, and "{who}" is not counted', "Write my, their or either and an ID of counts; or how it stands to a zone, a line or a thing")
+            elif not number:
+                self.fault(where, f'"{how}" compares a count with a number, and {shown} is none', f"Write a number, a formula, a value by variant or {EVERY}")
+            elif what != EVERY:
+                self._compared(field, what, where)
+        elif how in word_list("measures"):
+            if counted:
+                self.fault(where, f'"{how}" measures someone or a piece, and "{who}" is a count', f"Write someone or a piece; or {', '.join(word_list('compares'))} and a number")
+            elif number:
+                self.fault(where, f'"{how}" measures to a zone, a line or a thing, and {shown} is none', "Write my, their or any and an ID, carpet, or a list")
+            else:
+                self._what(what, where)
+        else:
+            self.one(how, [*word_list("measures"), *word_list("compares")], "word", where)
+            if not number:
+                self._what(what, where, measured=False)
+
+    def _compared(self, field, what, where):
+        """The number, or the numbers by variant, that a count is compared with."""
+        for leaf in self.reader.value(field.entry, what, "number", where):
+            if isinstance(leaf.node, str) and leaf.node.startswith(tuple(word_list("limit"))):
+                self.fault(leaf.where, f'"{leaf.node}" is a limit, and a count is compared with a number', "Write the number alone")
+            else:
+                self.found.append(replace(leaf, one=where))
+
+    def _what(self, what, where, measured=True):
+        """What a condition measures to."""
         if isinstance(what, list):
             if not what:
                 self.fault(where, "names nothing in its list", "Name things, or words for a part that has no ID")
-            self.words_or_things(what, where, measured=how in word_list("measures"))
-        elif not isinstance(what, str) or what.startswith("=") or re.match(r"-?[0-9]", what):
-            leaves = self.reader.value(field.entry, what, None if not isinstance(what, bool) else "number", where)
-            self.found += [replace(leaf, one=where) for leaf in leaves] if how in word_list("compares") else leaves
+            self.words_or_things(what, where, measured=measured)
         elif what not in word_list("what"):
-            self._what(what, where, how in word_list("measures"))
-
-    def _what(self, what, where, measured):
-        owner, _, rest = what.partition(" ")
-        if owner in word_list("owners") and rest or self.of_each(what):
-            self.thing(what, where, measured=measured)
-        else:
-            self.fault(where, f'"{what}" names nothing', f'Write my, their or any and an ID, a number, or one of: {", ".join(word_list("what"))}')
+            owner, _, rest = what.partition(" ")
+            if owner in word_list("owners") and rest or self.of_each(what):
+                self.thing(what, where, measured=measured)
+            else:
+                self.fault(where, f'"{what}" names nothing', "Write my, their or any and an ID, carpet, or a list")
 
     def _someone(self, who, where):
+        """Whether who a condition is about is a count; None when there is no such one, which is a fault."""
         owner, _, name = who.partition(" ") if isinstance(who, str) else ("", "", "")
         if owner in word_list("the"):
-            self.one(name, [*word_list("the_piece"), *self.ids["piece"]], "piece", where)
+            kind, known = "piece", dict.fromkeys([*word_list("the_piece"), *self.ids["piece"]], False)
         elif owner in word_list("sides"):
-            self.one(name, [*word_list("someone"), *self.ids["count"]], "actor or count", where)
+            kind, known = "actor or count", {**dict.fromkeys(self.ids["count"], True), **dict.fromkeys(word_list("someone"), False)}
         else:
             self.fault(where, f'"{who}" is not someone or something counted',
                        f"Write {', '.join(word_list("sides"))} and then {', '.join(word_list("someone"))} or an ID of counts; or the and a piece")
+            return None
+        self.one(name, known, kind, where)
+        return known.get(name)
 
     # -- costs
 
@@ -371,8 +424,12 @@ class Words:
 
     def formulas(self, found):
         for leaf in found:
-            for path in paths_in(leaf.node) if isinstance(leaf.node, str) and leaf.node.startswith("=") else ():
-                if path.partition(".")[0] in self.missing:
+            formula = leaf.node if isinstance(leaf.node, str) and leaf.node.startswith("=") else ""
+            if unit := unit_in(formula):
+                value = re.sub(r"(?<=[0-9])(?=[A-Za-z])", " ", unit) if unit[0].isdigit() else f"1 {unit}"
+                self.fault(leaf.where, f'the formula "{formula}" has a unit, {unit}', f'Write it as a value of its own, such as "gap": "{value}", and name that, such as {leaf.entry.path or leaf.entry.file}.gap')
+            for path in paths_in(WITH_UNITS.sub(" ", formula)):
+                if path.partition(".")[0] in self.missing or path in quantity.all_units():
                     continue
                 try:
                     self.book.look(path)

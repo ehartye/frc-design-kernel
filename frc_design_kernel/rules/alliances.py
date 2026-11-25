@@ -2,6 +2,8 @@
 
     Place(worker, entry, alliance, spot)    point(name) gives its at, from or to; faces(), which way it looks; xy(x, y) moves a point
     moves(entry, name)                      whether a field of a record is a position, which changes with the alliance
+    holds_places(key, steps)                whether a property is for positions or a direction
+    sort_at(key, steps)                     the Sort (worth.py) of what is at some steps inside a property
     spots(entry)                            the names of its spots
     size(worker, i)                         the field's length (0) or width (1) in mm
 
@@ -12,14 +14,33 @@ import math
 
 from ..errors import DesignError, unknown
 from . import fields, worth
-from .read import AXES, is_pattern, spot_data, spot_names
+from .read import AXES, is_pattern, names, spot_data, spot_names
 
 MOVES = ("at", "faces", "from", "to", "outline")
+POSITIONS = ("placed.at", "spot.at", "tag.at", "line.from", "line.to", "ring.around", "zone.outline")       # properties that hold positions
+DIRECTIONS = ("placed.faces", "spot.faces", "tag.faces")
 
 
 def moves(entry, name):
     spec = fields.spec_for(entry)
     return name in MOVES and spec is not None and entry.kind != "tag" and {name, "faces"} <= set(spec.known)
+
+
+def holds_places(key, steps):
+    """Whether a property is for positions or a direction, at some steps inside it: an outline is, where its points are listed."""
+    return key in (*POSITIONS, *DIRECTIONS) and not (key == "zone.outline" and set(steps) & set(names()["outlines"]))
+
+
+def sort_at(key, steps):
+    """The Sort of what is at some steps inside a property, when the property says it: a position, a direction, a height, or the field's size; else None."""
+    if key in ("size.length", "size.width"):
+        return worth.STILL
+    if key in DIRECTIONS:
+        return worth.DIRECTION
+    axes = [step for step in steps if step in AXES][1 if key == "zone.outline" else 0:]
+    if not axes or not holds_places(key, steps):
+        return None
+    return {"x": worth.X, "y": worth.Y, "z": worth.STILL}[axes[0]]
 
 
 def spots(entry):
@@ -79,7 +100,8 @@ class Place:
         """The coordinates of its at, from or to, as they are written."""
         known = spots(self.entry)
         if name not in self.data and name == "at" and known:
-            raise DesignError("", f"stands at {len(known)} spots", f"Name one spot: {', '.join(known)}")
+            listed = ", ".join(known)
+            raise worth.Told("", f"stands at {len(known)} spots", f"Name one spot: {listed}", f'Name one with spot=, such as spot="{known[0]}": {listed}', f"Name one with --spot: {listed}")
         if name not in self.data:
             raise unknown("", "field", name, self.data)
         return self.coordinates(self.data[name])

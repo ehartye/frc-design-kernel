@@ -1,6 +1,7 @@
 """Reading a rules folder: the nine files as plain data, every record in them, and paths.
 
     names()                    fields.json, as data: the format itself
+    no_id(where, what, ...)    the DesignError for an ID that is not there, of which a season has too many to list
     word_list(name)            the words of one of its lists
     read_files(folder)         ({file name: data}, [DesignError]): the JSON itself
     gather(folder, data)       (Book, [DesignError]): every record as an Entry, and the IDs
@@ -13,6 +14,7 @@ Nothing here works anything out. A Found's node is data as it is written: a prin
 `is`, `by` or `any`. On its way a path goes through `is`, and through `by` with the variants in choice ({kind: name});
 the first of game.json is taken for a kind that is not in choice.
 """
+import difflib
 import functools
 import json
 import math
@@ -39,6 +41,13 @@ def names():
 def word_list(name):
     """The words of one of the lists in fields.json."""
     return list(names()["words"][name]["words"])
+
+
+def no_id(where, what, name, ids, also=(), write=""):
+    """An ID that is not there: with those that are near, or else how many there are; also are other names that would do."""
+    near = [f'"{one}"' for one in difflib.get_close_matches(str(name), [*also, *ids], 5)]
+    hint = f"Did you mean {' or '.join(near)}?" if near else f"An ID is the name of a record in one of the nine files; there are {len(ids)} here{'.' if write else ''}"
+    return DesignError(where, f'names the {what} "{name}", which does not exist', f"{hint} {write}".rstrip())
 
 
 def taken():
@@ -198,7 +207,7 @@ class Book:
         entry = self.ids.get(head)
         node = entry.data if entry else self.roots.get(head)
         if node is None:
-            raise unknown(where, "ID", head, [*self.ids, *names()["roots"]["words"]])
+            raise no_id(where, "ID", head, self.ids, names()["roots"]["words"])
         if at:
             if alliance not in ALLIANCES:
                 raise unknown(where, "alliance", alliance, ALLIANCES)

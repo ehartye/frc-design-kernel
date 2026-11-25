@@ -5,11 +5,21 @@
 One mistake is told once, where it is written. What needs a value that does not read, or that cannot be worked out, is passed
 over: so everything is looked at once, and then again without what uses a value that was at fault.
 """
+import operator
+import re
+
 from ..errors import DesignError, unknown
 from . import alliances, conditions, fields, outlines, parts, pieces, quantity, says, shapes, ties, times, words
 from .read import names
-from .values import in_words
+from .values import OUTLINES, in_words
 from .worker import Loop, Season, TooLong, Wrong, inside
+
+NAME = re.compile(r"\w+")
+MOVE = {"position": "at, from or to, which move; a distance is", "direction": "faces, which moves; an angle is"}
+LESS = {"position": "one position less another along the same axis (to red's, ID@red.at.x - ID.at.x; to the far wall, that of something there less ID.at.x)",
+        "direction": "one direction less another"}
+NEITHER = {"position": "neither a position nor a distance", "direction": "neither a direction nor an angle between two"}
+LEAST = {"more than 0": (operator.gt, "is not more than 0"), "0 or more": (operator.ge, "is below 0")}
 
 
 def faults(book, found=()):
@@ -44,6 +54,7 @@ class _Check:
         self.book, self.faults, self.told = book, {}, set()
         self.leaves, self.fields = all_of_it
         self.unread = set(bad if unread is None else unread)
+        self.places = [(field.where, field.key) for field in self.fields if field.key in (*alliances.POSITIONS, *alliances.DIRECTIONS)]
         several = self.several()
         self.unread |= several
         self.season = Season(book, bad | several)
@@ -67,6 +78,7 @@ class _Check:
         for leaf in self.leaves:
             if isinstance(leaf.node, str) and leaf.node.startswith("=") and self.reads(leaf.where):
                 self.formula(leaf)
+        self.least()
         for entry in self.book.entries:
             if entry.path:
                 getattr(self, f"of_{entry.kind}", self.of_any)(entry)
@@ -105,14 +117,45 @@ class _Check:
         """One formula: whether it can be worked out, and gives what its field holds."""
         def work(worker):
             try:
-                kind = worker.once(leaf.where, lambda: worker.formula(leaf.node)).kind     # as long a chain as for whoever asks for it
+                got = worker.once(leaf.where, lambda: worker.formula(leaf.node))     # as long a chain as for whoever asks for it
             except Wrong as problem:
                 return self.tell(problem, leaf.node, leaf.where)
+            kind = got.kind
             if kind == "mass" and leaf.entry.path == "limits.weight" and (name := _first(leaf)) not in fields.spec_for(leaf.entry).known:
                 raise unknown(leaf.entry.where, "weight", name, names()["limits"]["weight"]["fields"])
             if leaf.kind not in (None, kind):
                 raise DesignError(leaf.where, f'the formula "{leaf.node}" gives {in_words(kind)}, not {in_words(leaf.kind)}', f"Write {in_words(leaf.kind)}")
+            if not got.sort.still:
+                self.hidden(leaf, got)
         self.over(work, leaf.where)
+
+    def hidden(self, leaf, got):
+        """A position or a direction that is written where it would not move for red, in a record that each alliance has."""
+        if leaf.entry.data.get("alliance") != "each" or words.OTHER.search(leaf.where):
+            return
+        if any(inside(leaf.where, where) and alliances.holds_places(key, NAME.findall(leaf.where.removeprefix(where))) for where, key in self.places):
+            return
+        kind = "direction" if got.kind == "angle" else "position"
+        if got.sort.one:
+            raise DesignError(leaf.where, f'the formula "{leaf.node}" gives a {kind}, which would not move for red here', f"Write it in {MOVE[kind]} {LESS[kind]}")
+        used = sorted(got.sort.uses, reverse=True)      # positions first
+        raise DesignError(leaf.where, f'the formula "{leaf.node}" uses {" and ".join(f"a {what}" for what in used)}, and gives {NEITHER[kind]}',
+                          f"Write {' and '.join(LESS[what] for what in used)}")
+
+    def least(self):
+        """The numbers that must be more than 0, or not below it: printed, or worked out."""
+        held = [field for field in self.fields if field.least]
+        for leaf in self.leaves:
+            field = next((field for field in held if inside(leaf.where, field.where)), None)
+            if field and self.reads(leaf.where) and not words.OTHER.search(leaf.where):
+                self.over(lambda worker: self._at_least(worker, leaf, field.least), leaf.where)
+
+    def _at_least(self, worker, leaf, least):
+        enough, says = LEAST[least]
+        got = worker.value(leaf.node, leaf.entry, leaf.kind)
+        if got.kind == leaf.kind and got.value is not None and not enough(got.value, 0):
+            shown = f'the formula "{leaf.node}" gives {got.printed}, which' if str(leaf.node).startswith("=") else f'"{got.printed}"'
+            raise DesignError(leaf.where, f"{shown} {says}", f"Write what is {least}")
 
     def words(self, worker, field, before):
         """One text of words: whether each {name} in it can be filled in."""
@@ -198,7 +241,7 @@ class _Check:
     def field(self, field):
         if field.holds == "shape":
             self.over(lambda worker: shapes.drawn(worker, field.entry, field.node, False), field.where)
-        elif field.holds == "outline":
+        elif field.holds in OUTLINES:
             self.over(lambda worker: outlines.checked(worker, field.entry, field.node, False), field.where)
         elif field.holds == "says":
             before = field.where.partition(" ")[2].removeprefix(field.entry.path + ".").split(".")[:-1]

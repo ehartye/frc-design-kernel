@@ -13,7 +13,7 @@ from ..errors import DesignError
 from . import quantity
 from .read import AXES, names
 from .shapes import Taper
-from .worth import BASE, AnyOf, Value, shown
+from .worth import BASE, AnyOf, Value, counted, shown
 
 
 def plain(rules, got, unit=None):
@@ -27,7 +27,8 @@ def plain(rules, got, unit=None):
         inner = [plain(rules, one, unit) for one in got]
         return {"any": inner} if isinstance(got, AnyOf) else inner
     shown_in, (number, low, high) = _numbers(rules, got, unit)
-    return {**asdict(replace(got, when=())), "value": number, "low": low, "high": high, "unit": shown_in, "when": [moment.words for moment in got.when]}
+    told = {name: one for name, one in asdict(replace(got, when=())).items() if name != "sort"}
+    return {**told, "value": number, "low": low, "high": high, "unit": shown_in, "when": [moment.words for moment in got.when]}
 
 
 def lines(rules, path, got, unit=None):
@@ -60,15 +61,17 @@ def _each(rules, got, unit):
 
 
 def _text(rules, got, unit):
-    """A value on one line: as it is printed, and then in its base unit; or in the unit asked alone."""
+    """A value on one line: as it is printed, and then in its base unit; or in the unit asked alone; what it is for each of, and when."""
     if isinstance(got, list):
         return ", ".join(f"[{_text(rules, one, unit)}]" if isinstance(one, list) else _text(rules, one, unit) for one in got) or "nothing"
     shown_in, numbers = _numbers(rules, got, unit)
     if got.kind in ("any", "none"):
-        return f"{got.printed} (no limit)"
-    if unit:
-        return f"{f'{got.limit} ' if got.limit else ''}{_in_unit(shown_in, numbers)}"
-    return got.printed if got.kind not in BASE or got.unit == shown_in else f"{got.printed} ({_in_unit(shown_in, numbers)})"
+        text = f"{got.printed} (no limit)"
+    elif unit:
+        text = f"{f'{got.limit} ' if got.limit else ''}{_in_unit(shown_in, numbers)}"
+    else:
+        text = got.printed if got.kind not in BASE or got.unit == shown_in else f"{got.printed} ({_in_unit(shown_in, numbers)})"
+    return text + counted(got)
 
 
 def _in_unit(unit, numbers):
@@ -106,9 +109,8 @@ def _no_unit(unit):
 
 
 def _about(value):
-    """What is known of a value beside its number: what it is for each of, when, what is measured, why it was chosen, its source and what others say."""
-    when = ", ".join(moment.words for moment in value.when)
-    found = [f"  {name}: {text}" for name, text in (("each", value.each), ("when", when), ("of", value.of), ("assumed", value.assumed), ("src", _listed(value.src))) if text]
+    """What is known of a value beside its number: what is measured, why it was chosen, its source and what others say."""
+    found = [f"  {name}: {text}" for name, text in (("of", value.of), ("assumed", value.assumed), ("src", _listed(value.src))) if text]
     for other in value.differs:
         is_, where = other.get("is", other.get("says")), ", ".join(text for text in (other.get("of"), _listed(other["src"])) if text)
         found.append(f"  differs: {is_ if isinstance(is_, str) else json.dumps(is_)} ({where})")

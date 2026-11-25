@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from . import fields
 from .read import at_spot, names
+from .values import OUTLINES
 from .worker import Season
 
 BEGINS = ("records", "record", "list of", "words", "word")      # a form for every holds that begins so
@@ -28,6 +29,7 @@ NOTES = {                                                       # what fields.js
     "act_needs": lambda given: f"With an `act` it has at least one of {_listed(given)}.",
     "optional": lambda _: "It may be left out.",
     "one": lambda _: "One number is needed here: no range, and no limits of which one is enough.",
+    "least": lambda given: f"It must be {given}.",
 }
 
 
@@ -152,9 +154,9 @@ def of_path(book, path):
 
 def _in_drawing(one, steps):
     """The Meaning of a form or a size in a shape or an outline, where the steps after its property lead to one."""
-    known = {other.key: other for other in everything()} if one.holds in ("shape", "outline") and steps else {}
+    known = {other.key: other for other in everything()} if one.holds in (*OUTLINES, "shape") and steps else {}
     for name in steps:
-        one = known.get(f"{one.holds.removesuffix('s')}: {name}") or known.get(f"{one.key.rpartition(': ')[2]}.{name}") or one
+        one = known.get(f"{'outline' if one.holds in OUTLINES else one.holds.removesuffix('s')}: {name}") or known.get(f"{one.key.rpartition(': ')[2]}.{name}") or one
     return one
 
 

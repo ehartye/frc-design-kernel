@@ -222,7 +222,7 @@ class Ids(unittest.TestCase):
         """Catches a path with a slip in it, and says which step and what there is."""
         book, _ = self.gather(field={"size": {"length": "9 in"}, "tags": {"t1": {"at": ["1 in", "2 in"]}}}, places={"stall": {"at": ["1 in"]}, "loft": {"alliance": "each"}})
         for path, says in [("stal.at.x", 'Did you mean "stall"'), ("stall.att", 'Did you mean "at"'), ("stall.at.z", '"z"'), ("tags.t1.at.xy", '"xy"'), ("size.lenght", 'Did you mean "length"'), ("stall.at.x.deep", "deep"),
-                           ("stall@red.at.x", "each"), ("loft@green", "green"), ("", "Known"), ("stall.at.", "stall.at.")]:
+                           ("stall@red.at.x", "each"), ("loft@green", "green"), ("", "there are 2 here"), ("stall.at.", "stall.at.")]:
             with self.assertRaises(DesignError) as caught:
                 book.look(path)
             self.assertIn(says, str(caught.exception))

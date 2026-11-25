@@ -93,11 +93,12 @@ class Outlines(Derived):
 
     def test_an_opening_that_is_mirrored(self):
         """Catches an unsymmetric opening whose left and right do not change places in a mirrored copy, or do in a turned one."""
-        points = [["0 in", "-9 in"], ["4 in", "0 in"], ["0 in", "9 in"], ["-2 in", "5 in"]]
+        hexagon = {"hexagon": {"flats": "20 in", "points": "10 deg"}}
         for symmetry, sign in [("mirror", -1), ("turn", 1)]:
-            rules = self.rules(lambda d: (d["places"]["chimney"]["opening"].update(outline=points), d["places"]["chimney"].update(symmetry=symmetry)))
-            self.points(rules.get("chimney.opening.outline"), (0, -9), (4, 0), (0, 9), (-2, 5))
-            self.points(rules.get("chimney.opening.outline", alliance="red"), (0, -9 * sign), (4, 0), (0, 9 * sign), (-2, 5 * sign))
+            rules = self.rules(lambda d: (d["places"]["chimney"]["opening"].update(outline=hexagon), d["places"]["chimney"].update(symmetry=symmetry)))
+            corners = [(11.37158, 2.005116), (3.949308, 10.850636)]      # 20 / sqrt(3) from the middle, at 10 deg and at 70 deg
+            self.points(rules.get("chimney.opening.outline")[:2], *corners)
+            self.points(rules.get("chimney.opening.outline", alliance="red")[:2], *[(x, y * sign) for x, y in corners])
 
     def test_no_outline(self):
         """Catches an outline made up for something that has none."""

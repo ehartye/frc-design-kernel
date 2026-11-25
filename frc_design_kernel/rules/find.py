@@ -2,6 +2,8 @@
 
     Finder(rules)         for the Rules of a folder
       .find(asked)        ([the Entry or the Entries asked for], [others that have what was asked for an ID or a code])
+      .holding(asked)     every Entry that holds every word of it, whatever it is called
+      .more(asked, told)  how many more hold it, beside those that are told because they are called so
       .line(entry)        one line about a record
       .full(entry)        the lines that tell all of a record, with `says` filled in and the number of each formula
 """
@@ -58,8 +60,18 @@ class Finder:
         if found:
             others = [entry for entry in (*by_id, *by_code) if not any(entry is one for one in found)]
             return (found, others) if len(found) == 1 else (found + others, [])
-        words = WORD.findall(asked)
-        return [entry for entry in entries if words and _holds(words, self._text(entry))], []
+        return self.holding(asked), []
+
+    def holding(self, asked):
+        """The records that hold every word."""
+        words = WORD.findall(asked.casefold())
+        return [entry for entry in self.rules.book.entries if words and _holds(words, self._text(entry))]
+
+    def more(self, asked, told):
+        """How many more records hold the words of an ID or a code, beside the records that are told for it."""
+        name, these = asked.strip().casefold(), {id(entry) for entry in told}
+        called = any(name == entry.id.casefold() or name in _codes(entry) for entry in told)
+        return sum(id(entry) not in these for entry in self.holding(asked)) if called else 0
 
     def _text(self, entry):
         """All the words of a record: its name, what is written in it, its `says` filled in, and what a limit means."""

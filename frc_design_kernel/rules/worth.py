@@ -2,19 +2,48 @@
 
     Value                its kind, its number in mm, kg, s or degrees, its limit, its ends, and where it comes from
     AnyOf                a list of Values, one of which is enough
+    Sort                 how its number goes with positions, to see one that is written where it would not move for red
     Wrong                the DesignError of a formula, which is told where it is written
+    Told                 a DesignError with another fix for a program and for a command
+    NotOne               the DesignError of what is no value
     one_number(value)    its number, or a DesignError when it has none, such as a range
     one_end(value, end)  the low or the high end of a range or a tolerance
     moved(value, ...)    a position's number somewhere else
     shown, words_of      how a number or a Value is printed
+    counted(value)       what it is for each of and when, in words that follow its number
 """
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
+from fractions import Fraction
+from typing import NamedTuple
 
 from ..errors import DesignError
 from . import quantity
 
 BASE = {"length": "mm", "mass": "kg", "time": "s", "angle": "deg"}
 WORKED = {"ft": "in", "min": "s"}       # nobody reads a decimal foot or a decimal minute
+
+
+class Sort(NamedTuple):
+    """How a number goes with what moves for red. A position counts one of its axis and a direction counts one, all else none, and a sum has the sum."""
+    counts: tuple | None = (Fraction(0), Fraction(0), Fraction(0))      # of x, of y and of directions; None for what is no sum, such as a product of two positions
+    uses: frozenset = frozenset()                                       # "position" and "direction", as far as they are in it at all
+
+    @property
+    def still(self):
+        """Whether it is the same for red: a distance, an angle between two directions, or neither used."""
+        return self.counts is not None and not any(self.counts)
+
+    @property
+    def one(self):
+        """Whether it is one position or one direction itself."""
+        return self.counts is not None and sorted(self.counts) == [0, 0, 1]
+
+    def times(self, number):
+        return self._replace(counts=self.counts and tuple(count * number for count in self.counts))
+
+
+STILL = Sort()
+X, Y, DIRECTION = (Sort(tuple(Fraction(i == at) for i in range(3)), frozenset({what})) for at, what in enumerate(("position", "position", "direction")))
 
 
 @dataclass(frozen=True)
@@ -34,6 +63,7 @@ class Value:
     when: tuple = ()                    # for a cap at some times only: Moments (conditions.py), which must all be true
     name: str | None = None             # its name in a list of which one is enough
     unit: str | None = None             # the unit it is printed in
+    sort: Sort = field(default=STILL, repr=False, compare=False)    # for formulas, and for what may be written where
 
     @property
     def number_words(self):
@@ -43,6 +73,25 @@ class Value:
 
 class AnyOf(list):
     """Values, one of which is enough."""
+
+
+class Told(DesignError):
+    """A DesignError whose fix is another one for a program that asks a season, and for a person who runs a command: fix is for an author."""
+
+    def __init__(self, where, problem, fix, program, command="", find=""):
+        super().__init__(where, problem, fix)
+        self.program, self.command = program, command
+        self.find = find        # the record that a `rules find` tells it all of, when that is the command
+
+    def under(self, prefix):
+        return Told(super().under(prefix).where, self.problem, self.fix, self.program, self.command, self.find)
+
+    def for_a_program(self):
+        return Told(self.where, self.problem, self.program, self.program, self.command, self.find)
+
+
+class NotOne(DesignError):
+    """What is no value, only one of its parts may be."""
 
 
 class Wrong(DesignError):
@@ -102,10 +151,16 @@ def moved(value, number, sign=None):
     return replace(value, value=number, limit=None, low=low, high=high, printed=shown(number, value.kind, unit), unit=unit)
 
 
+def counted(value):
+    """What a number is for each of, and when it counts, in words that follow it: " each alliance when auto and not my lit"."""
+    each, when = f" each {value.each}" if value.each else "", " and ".join(moment.words for moment in value.when)
+    return f"{each} when {when}" if when else each
+
+
 def words_of(value):
-    """A value as `says` prints it: without the words of a limit, and with what it is for each of."""
+    """A value as `says` prints it: without the words of a limit, and with what it is for each of and when."""
     if isinstance(value, AnyOf):
-        return " or ".join(f"{one.number_words} ({one.name})" for one in value)
+        return " or ".join(f"{words_of(one)} ({one.name})" for one in value)
     if isinstance(value, list):
         return ", ".join(words_of(one) for one in value)
-    return f"{value.number_words} each {value.each}" if value.each else value.number_words
+    return value.number_words + counted(value)

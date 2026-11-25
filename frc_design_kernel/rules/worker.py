@@ -12,14 +12,15 @@ from dataclasses import replace
 from ..errors import DesignError, unknown
 from . import alliances, conditions, fields, formulas, outlines, pieces, quantity, says, shapes
 from .read import ALLIANCES, AXES, ENDS, ID, at_spot, word_list
+from .values import OUTLINES
 from .words import paths_in
-from .worth import BASE, AnyOf, Value, Wrong, one_end, one_number, shown, worked
+from .worth import BASE, AnyOf, NotOne, Told, Value, Wrong, one_end, one_number, shown, worked
 
 NO_NUMBER = {"circuits": "no_limit", "on": "no_limit", "height": "height"}      # what may hold a word that stands for no limit
 WORDS = {"text", "texts", "list of texts", "says", "src", "date", "timer", "period", "piece", "pieces", "award", "awards", "foul", "fouls", "places", "things", "things touched",
          "touchable", "given to", "goes to", "several people", "who", "loads"}
 NOT_VALUES = {"conditions", "must not", "when", "list of whens", "spots", "first spot", "cost", "shapes", "differs", "was", "people", "tags", "limits", "parts"}
-
+TOLD_WHOLE = {"conditions": "conditions", "must not": "conditions", "when": "when", "list of whens": "when", "cost": "", "differs": "", "was": ""}     # and the method of Rules that gives it
 
 LONGEST = 50        # a value is worked out from a chain of so many others at most, one from another; a real one needs a few
 
@@ -56,9 +57,9 @@ class Season:
         self.book, self.workers, self.bad = book, {}, frozenset(bad)
 
     @functools.cached_property
-    def holds(self):
-        """{path: what it holds} of every field."""
-        return {field.where.partition(" ")[2]: field.holds for field in fields.walk(self.book, [])}
+    def fields(self):
+        """{path: its Field}."""
+        return {field.where.partition(" ")[2]: field for field in fields.walk(self.book, [])}
 
     @functools.cached_property
     def variants(self):
@@ -92,10 +93,19 @@ class Season:
             kinds = [kind for kind in self.variants if kind in asked or kind in kinds]
         return found
 
+    def field_at(self, entry, spot, rest):
+        """(the Field that a path's steps lead to or into, after its record and its spot, or None; the steps inside it)."""
+        paths = [(".".join([start, *rest[:i]]), rest[i:]) for i in range(len(rest), 0, -1) for start in self.starts(entry, spot)]
+        return next(((self.fields[path], inner) for path, inner in paths if path in self.fields), (None, rest))
+
     def holds_at(self, entry, spot, rest):
-        """What the field holds that a path's steps lead to or into, after its record and its spot."""
-        paths = [".".join([start, *rest[:i]]) for i in range(len(rest), 0, -1) for start in self.starts(entry, spot)]
-        return next((self.holds[path] for path in paths if path in self.holds), "")
+        field, _ = self.field_at(entry, spot, rest)
+        return field.holds if field else ""
+
+    def sort_at(self, entry, spot, rest):
+        """The Sort of what a path leads to, when the property there says it; else None."""
+        field, inner = self.field_at(entry, spot, rest)
+        return alliances.sort_at(field.key, inner) if field else None
 
     def starts(self, entry, spot):
         """The paths in which a field of a record, or of one of its spots, may be written."""
@@ -158,7 +168,16 @@ class Worker:
         """The value or values that a path names. An alliance or a spot in the path goes before those asked."""
         if alliance not in ALLIANCES:
             raise unknown("", "alliance", alliance, ALLIANCES)
-        return self.once((path, alliance, spot), lambda: self._get(path, alliance, spot))
+        return self.once((path, alliance, spot), lambda: self._sorted(path, alliance, spot))
+
+    def _sorted(self, path, alliance, spot):
+        """What a path gives, with its Sort from where it stands."""
+        got = self._get(path, alliance, spot)
+        if not isinstance(got, Value):
+            return got
+        entry, _, own_spot, rest = self.address(path)
+        sort = self.season.sort_at(entry, own_spot or spot, rest)
+        return replace(got, sort=sort) if sort else got
 
     def address(self, path):
         """(the record that a path begins with or None, the alliance and the spot that the path says, the steps after them)."""
@@ -177,7 +196,7 @@ class Worker:
         entry, own_alliance, own_spot, rest = self.address(path)
         alliance, spot = own_alliance or alliance, own_spot or spot
         if not rest:
-            raise self.not_one(self.book.look(path, self.choice).node).under(path)
+            raise self.no_value(self.book.look(path, self.choice).node).under(path)
         try:
             place = alliances.Place(self, entry, alliance, spot)
             self.check(entry, spot, rest)
@@ -188,7 +207,10 @@ class Worker:
             if alliances.moves(entry, rest[0]) and rest[0] != "outline" and not (place.as_written and rest[0] in place.data):
                 return self._moved(place, rest)
             found = self.book.within(place.data, ".".join(rest), entry, self.choice) if spot else self.book.look(path, self.choice)
-            return self.field(found.node, entry, rest, found.end, place)
+            try:
+                return self.field(found.node, entry, rest, found.end, place)
+            except NotOne:
+                raise self.not_one(found.node, entry, spot, rest) from None
         except DesignError as problem:
             raise problem if problem.where else problem.under(f"{entry.file}.json {path}")
 
@@ -203,7 +225,7 @@ class Worker:
         holds, (inner, _) = self.season.holds_at(entry, place.spot, rest), self.unwrap(node)
         if holds == "shape" and shapes.is_shape(inner):
             return shapes.drawn(self, entry, inner, place.swapped)
-        if holds in ("outline", "shape") and rest[-1] in ("outline", "bottom", "top") and isinstance(inner, (list, dict)):
+        if holds in (*OUTLINES, "shape") and rest[-1] in ("outline", "bottom", "top") and isinstance(inner, (list, dict)):
             return outlines.drawn(self, entry, inner, place.swapped)
         if holds == "starts" and isinstance(inner, str) and inner in word_list("starts"):
             number = pieces.left_over(self, entry, rest[-1])
@@ -227,9 +249,27 @@ class Worker:
             raise unknown("", "field", steps[0], ENDS if isinstance(got, Value) else AXES[:len(got)])
         return one_end(got, steps[0]) if steps else got
 
-    def not_one(self, node):
+    def no_value(self, node):
         names = list(node) if isinstance(node, dict) else []
-        return DesignError("", "is not one value", f"Name one of its fields: {', '.join(names)}" if names else "Name a value")
+        return NotOne("", "is not one value", f"Name one of its fields: {', '.join(names)}" if names else "Name a value")
+
+    def not_one(self, node, entry, spot, rest):
+        """What is wrong with a path that leads to no value: an object has fields to name; a list, conditions, times or a cost is told
+        as a whole, by a call for a program and by the command that finds its record."""
+        field, _ = self.season.field_at(entry, spot, rest)
+        path, holds = (field.where.partition(" ")[2], field.holds) if field else ("", "")
+        if isinstance(node, dict) and node and holds not in TOLD_WHOLE and not holds.startswith("list of "):
+            return self.no_value(node)
+        beside = rest[-1] if holds == "cap" and path == ".".join([entry.path, *rest[:-1]]) else ""
+        if TOLD_WHOLE.get(holds):
+            call, how = f'{TOLD_WHOLE[holds]}("{path}")', ""
+        elif holds == "list of points":
+            call, how = f'points("{entry.path}")', ""
+        elif beside in ("each", "when"):
+            call, how = f'get("{path}")', f", as its {beside}"
+        else:
+            call, how = f'records("{entry.file}")', ", in the data of its record"
+        return Told("", "is not one value", "Name a value", f"rules.{call} tells it{how}", find=entry.path)
 
     # -- one value
 
@@ -239,7 +279,7 @@ class Worker:
         about = {"of": about.get("of"), "assumed": about.get("assumed"), "src": about.get("src", entry.data.get("src")), "differs": tuple(about.get("differs", ())),
                  "each": about.get("each"), "when": conditions.moments(self.book, about.get("when", ())), "name": name}
         if holds in NOT_VALUES and not isinstance(node, (bool, str)) or holds.startswith("list of ") and holds != "list of texts":
-            raise self.not_one(node)
+            raise self.no_value(node)
         if isinstance(node, list):
             return [self.value(one, entry, holds) for one in node]
         if isinstance(node, dict) and isinstance(node.get("any"), list):
@@ -247,7 +287,7 @@ class Worker:
         if isinstance(node, dict) and isinstance(node.get("text"), str):
             return Value("text", node["text"], printed=node["text"], **about)
         if isinstance(node, dict) or node is None:
-            raise self.not_one(node)
+            raise self.no_value(node)
         got = self._plain(node, holds)
         return replace(one_end(got, end) if end else got, **about)
 
@@ -276,7 +316,10 @@ class Worker:
             return self.formula(node)
         if holds == "longer than" and ID.fullmatch(node):
             return Value("text", node, printed=node)
-        got = _read(node)
+        try:
+            got = _read(node)
+        except DesignError:
+            raise self.no_value(node) from None
         return Value(got.kind, got.value, got.limit, got.low, got.high, got.printed, unit=got.unit)
 
     # -- formulas
@@ -291,7 +334,7 @@ class Worker:
         """The Value that a formula gives, printed in the unit of the first value of its kind that it names; in inches for feet, in seconds for minutes."""
         self.begin(text)
         try:
-            kind, number = formulas.work(text, lambda path: self._named(text, path))
+            kind, number, sort = formulas.work(text, lambda path: self._named(text, path))
             units = [value.unit for path in paths_in(text) if (value := self.get(path)).kind == kind and value.unit]
         except Wrong:
             raise
@@ -300,16 +343,16 @@ class Worker:
         finally:
             self.doing.pop()
         unit = worked(units[0]) if units else BASE.get(kind, kind if kind != "number" else None)
-        return Value(kind, number, printed=shown(number, kind, unit), unit=unit)
+        return Value(kind, number, printed=shown(number, kind, unit), unit=unit, sort=sort)
 
     def _named(self, text, path):
-        """(kind, number) of a value that a formula names."""
+        """(kind, number, Sort) of a value that a formula names."""
         try:
             value = self.get(path)
             number = one_number(value)
             if value.each or value.when:
                 raise DesignError("", f"is {f'for each {value.each}' if value.each else 'only for some times'}", "Name the count for the whole, or print it; what starts where in all is in rules.starts")
-            return value.kind, number
+            return value.kind, number, value.sort
         except Wrong:
             raise
         except DesignError as problem:

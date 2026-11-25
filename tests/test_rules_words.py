@@ -1,4 +1,5 @@
 """Every word and every ID that a field names: conditions, times, costs, people, places and parts."""
+import re
 import unittest
 
 from frc_design_kernel.errors import DesignError
@@ -42,16 +43,92 @@ class Words(Checked):
         for who, hint in [("our bumpers", "my"), ("my bumper", "bumpers"), ("bumpers", "my"), ("the robot", "piece"), ("the bail", "bale"), ("my", "bumpers"), ("my yard", "robot"), (3, "my")]:
             self.refused(lambda d: needs(d, who), "park.needs[0]", hint)
         self.refused(lambda d: d["scoring"]["awards"]["loft_rp"]["needs"][0].__setitem__(0, "my loft_pionts"), "loft_rp.needs[0]", 'Did you mean "loft_points"')
-        for who in ["their robot", "either person", "my alliance", "the piece", "the hoop", "their loft_points"]:
+        for who in ["their robot", "either person", "my alliance", "the piece", "the hoop"]:
             self.accepted(lambda d: needs(d, who))
+        self.accepted(lambda d: d["scoring"]["awards"]["loft_rp"]["needs"][0].__setitem__(0, "their loft_points"))
 
     def test_what_in_a_condition(self):
         """Catches a zone that is not there, or a name with no my, their or any, and lets words through in a list."""
         what = lambda d, w: d["scoring"]["awards"]["park"]["needs"][0].__setitem__(2, w)
-        for bad, hint in [("their wong", "wong"), ("yard", "my"), ("my hang", "hang"), ("every bale", "every robot"), (True, "park"), (["my yrad"], "yard"), ([3], "park"), ("3 feet", "feet"), ([], "park")]:
+        for bad, hint in [("their wong", "wong"), ("yard", "my"), ("my hang", "hang"), ("every bale", "carpet"), (True, "park"), (["my yrad"], "yard"), ([3], "park"), ("3 feet", "feet"), ([], "park")]:
             self.refused(lambda d: what(d, bad), "park.needs[0]", hint)
-        for good in ["any yard", "carpet", "every robot", 3, "= lit.bank", "3 in", {"by": "event", "regional": 3, "championship": 4}, ["my yard", "my long fence", "a hay stack"], "their bale"]:
+        for good in ["any yard", "carpet", ["my yard", "my long fence", "a hay stack"], "any bale"]:
             self.accepted(lambda d: what(d, good))
+
+    MISFITS = [     # a condition whose words are all there and do not fit together, and what is said of it
+        (["my bumpers", "at least", 2], '"my bumpers"'), (["the bale", "at least", 3], '"the bale"'), (["their robot", "exactly", "every robot"], '"their robot"'), (["my alliance", "at most", 2], '"my alliance"'),
+        (["my bumpers", "at least", "my yard"], '"my bumpers"'),
+        (["my hanging_robots", "at least", "my yard"], '"my yard" is none'), (["my hanging_robots", "at least", "any centre"], '"any centre"'), (["my hanging_robots", "exactly", "carpet"], '"carpet"'),
+        (["my hanging_robots", "at most", ["my yard", "carpet"]], "a list is none"), (["my hanging_robots", "at least", "5 lb"], "a mass, not a count"), (["my hanging_robots", "at least", "at least 5"], '"at least 5"'),
+        (["my hanging_robots", "at least", {"by": "event", "regional": 2, "championship": "3 in"}], "a length, not a count"),
+        (["my hanging_robots", "at least", {"by": "event", "regional": 2, "championship": "at most 3"}], '"at most 3"'), (["my hanging_robots", "at least", "= yard.deep"], "a length, not a count"),
+        (["my hanging_robots", "at least", True], "not a count"), (["my hanging_robots", "at least", {"text": "two"}], "not a value"),
+        (["my hanging_robots", "partly in", "my yard"], '"my hanging_robots"'), (["either loft_points", "touching", "carpet"], '"either loft_points"'), (["my hanging_robots", "touching only", ["my bar", "pieces"]], '"my hanging_robots"'),
+        (["my bumpers", "partly in", -1], '"-1"'), (["my robot", "touching", "5 lb"], '"5 lb"'), (["my robot", "touching", "-5 in"], '"-5 in" is none'), (["my robot", "above", "= yard.deep"], '"= yard.deep"'),
+        (["my robot", "above", "= no.such"], '"= no.such"'), (["my robot", "beyond", "at least 5 in"], '"at least 5 in"'), (["my bumpers", "over", "every robot"], '"every robot"'), (["my robot", "touching", {"is": "3 in"}], "a value"),
+        (["my robot", "over", {"by": "event", "regional": 3, "championship": 4}], "a value"), (["my robot", "over", {"by": "event", "regional": 3}], "a value")]
+    FIT = [
+        ["my hanging_robots", "at least", 2], ["either hanging_robots", "at most", "= G95.limit + 1"], ["their loft_points", "exactly", {"by": "event", "regional": 2, "championship": "= lit.bank"}],
+        ["my hanging_robots", "exactly", "every robot"], ["my hanging_robots", "at least", {"is": 2, "src": "manual 5.8"}], ["my hanging_robots", "at least", 0], ["my bumpers", "partly in", "my yard"],
+        ["the bale", "from", "my stall"], ["my person", "beyond", "my coach_line"], ["their robot", "above", "my swing"], ["my robot", "touching", "carpet"], ["my alliance", "touching", "any bale"],
+        ["my robot", "touching only", ["my bar", "carpet", "a robot that hangs"]], ["my bumpers", "beyond", "any centre"], ["my bumpers", "partly in", "any pond"],
+        ["my robot", "not touching", ["any pond", "pond", "carpet"]]]
+
+    def test_a_condition_whose_parts_do_not_fit(self):
+        """Catches a count that is compared with a place, or measured to one; and a robot that is counted, or measured to a number: each once."""
+        from frc_design_kernel.rules import derive, read, words
+
+        def faults(conditions, put):
+            data = example()
+            put(data, conditions)
+            book, found = read.gather("", data)
+            found += words.check(book)
+            return sorted((str(f) for f in found + derive.faults(book, found)), key=lambda one: int(re.search(r"\[([0-9]+)\][^\]]*:", one)[1]))
+        for put, where in [(lambda d, c: d["scoring"]["awards"]["hang"].update(needs=c), "scoring.json hang.needs"),
+                           (lambda d, c: d["conduct"]["G95"].update(must_not=[{"any": [["my bumpers", "over", "their gate_line"], {"all": c, "when": ["early"]}]}]), "conduct.json G95.must_not[0].any[1].all")]:
+            found = faults([condition for condition, _ in self.MISFITS], put)
+            self.assertEqual(len(found), len(self.MISFITS), found)
+            for i, ((condition, says), told) in enumerate(zip(self.MISFITS, found)):
+                self.assertTrue(told.startswith(f"{where}[{i}]") and says in told, (condition, told))
+            self.assertEqual(faults(self.FIT, put), [])
+        self.assertEqual(len(faults([["my bumpers", "inside", "their yrad"]], put)), 2)     # a word and a zone that are not there, each told
+
+    def test_whose_a_thing_is(self):
+        """Catches my or their before a thing that neither alliance has, wherever a thing is named: nobody knows which one is meant."""
+        places = [(lambda d, thing: d["scoring"]["awards"]["park"]["needs"][0].__setitem__(2, thing), "scoring.json park.needs[0]:"),
+                  (lambda d, thing: d["scoring"]["awards"]["hang"]["needs"][1][2].__setitem__(1, thing), "scoring.json hang.needs[1][1]:"),
+                  (lambda d, thing: d["conduct"]["G93"].update(into=thing), "conduct.json G93.into:"), (lambda d, thing: d["conduct"]["G89"]["where"].append(thing), "conduct.json G89.where[1]:"),
+                  (lambda d, thing: d["conduct"]["G97"]["what"].append(thing), "conduct.json G97.what[2]:"), (lambda d, thing: d["conduct"]["G90"].update(what=thing), "conduct.json G90.what:"),
+                  (lambda d, thing: d["field"]["hangs"]["bar"]["may_touch"].append(thing), "field.json bar.may_touch[3]:"), (lambda d, thing: d["field"]["hangs"]["bar"]["may_not_touch"].append(thing), "field.json bar.may_not_touch[2]:")]
+        for thing in ["my pond", "their pond", "my silo", "their vine", "my bale"]:
+            found = self.faults(lambda d: [put(d, thing) for put, _ in places])
+            self.assertEqual(sorted(one.partition(":")[0] + ":" for one in found), sorted(where for _, where in places))
+            self.assertTrue(all(word in one for one in found for word in (f'"{thing}"', "neither alliance", f"any {thing.partition(' ')[2]}")), found)
+        for thing in ["any pond", "any bale", "my yard", "their yard", "any yard"]:
+            self.assertEqual(self.faults(lambda d: [put(d, thing) for put, _ in places]), [])
+        self.refused(lambda d: d["conduct"]["G93"].update(into="my pond"), "Write pond or any pond")
+        self.refused(lambda d: d["scoring"]["awards"]["park"]["needs"][0].__setitem__(2, "my pond"), "Fix: Write any pond")      # there, pond alone is refused
+        self.accepted(lambda d: d["field"]["hangs"]["bar"]["may_touch"].extend(["my pond side", "pond"]))
+        bog = lambda d, thing: d["field"]["zones"].update(bog={"says": "Wet."}) or d["scoring"]["awards"]["park"]["needs"][0].__setitem__(2, thing)
+        self.refused(lambda d: bog(d, "my bog"), "scoring.json park.needs[0]", "neither alliance")
+        self.refused(lambda d: bog(d, "any bog"), "field.json bog", "has no geometry")
+
+    def test_whose_a_state_is(self):
+        """Catches my or their before a state of the whole match, in a when, in a state's true, in a cap or in a cost: it is the same for both."""
+        places = [(lambda d, name: d["conduct"]["G90"].update(when=[name]), "conduct.json G90.when[0]:"), (lambda d, name: d["clock"]["states"]["quiet"]["true"][0].append(name), "clock.json quiet.true[0][2]:"),
+                  (lambda d, name: d["scoring"]["awards"]["hang"].update(most={"is": 2, "when": [name]}), "scoring.json hang.most.when[0]:"), (lambda d, name: d["conduct"]["G90"]["cost"][1].update(when=[name]), "conduct.json G90.cost[1].when[0]:"),
+                  (lambda d, name: d["scoring"]["awards"]["hang"]["points"][0].update(when=[name]), "scoring.json hang.points[0].when[0]:")]
+        for name in ["my shared", "their shared", "not my shared", "not their shared"]:
+            found = self.faults(lambda d: [put(d, name) for put, _ in places])
+            self.assertEqual(sorted(one.partition(":")[0] + ":" for one in found), sorted(where for _, where in places))
+            self.assertTrue(all("whole match" in one and ('"not shared"' if name.startswith("not") else '"shared"') in one for one in found), found)
+        for name in ["shared", "not shared", "my lit", "not their lit", "their lit", "my stuck", "their full"]:
+            self.assertEqual(self.faults(lambda d: [put(d, name) for put, _ in places]), [])
+
+    def test_a_list_is_measured_to(self):
+        """Catches a thing with no geometry in a list that a condition measures to; in a list of what a robot may touch it needs none."""
+        self.refused(lambda d: d["scoring"]["awards"]["hang"]["needs"].__setitem__(1, ["my robot", "not touching", ["carpet", "my lamp"]]), "field.json lamp", "has no geometry")
+        self.accepted(lambda d: d["field"]["hangs"]["bar"].update(may_touch=["my lamp"]))
 
     def test_a_bracket_that_is_left_open(self):
         """Catches a name in says whose bracket is not closed, which prints as it is written."""
@@ -184,6 +261,18 @@ class Words(Checked):
         self.accepted(lambda d: d["places"]["cellar"].update(starts={"hoop": "left over"}))
         self.accepted(lambda d: d["places"]["cellar"].update(starts={"bale": 2}))
 
+    def test_left_over_for_each(self):
+        """Catches what is left over that is for each of something too: it is shared out already, and the each would be passed over."""
+        starts = lambda d, given: d["places"]["stall"]["starts"].update(bale=given)
+        for each in ["spot", "alliance", "barn"]:
+            self.refused(lambda d: starts(d, {"each": each, "is": "left over"}), "places.json stall.starts.bale:", "left over", "each")
+        by = {"by": "event", "regional": "left over", "championship": 3}
+        self.refused(lambda d: starts(d, {"each": "spot", "is": by}), "places.json stall.starts.bale:", "each")
+        self.refused(lambda d: starts(d, {**by, "regional": {"each": "spot", "is": "left over", "src": "manual 3.8"}}), "places.json stall.starts.bale.regional:", "each")
+        self.refused(lambda d: starts(d, {"is": {"is": "left over"}, "each": "spot"}), "places.json stall.starts.bale:", "each")
+        for good in ["left over", {"is": "left over", "src": "manual 3.8"}, by, {**by, "championship": {"each": "spot", "is": 3}}, {"each": "spot", "is": 3}]:
+            self.accepted(lambda d: starts(d, good))
+
     def test_a_count_that_the_spots_make(self):
         """Catches starts of 6 at a place with six spots: the number is typed twice, and one of them would be changed alone."""
         for many in [6, {"is": 6, "src": "manual 4"}]:
@@ -263,6 +352,33 @@ class Words(Checked):
         self.refused(lambda d: d["conduct"]["G94"].update(longer_than="= momentary.last"), "G94.longer_than", "lasts")
         self.accepted(lambda d: d["places"]["barn"].update(at=["= 2 * cos(tags.t1.faces) * stall@red.near.at.x", "= bale.mass.low * size.width / bale.mass.high"]))
 
+    def test_a_unit_in_a_formula(self):
+        """Catches a unit in a formula that is told as an ID which is not there, or as arithmetic that is not valid, or more than once; and advice that does not work."""
+        deep = lambda d, text, **more: d["field"]["zones"]["yard"].update(deep=text, **more)
+        for text, unit, name in [("= size.length - 10 in", "10 in", "10 in"), ("= size.length - 10in", "10in", "10 in"), ("= size.length - 1/2in", "1/2in", "1/2 in"), ("= 4 3/8 in + size.length", "4 3/8 in", "4 3/8 in"), ("= size.length - 5 ft 4 in", "5 ft 4 in", "5 ft 4 in"),
+                                 ("= size.length * in", "in", "1 in"), ("= (size.length - 2.5 m) / 2", "2.5 m", "2.5 m"), ("= size.length * sin(30 deg)", "30 deg", "30 deg"), ("= 9 lb/ft3", "9 lb/ft3", "9 lb/ft3"),
+                                 ("= size.length - 10 in - 3 in", "10 in", "10 in"), ("= 10 in", "10 in", "10 in")]:
+            self.refused(lambda d: deep(d, text), "field.json yard.deep:", f'the formula "{text}" has a unit, {unit}', f'"{name}"', "yard.")
+        self.refused(lambda d: deep(d, {"by": "field", "welded": "54 in", "bolted": "= size.length - 10 in"}), "field.json yard.deep.bolted:", "has a unit")
+        self.refused(lambda d: d["conduct"]["G94"].update(longer_than="= momentary.lasts + 2 s"), "conduct.json G94.longer_than:", "has a unit, 2 s")
+        self.assertEqual(len(self.faults(lambda d: deep(d, "= size.lenght - 10 in"))), 2)
+        self.refused(lambda d: deep(d, "= size.length - 10 inches"), 'names the ID "inches"')
+        self.accepted(lambda d: deep(d, "= size.length - yard.gap", gap="10 in"))
+        self.accepted(lambda d: d["field"]["equipment"].update({"in": {"gap": "10 in"}, "m": {"gap": "10 in"}}) or deep(d, "= size.length - in.gap - 2 * m.gap - min(in.gap, m.gap)"))
+        self.accepted(lambda d: deep(d, "= 2 * rack.spots.1.a.at.x / 10"))
+
+    def test_an_id_that_is_not_there(self):
+        """Catches a fault that lists every ID of the season, or that suggests none that is near, or too many; and one that says nothing where none is near."""
+        from frc_design_kernel.rules import read
+        for change in [lambda d: d["field"]["zones"]["yard"].update(deep="= crat.at.x"), lambda d: d["robot"]["rules"]["R94"].update(says="{crat.at.x}"), lambda d: d["places"]["cellar"].update(space={"each": "crat", "is": 8})]:
+            found = self.faults(change)
+            self.assertEqual(len(found), 1, found)
+            self.assertIn('"crat", which does not exist. Fix: Did you mean "crate"', found[0])
+            self.assertLess(len(found[0]), 250)
+            self.assertNotIn("G95", found[0])
+        self.assertIn("spot, alliance", self.faults(lambda d: d["places"]["cellar"].update(space={"each": "xyzzyq", "is": 8}))[0])
+        self.refused(lambda d: d["field"]["zones"]["yard"].update(deep="= xyzzyq.at.x"), f'which does not exist. Fix: An ID is the name of a record in one of the nine files; there are {len(read.gather("", example())[0].ids)} here')
+
     def test_a_thing_with_no_geometry(self):
         """Catches a zone, line, solid or hang that a rule or a score names, of which nobody can say where it is."""
         self.refused(lambda d: [d["field"]["zones"]["fold"].pop(k) for k in ("outline", "at")], "field.json fold", "no_geometry", "G89")
@@ -305,7 +421,7 @@ class Words(Checked):
         from frc_design_kernel.rules import read, words
         book, _ = read.gather("", example())
         leaves = {leaf.where: (leaf.kind, leaf.node) for leaf in words.leaves(book)}
-        for where, leaf in [("scoring.json loft_rp.needs[0]", (None, "= loft_rp.needed")), ("scoring.json loft_rp.easier.needs[0].championship", (None, 14)),
+        for where, leaf in [("scoring.json loft_rp.needs[0]", ("number", "= loft_rp.needed")), ("scoring.json loft_rp.easier.needs[0].championship", ("number", 14)),
                             ("conduct.json G89.longer_than", ("time", "10 s")), ("field.json lane.long", (None, "60 in"))]:
             self.assertEqual(leaves.get(where), leaf, where)
 

@@ -1,6 +1,6 @@
 """Outlines as points in mm: a list of points, a rectangle, a hexagon or a circle.
 
-    drawn(worker, entry, node)    its points about its own middle, or as they are listed: for an opening or inside a shape
+    drawn(worker, entry, node)    its points about its own middle, or as they are listed inside a shape
     on_field(place, node)         its points on the field, for an alliance and a spot
     checked(worker, entry, node)  the same as drawn; a DesignError for an outline that has no area, or that crosses or touches itself
 

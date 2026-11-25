@@ -9,6 +9,7 @@ Each takes --rules, but means, which needs no folder. What get does not know as 
 import argparse
 import json
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from .find import Finder
 from .read import ALLIANCES, names
 from .rules import examine, load_rules
 from .values import DATE
+from .worth import Told
 
 FOLDER = "a dated folder of rules, or a folder of dated ones, of which the newest by name is read"
 GET_FLAGS = ("--rules", "--alliance", "--spot", "--unit", "--json", "--help")
@@ -48,6 +50,7 @@ def add(commands):
     asked = commands.add_parser("rules", help="answer from a game's rules folder").add_subparsers(dest="asked", metavar="{find,check,means,get}", required=True, parser_class=_Parser)
     one = asked.add_parser("find", help="one record in full, by its rule code, its ID or words of it")
     one.add_argument("words", nargs="+", help="a rule code, an ID, or words that must all be there")
+    one.add_argument("--words", action="store_true", dest="anywhere", help="every record that holds the words, also when one is a code or an ID")
     one.add_argument("--rules", required=True, metavar="DIR", help=FOLDER)
     one.set_defaults(run=find)
     one = asked.add_parser("check", help="every fault of a folder, and places to look for what is missing or written twice")
@@ -94,13 +97,28 @@ def _in(lines):
 
 def find(args):
     finder, asked = Finder(load_rules(folder_of(args.rules))), " ".join(args.words)
-    found, others = finder.find(asked)
+    found, others = (finder.holding(asked), []) if args.anywhere else finder.find(asked)
     if not found:
-        raise DesignError("", f'no record has the code, the ID or all the words of "{asked}"', "Try fewer words, or the beginning of one")
+        what = "all the words" if args.anywhere else "the code, the ID or all the words"
+        raise DesignError("", f'no record has {what} of "{asked}"', "Try fewer words, or the beginning of one")
     lines = [finder.line(entry) for entry in found] if len(found) > 1 else finder.full(found[0])
     if others:
         lines += ["Also with this ID or code:", *_in(finder.line(entry) for entry in others)]
+    if more := finder.more(asked, [*found, *others]):
+        lines.append(f'"{asked}" is also in the words of {_count(more, "more record")}. To list them all: {_command(args.rules, "find", "--words", asked)}')
     print("\n".join(lines))
+
+
+def _command(folder, *words):
+    """A command as it is typed, with the folder that was given."""
+    return " ".join(["rules", *map(_typed, (*words, "--rules", Path(folder).as_posix()))])
+
+
+def _typed(text):
+    """A word of a command, in quotes when a shell would take it for something else."""
+    if re.fullmatch(r"[\w./:@+-]+", text):
+        return text
+    return f'"{text}"' if re.fullmatch(r'[^$`"!\\]*', text) else shlex.quote(text)
 
 
 # ---- check
@@ -185,7 +203,10 @@ def get(args):
         if kind not in rules.season.variants:
             raise unknown(f"--{kind}", "kind of variant", kind, rules.season.variants)
     worker = rules.season.worker(**args.variants)
-    got = rules.get(args.path, args.alliance, args.spot, **args.variants)
+    try:
+        got = rules.get(args.path, args.alliance, args.spot, **args.variants)
+    except Told as problem:
+        raise DesignError(problem.where, problem.problem, problem.command or f"It is told by: {_command(args.rules, 'find', problem.find)}") from None
     taken = {kind: worker.choice[kind] for kind in rules.season.variants if kind in worker.asked}
     entry, _, own_spot, rest = worker.address(args.path)
     meaning = meanings.of_path(rules.book, args.path if own_spot or not args.spot else ".".join([entry.path, "spots", args.spot, *rest]))

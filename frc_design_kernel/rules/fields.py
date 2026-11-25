@@ -24,7 +24,8 @@ class Property:
     key: str            # its kind and its name: "opening.bottom", "limits.reach.far", "game.variants"
     holds: str
     means: str
-    one: bool           # whether one number is needed there, and no range
+    one: bool = False   # whether one number is needed there, and no range
+    least: str = ""     # what each number there must be: "more than 0" or "0 or more"
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,7 @@ class Field:
     owner: dict         # the object that the field is in
     key: str = ""       # the key of its Property; "" for an extra field
     one: bool = False   # whether one number is needed in it
-
+    least: str = ""     # what each number in it must be
 
 @dataclass(frozen=True)
 class Spec:
@@ -53,7 +54,7 @@ class Spec:
 
 
 def properties(label, about):
-    return {name: Property(f"{label}.{name}", one["holds"], one["means"], one.get("one", False)) for name, one in about.get("fields", {}).items()}
+    return {name: Property(f"{label}.{name}", one["holds"], one["means"], one.get("one", False), one.get("least", "")) for name, one in about.get("fields", {}).items()}
 
 
 @functools.lru_cache(maxsize=None)
@@ -132,7 +133,7 @@ def object_fields(entry, data, spec, where, faults):
         one = spec.known.get(name) or next((p for start, p in spec.known.items() if start.endswith("_") and name.startswith(start)), None)
         holds = one.holds if one else _rest(entry, spec, name, node, where, faults)
         if holds:
-            field = Field(entry, at, name, holds, node, data, one.key if one else "", bool(one and one.one))
+            field = Field(entry, at, name, holds, node, data, *((one.key, one.one, one.least) if one else ()))
             yield field
             yield from _inside(field, faults)
 

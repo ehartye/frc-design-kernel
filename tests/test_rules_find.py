@@ -1,5 +1,11 @@
 """rules find: a record by its code, its ID or words of it; and rules check: every fault, what has no geometry, and equal numbers."""
+import json
+import re
+import shlex
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from .rules_cases import as_it_is, example, written
 from .test_rules_commands import Command, run
@@ -40,11 +46,13 @@ class Find(Command):
 
     def test_by_id(self):
         """Catches an ID that is not found, or a formula that does not tell its number."""
-        self.assertEqual(self.lines("find", "yard"), [
+        self.assertEqual(self.lines("find", "yard")[:-1], [
             "yard (field.json, zone)", "  alliance: each", "  at: 27 in, 40 in", "  outline:", "    rectangle: 54 in (= yard.deep), 21 in (= yard.wide)",
             "  deep: 54 in", "  wide: 21 in", "  edge: tape inside", "  height: none", "  src: manual 3.2"])
-        self.assertEqual(self.lines("find", "height"), [
+        told = self.lines("find", "height")
+        self.assertEqual(told[:-1], [
             "limits.height (robot.json, limit)", "  code: R91", "  max:", "    is: 66 in (= limits.start.height + limits.height.more)", "    of: floor to the top, at any time", "  more: 18 in", "  src: manual R91"])
+        self.assertRegex(told[-1], '^"height" is also in the words of [0-9]+ more records')
 
     def test_a_line_names_what_to_ask_for_next(self):
         """Catches a line that names a record by something that does not find it, or that finds it with others."""
@@ -95,7 +103,7 @@ class Find(Command):
     def test_a_path_that_is_also_an_id(self):
         """Catches a record that is named by its whole path and is not told in full, because another has that ID, and one that hides the other."""
         told = self.lines("find", "frame")
-        self.assertEqual((told[0], told[-2:]), ("frame (game.json, frame)", ["Also with this ID or code:", "  parts.guard.frame (part): The frame"]))
+        self.assertEqual((told[0], told[-3:-1]), ("frame (game.json, frame)", ["Also with this ID or code:", "  parts.guard.frame (part): The frame"]))
 
     def test_by_words(self):
         """Catches words that are not found in what a record says, in its numbers filled in, in its other words, or in what a limit means."""
@@ -120,6 +128,68 @@ class Find(Command):
         self.wrong("find", "G900", says=['"G900"', "Fix: "])
         self.wrong("find", "no such thing", says=['"no such thing"'])
         self.wrong("find", "  ", says=['"  "'])
+
+    MORE = re.compile(r'"(.+)" is also in the words of (\d+ more records?)\. To list them all: rules (.+)')
+
+    def more(self, *asked, change=None):
+        """(the lines that a find prints, how many more it says, what the command that it gives prints)."""
+        folder = self.folder(change)
+        code, out, err = run("find", *asked, "--rules", folder)
+        self.assertEqual((code, err), (0, ""))
+        lines = out.splitlines()
+        found = self.MORE.fullmatch(lines[-1])
+        if not found:
+            return lines, 0, []
+        code, listed, err = run(*shlex.split(found[3], posix=True))
+        self.assertEqual((code, err, found[1]), (0, "", " ".join(asked)))
+        many, _, word = found[2].partition(" ")
+        self.assertEqual(word, "more record" if many == "1" else "more records")
+        return lines[:-1], int(many), listed.splitlines()
+
+    def test_a_word_that_is_also_an_id_or_a_code(self):
+        """Catches a word that is an ID or a code, and that hides every other record that holds it; or a command for those that does not work."""
+        def named(lines):
+            return [line.strip().split(" ")[0] for line in lines if line.startswith(("  ", "")) and re.match(r" *[\w.@]+ \([\w]+\): ", line)]
+        from frc_design_kernel.rules.rules import load_rules
+        data = example()
+        data["terms"].update(wave={"says": "A signal by hand, 7.3 times."}, nod={"says": "As in 7.3.", "code": "7.3"}, nowhere_else={"says": "Not here."})
+        rules = load_rules(written(data))
+        with mock.patch("tests.test_rules_commands.once_read", lambda _: rules):
+            for asked in ["bumpers", "bar", "yard", "signal", "endgame", "frame", "7.3", "YARD"]:
+                lines, many, listed = self.more(asked)
+                shown = {lines[0].split(" ")[0], *named(lines)}
+                self.assertGreater(many, 0, asked)
+                self.assertEqual(len(set(named(listed)) - shown), many, (asked, listed))
+                self.assertLessEqual(shown, set(named(listed)))
+            self.assertIn("G90", named(self.more("bumpers")[2]))
+            for asked in ["limits.reach", "game.json", "touch opponent yard", "launch bale", "nowhere_else", "G90"]:
+                lines, many, _ = self.more(asked)
+                self.assertEqual((many, [line for line in lines if "more record" in line]), (0, []), asked)
+
+    def test_one_more(self):
+        """Catches one more record that is told as several, and a folder or a word with a space that breaks the command."""
+        def change(d):
+            d["terms"]["zither"] = {"says": "Played.", "code": "Zq 9"}
+            d["terms"]["harp"] = {"says": "Like a zither.", "code": ["Zq 9", "H1"]}
+            d["terms"]["lyre"] = {"says": "As Zq, of 9."}
+        data = example()
+        change(data)
+        for name in ("a folder of rules", "$rules [1]"):
+            with tempfile.TemporaryDirectory() as keep:
+                folder = Path(keep) / name
+                folder.mkdir()
+                for file, one in data.items():
+                    (folder / f"{file}.json").write_text(json.dumps(one), encoding="utf-8")
+                self.folder = lambda change=None: str(folder)
+                for asked, found in [("zither", ["zither", "harp"]), ("Zq 9", ["zither", "harp", "lyre"])]:
+                    _, many, listed = self.more(asked)
+                    self.assertEqual((many, [line.split(" ")[0] for line in listed]), (1, found))
+
+    def test_words_alone(self):
+        """Control: --words looks for words only, prints one record in full, and finds nothing where there is nothing."""
+        self.assertEqual(self.lines("find", "--words", "pressed straw")[0], "bale (pieces.json, piece)")
+        self.wrong("find", "--words", "xyzzyq", says=['"xyzzyq"'])
+        self.assertIn("--words", run("find", "--help")[1])
 
     def test_one_line_each(self):
         """Catches a line that goes on over many lines, or that says nothing of the record."""
