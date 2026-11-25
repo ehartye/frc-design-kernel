@@ -21,4 +21,4 @@ Source = "https://github.com/ehartye/frc-design-kernel"
 include = ["frc_design_kernel*"]
 
 [tool.setuptools.package-data]
-frc_design_kernel = ["source/*.json"]
+frc_design_kernel = ["source/*.json", "rules/*.json"]

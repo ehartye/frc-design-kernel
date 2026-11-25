@@ -1,0 +1,47 @@
+{
+  "G90": {
+    "says": "A robot may not touch an opponent when either robot's bumpers are partly in the opponent's yard in the last {endgame.last}, whoever starts it, directly or through a piece.",
+    "act": "touch", "what": "their robot", "through_pieces": true, "whoever_starts": true,
+    "must_not": [["either bumpers", "partly in", "their yard"]], "when": ["endgame"],
+    "cost": ["minor", {"award": "loft_rp", "to": "their alliance", "when": ["qualification"]}], "src": "manual 7.1"
+  },
+  "G91": {
+    "says": "A robot may not be unsafe.",
+    "cost": [{"foul": "yellow_card", "again": "event"}, {"words": "the match does not start"}], "src": "manual 7.1"
+  },
+  "G92": {
+    "says": "A robot may not hold an opponent against something for more than {longest}, nor come within {apart} of it for {apart_for} after.",
+    "longest": "5 s", "apart": "6 ft 6 in", "apart_for": "3 s", "every": "6 s",
+    "cost": ["minor", {"foul": "major", "every": "= G92.every"}, {"foul": "yellow_card", "each": "robot held", "if": "on purpose", "times": 1}],
+    "unless": ["the opponent is hanging"], "src": "manual 7.1", "was": [{"until": "2031-02-04", "says": "Nothing was said of coming near after.", "src": "update3 G92"}]
+  },
+  "G93": {
+    "says": "A robot may launch a bale only from its own paddock or lane, and never into a loft.",
+    "act": "launch", "piece": "bale", "into": "any loft", "only_if": [{"any": [["my bumpers", "partly in", "my paddock"], ["my bumpers", "fully in", "my lane"]]}],
+    "unless": ["a drop"], "cost": ["minor", {"foul": "major", "again": "match", "instead_of": "minor"}], "src": "manual 7.2"
+  },
+  "G94": {
+    "says": "A robot may carry at most {limit.bale} bale and {limit.pumpkin} pumpkins; in a fold none for longer than momentary.",
+    "act": "hold", "limit": {"bale": "= limits.hold.bale", "pumpkin": "= limits.hold.pumpkin"}, "longer_than": "momentary", "where": ["my fold"],
+    "cost": [{"foul": "minor", "each": "extra piece"}, {"foul": "red_card", "if": "it plays on", "against": "alliance", "next_match": true}], "src": ["manual 7.2", "update3 G94"]
+  },
+  "G95": {
+    "says": "Before the last {endgame.last}, at most {limit} robot of an alliance is past the centre. A robot off the carpet over the gate line is past it.",
+    "act": "cross", "limit": 1, "when": ["teleop", "not endgame"],
+    "must_not": [{"any": [
+      {"all": [["my bumpers", "beyond", "any centre"], ["my robot", "touching", "carpet"]], "when": ["early"]},
+      ["my bumpers", "over", "their gate_line"], ["their robot", "fully outside", "my fold"]]}],
+    "cost": [{"foul": "minor", "every": "5 s"}, {"deny": ["hang", "park"], "if": "it hangs there"}], "src": "manual 7.2"
+  },
+  "G96": {
+    "says": "People feed a bale only through their own stall, and hold it no longer than {longer_than}.",
+    "act": "feed", "piece": ["bale", "hoop"], "who": ["feeder", "driver"], "longer_than": "10 s", "limit": 2,
+    "only_if": [["the piece", "through", "my stall"], ["the bale", "from", "my stall"], ["my person", "beyond", "my coach_line"]],
+    "cost": [{"either": ["yellow_card", "red_card"], "if": "as the judge says", "against": "person"}], "src": "manual 7.3"
+  },
+  "G97": {
+    "says": "Nobody may touch the knot of a rope, nor a pumpkin on the vine.", "act": "touch", "what": ["any knot", "any vine"], "who": ["anyone"], "must_not": true,
+    "cost": [{"foul": "major", "against": "team", "again": "phase"}], "src": "manual 7.3"
+  },
+  "placing_order": {"says": "Robots are placed as their teams agree, else visitors first.", "who": ["robot", "coach"], "cost": [], "src": "manual 4.3"}
+}

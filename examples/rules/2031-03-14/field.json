@@ -1,0 +1,123 @@
+{
+  "size": {
+    "length": {"by": "field", "welded": "612.40 in", "bolted": {"is": "611.75 in", "src": "drawings sheet 2"}}, "width": "25 ft",
+    "carpet": {"text": "low pile"}, "src": "drawings sheet 1"
+  },
+  "symmetry": "turn",
+  "guardrail": {"height": "1 ft 10 in", "gates": 2, "gate_width": "41 in", "see_through": true, "src": "manual 3.1"},
+  "zones": {
+    "yard": {
+      "alliance": "each", "at": ["27 in", "40 in"], "outline": {"rectangle": ["54 in", "21 in"]},
+      "edge": "tape inside", "height": "none", "src": "manual 3.2"
+    },
+    "paddock": {
+      "alliance": "each", "at": ["= crate.at.x", "220 in"], "faces": "0 deg", "outline": {"hexagon": {"flats": "40 in", "points": "90 deg"}},
+      "edge": "tape outside", "height": "30 in", "src": "manual 3.2"
+    },
+    "pond": {
+      "at": ["= size.length / 2", "= size.width / 2"], "outline": {"circle": "46 in"}, "edge": "tape inside", "height": "none", "src": "manual 3.2"
+    },
+    "lane": {
+      "alliance": "each", "symmetry": "mirror", "says": "An L along the wall. Red has its mirror image.",
+      "outline": [["0 in", "0 in"], ["= lane.long", "0 in"], ["= lane.long", "= lane.wide"], ["= lane.wide", "= lane.wide"], ["= lane.wide", "= lane.long"], ["0 in", "= lane.long"]],
+      "long": "60 in", "wide": "18 in", "edge": "tape inside", "height": "none", "src": "drawings sheet 3"
+    },
+    "fold": {
+      "alliance": "each", "at": ["120 in", "260 in"], "faces": "30 deg", "outline": {"rectangle": ["40 in", "24 in"]},
+      "edge": "tape inside", "height": "none", "src": "drawings sheet 3", "differs": [{"says": "The text calls it a square.", "src": "manual 3.2"}]
+    },
+    "stands": {"for": "people", "says": "Where feeders stand.", "height": "none", "no_geometry": "An area for people, off the field.", "src": "manual 3.3"}
+  },
+  "lines": {
+    "centre": {"from": ["= size.length / 2", "0 in"], "to": ["= size.length / 2", "= size.width"], "src": "manual 3.2"},
+    "gate_line": {
+      "alliance": "each", "from": ["= yard.at.x + yard.outline.rectangle.x / 2", "0 in"],
+      "to": ["= yard.at.x + yard.outline.rectangle.x / 2", "= size.width"], "src": "manual 3.2"
+    },
+    "coach_line": {"alliance": "each", "for": "people", "no_geometry": "Behind the wall.", "src": "manual 3.3"}
+  },
+  "solids": {
+    "crate": {"alliance": "each", "at": ["131 in", "150 in", "0 in"], "faces": "0 deg", "shape": {"box": ["22 in", "55 in", "15 in"]}, "src": "manual 3.4"},
+    "manger": {
+      "alliance": "each", "at": ["= crate.at.x", "60 in", "0 in"], "faces": "90 deg", "says": "Its faces lean inward, up to {shape.taper.tall}.",
+      "shape": {"taper": {"bottom": {"rectangle": ["30 in", "20 in"]}, "top": {"rectangle": ["20 in", "10 in"]}, "tall": "12 in"}}, "src": "manual 3.4"
+    },
+    "silo": {
+      "at": ["= size.length / 2", "= size.width / 2", "0 in"], "shape": {"cylinder": {"diameter": "10 in", "length": "36 in", "axis": "z"}}, "src": "manual 3.4"
+    },
+    "boulder": {"alliance": "each", "at": ["200 in", "280 in", "0 in"], "shape": {"ball": {"diameter": "14 in"}}, "src": "manual 3.4"},
+    "tyre": {"alliance": "each", "at": ["240 in", "20 in", "0 in"], "shape": {"ring": {"inside": "12 in", "outside": "22 in", "thick": "5 in"}}, "src": "manual 3.4"},
+    "culvert": {
+      "alliance": "each", "at": ["240 in", "280 in", "0 in"], "faces": "90 deg",
+      "shape": {"tube": {"inside": "16 in", "outside": "18 in", "length": "48 in"}}, "src": "manual 3.4"
+    },
+    "ramp": {
+      "alliance": "each", "at": ["70 in", "150 in", "0 in"], "faces": "180 deg",
+      "shape": {"prism": {"outline": [["0 in", "-12 in"], ["24 in", "-12 in"], ["18 in", "12 in"], ["0 in", "12 in"]], "tall": "3 in"}}, "src": "manual 3.4"
+    },
+    "barn_body": {
+      "alliance": "each", "at": ["= barn.at.x - barn_body.deep / 2", "= barn.at.y", "0 in"], "faces": "0 deg", "deep": "20 in",
+      "shape": {"cut": [
+        {"at": ["0 in", "0 in", "0 in"], "box": ["= barn_body.deep", "60 in", "80 in"]},
+        {"at": ["0 in", "0 in", "= barn.opening.bottom"], "box": ["= barn_body.deep * 2", "= barn.opening.outline.rectangle.x", "= barn.opening.outline.rectangle.y"]}]},
+      "src": "manual 3.5"
+    },
+    "trestle": {
+      "alliance": "each", "at": ["180 in", "200 in"], "faces": "0 deg", "unknown": ["The height its foot starts at."],
+      "shape": {"join": [
+        {"at": ["0 in", "0 in", "0 in"], "box": ["4 in", "40 in", "6 in"]},
+        {"at": ["0 in", "0 in", "4 in"], "prism": {"outline": {"hexagon": {"flats": "12 in", "points": "0 deg"}}, "tall": "8 in"}}]},
+      "src": "manual 3.5"
+    },
+    "pen": {
+      "alliance": "each", "at": ["180 in", "110 in", "0 in"], "faces": "0 deg", "says": "A triangle with its point along {faces}.",
+      "side": {"is": "30 in", "of": "each side in plan"}, "lean": {"is": "60 deg", "of": "between two sides"}, "half": "= pen.side / 2",
+      "tall": {"is": "= pen.side * sin(pen.lean)", "of": "a side to the point across from it"},
+      "bearing": {"is": "= atan2(pen.half, pen.tall)", "of": "half of the angle at a point"},
+      "shape": {"prism": {
+        "outline": [["= pen.tall * 2 / 3", "0 in"], ["= -pen.tall / 3", "= pen.half"], ["= -pen.tall / 3", "= -pen.half"]], "tall": "= max(abs(pen.half) / 3, 4 * pumpkin.shape.ball.diameter.low / 9)"}},
+      "src": ["manual 3.5", "drawings sheet 4"]
+    }
+  },
+  "passages": {
+    "arch": {"alliance": "each", "kind": "under", "at": ["200 in", "30 in"], "faces": "0 deg", "width": "44 in", "height": "26 3/4 in", "src": "manual 3.6"},
+    "bridge": {"kind": "over", "at": ["= size.length / 2", "30 in"], "width": "48 in", "rise": "6 1/2 in", "slope": "15 deg", "src": "manual 3.6"},
+    "gateway": {
+      "alliance": "each", "kind": "between",
+      "spots": {"near": {"at": ["100 in", "30 in"]}, "far": {"at": ["100 in", "= size.width - gateway.spots.near.at.y"]}},
+      "width": {"by": "gate", "low_gate": "40 in", "high_gate": "46 in +5 -1"}, "src": "manual 3.6"
+    }
+  },
+  "equipment": {
+    "barn_light": {"alliance": "each", "says": "On while the barn is open. It stands {high} above the barn.", "high": "18 in", "src": "manual 5.3"},
+    "lamp": {"alliance": "each", "says": "A button that people press.", "src": "manual 5.2"}
+  },
+  "hangs": {
+    "bar": {
+      "alliance": "each", "kind": "bar", "at": ["40 in", "150 in", "33 in"], "faces": "0 deg", "diameter": "1 1/2 in", "width": "29 1/2 in",
+      "may_touch": ["my bar", "pieces", "the uprights, with bumpers"], "may_not_touch": ["their bar", "the carpet"], "src": "manual 3.7"
+    },
+    "rope": {
+      "alliance": "each", "kind": "chain", "out": "16 in",
+      "spots": {
+        "ring": 3, "around": ["= pen.at.x", "= pen.at.y"], "step": "120 deg", "names": ["front", "left", "right"],
+        "first": {"at": ["= pen.at.x + rope.out", "= pen.at.y", "28 in"], "faces": "0 deg"}},
+      "may_touch": ["my rope"], "may_not_touch": ["any knot"], "src": "manual 3.7"
+    },
+    "swing": {
+      "alliance": "each", "kind": "frame", "at": ["60 in", "270 in", {"by": "gate", "low_gate": "12 in", "high_gate": "= swing.at.z.low_gate + swing.lift"}],
+      "lift": "18 in", "width": "20 in", "src": "manual 3.7"
+    },
+    "mast": {"alliance": "each", "kind": "post", "at": ["= pen.at.x", "= pen.at.y", "= pen.shape.prism.tall"], "diameter": "2 in", "tall": "6 ft", "src": "manual 3.7"},
+    "knot": {"alliance": "each", "kind": "ledge", "says": "Where a rope joins the mast.", "no_geometry": "At the top of the mast, as drawn.", "src": "manual 3.7"}
+  },
+  "tags": {
+    "family": "36h11", "black": "5 1/2 in", "panel": "9 in", "point": {"text": "the middle of the black square"}, "src": "drawings sheet 9",
+    "t1": {"at": ["0 in", "= size.width / 2", "50 in"], "faces": "0 deg", "tilt": "0 deg"},
+    "t2": {"at": ["= size.length", "= size.width / 2", "50 in"], "faces": "180 deg", "tilt": "0 deg"},
+    "t3": {"at": ["150 in", "12 in", "40 in"], "faces": "90 deg", "tilt": "15 deg", "panel": "11 in"},
+    "t4": {
+      "at": [{"by": "field", "welded": "462.40 in", "bolted": "461.75 in"}, "288 in", "40 in"], "faces": "270 deg", "tilt": "15 deg", "panel": "= tags.t3.panel"
+    }
+  }
+}

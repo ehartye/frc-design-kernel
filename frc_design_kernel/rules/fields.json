@@ -1,0 +1,171 @@
+{
+  "about": "What RULES.md names, as data: the one list that the reader checks with. A test checks that both name the same things.",
+  "units": {
+    "length": {"in": 25.4, "ft": 304.8, "mm": 1, "cm": 10, "m": 1000},
+    "mass": {"lb": 0.45359237, "oz": 0.028349523125, "kg": 1, "g": 0.001},
+    "time": {"s": 1, "min": 60},
+    "angle": {"deg": 1}
+  },
+  "joined": {"ft": "in", "min": "s"},
+  "kept": ["A", "V", "W", "Wh", "Ah", "ohm", "psi", "bar", "cfm", "scfm", "uF", "AWG", "mm2", "USD", "Mbit/s", "lb/ft3", "kg/m3", "nm", "Hz", "rpm"],
+  "limit_words": ["at most", "at least", "less than", "more than"],
+  "functions": ["sin", "cos", "tan", "atan2", "sqrt", "abs", "min", "max"],
+  "files": {
+    "game": {"section": 4, "fields": {
+      "name": "text", "season": "number", "edition": "text", "sources": "records source", "variants": "variants", "frame": "record frame", "people": "people", "accuracy": "record accuracy"}},
+    "clock": {"section": 6, "fields": {
+      "periods": "records period", "windows": "records window", "states": "records state"}},
+    "field": {"section": 7, "fields": {
+      "size": "record size", "symmetry": "word symmetry", "guardrail": "record guardrail", "zones": "records zone", "lines": "records line", "solids": "records solid",
+      "passages": "records passage", "equipment": "records equipment", "hangs": "records hang", "tags": "tags"}},
+    "pieces": {"section": 8, "records": "piece"},
+    "places": {"section": 9, "records": "place"},
+    "scoring": {"section": 10, "fields": {
+      "total": "record total", "counts": "records count", "awards": "records award", "judged": "records judged", "fouls": "records foul"}},
+    "conduct": {"section": 12, "records": "conduct"},
+    "robot": {"section": 13, "fields": {
+      "limits": "limits", "parts": "parts", "rules": "records rule"}},
+    "terms": {"section": 14, "records": "term"}
+  },
+  "roots": ["size", "limits", "tags", "total", "judged", "parts", "guardrail", "accuracy"],
+  "every": {"says": "text", "code": "texts", "src": "src", "unknown": "list of texts", "differs": "differs", "was": "was", "of": "text"},
+  "placed": {"alliance": "word alliance", "symmetry": "word symmetry", "at": "point", "faces": "angle", "spots": "spots", "no_geometry": "text"},
+  "value": {"is": "value", "of": "text", "src": "src", "assumed": "text", "differs": "differs", "was": "was", "each": "text"},
+  "differs": {"is": "value", "says": "text", "src": "src", "of": "text"},
+  "was": {"until": "date", "is": "value", "says": "text", "src": "src", "of": "text"},
+  "kinds": {
+    "source": {"section": 4, "fields": {"title": "text", "edition": "text", "url": "text"}},
+    "frame": {"section": 4, "fields": {"origin": "text", "x": "text", "y": "text", "z": "text"}},
+    "accuracy": {"section": 4, "fields": {"decimal": "length", "angle": "angle"}},
+    "person": {"section": 4, "fields": {"most": "number"}},
+    "together": {"section": 4, "closed": true, "needs": ["of", "most"], "fields": {"of": "people", "most": "number"}},
+    "period": {"section": 6, "fields": {"lasts": "time", "control": "text"}},
+    "window": {"section": 6, "needs": ["in"], "fields": {"in": "period", "first": "time", "last": "time", "timer": "timer"}},
+    "state": {"section": 6, "fields": {
+      "of": "word state_of", "starts": "text", "needs": "conditions", "lasts": "time", "or_until": "text", "grace": "time", "true": "list of whens"}},
+    "size": {"section": 7, "fields": {"length": "length", "width": "length"}},
+    "guardrail": {"section": 7, "fields": {"height": "length", "gates": "number", "gate_width": "length"}},
+    "zone": {"section": 7, "placed": true, "fields": {"outline": "outline", "edge": "word edge", "height": "height", "for": "word for"}},
+    "line": {"section": 7, "placed": true, "fields": {"from": "point", "to": "point", "for": "word for"}},
+    "solid": {"section": 7, "placed": true, "fields": {"shape": "shape"}},
+    "passage": {"section": 7, "placed": true, "fields": {
+      "kind": "word passage_kind", "width": "length", "height": "length", "rise": "length", "slope": "angle"}},
+    "equipment": {"section": 7, "placed": true, "fields": {}},
+    "hang": {"section": 7, "placed": true, "fields": {
+      "kind": "word hang_kind", "diameter": "length", "width": "length", "may_touch": "touchable", "may_not_touch": "touchable"}},
+    "tags": {"section": 7, "fields": {"family": "text", "black": "length", "panel": "length"}},
+    "tag": {"section": 7, "fields": {"at": "point", "faces": "angle", "tilt": "angle", "panel": "length"}},
+    "spot": {"section": 5, "needs": ["at"], "fields": {"at": "point", "faces": "angle"}},
+    "row": {"section": 5, "closed": true, "needs": ["row", "step", "first"], "fields": {
+      "row": "number", "step": "point", "first": "first spot", "names": "list of texts"}},
+    "ring": {"section": 5, "closed": true, "needs": ["ring", "around", "step", "first"], "fields": {
+      "ring": "number", "around": "point", "step": "angle", "first": "first spot", "names": "list of texts"}},
+    "piece": {"section": 8, "fields": {"shape": "shape", "mass": "mass", "stiff": "flag", "still_one_if": "text"}},
+    "place": {"section": 9, "placed": true, "fields": {
+      "starts": "starts", "holds": "by piece", "opening": "record opening", "post": "record post", "surface": "record surface", "slide": "angle",
+      "takes": "list of take", "gives": "list of give", "then": "record then"}},
+    "opening": {"section": 9, "fields": {
+      "outline": "outline", "slope": "angle", "from": "word opening_from", "bottom": "length", "top": "length", "depth": "length", "lip": "length"}},
+    "post": {"section": 9, "fields": {"tip": "length", "slope": "angle", "diameter": "length", "length": "length"}},
+    "surface": {"section": 9, "fields": {"edge": "length", "size": "lengths", "slope": "angle"}},
+    "take": {"section": 9, "needs": ["piece"], "fields": {
+      "piece": "piece", "by": "words takes_by", "how": "word takes_how", "counts": "text", "score": "award", "most": "cap"}},
+    "give": {"section": 9, "needs": ["piece", "to"], "fields": {"piece": "piece", "by": "words gives_by", "to": "given to", "how": "text"}},
+    "then": {"section": 9, "needs": ["to"], "fields": {"to": "goes to", "of": "word whose", "how": "text"}},
+    "total": {"section": 10, "by_piece": true, "fields": {}},
+    "count": {"section": 10, "fields": {
+      "of": "text", "adds": "awards", "counts": "awards", "when": "when", "smallest_of": "places", "third_largest_of": "places"}},
+    "award": {"section": 10, "fields": {
+      "per": "text", "points": "list of points", "rp": "number", "needs": "conditions", "unless": "awards", "also_needs": "awards",
+      "easier": "record easier", "most": "cap", "when": "when"}},
+    "points": {"section": 10, "needs": ["when", "points"], "fields": {"when": "when", "points": "number"}},
+    "easier": {"section": 10, "needs": ["when", "needs"], "fields": {"when": "when", "needs": "conditions"}},
+    "judged": {"section": 10, "needs": ["awards"], "fields": {"awards": "awards", "or_sooner": "text"}},
+    "foul": {"section": 10, "fields": {"points_to_them": "number"}},
+    "conduct": {"section": 12, "needs": ["says", "cost"], "fields": {
+      "act": "word act", "what": "things touched", "through_pieces": "flag", "whoever_starts": "flag", "piece": "pieces", "into": "things",
+      "limit": "limit", "longer_than": "longer than", "where": "things", "who": "who", "must_not": "must not", "only_if": "conditions",
+      "when": "when", "unless": "texts", "cost": "cost"}},
+    "cost": {"section": 12, "closed": true, "fields": {
+      "foul": "foul", "award": "award", "to": "text", "deny": "awards", "either": "fouls", "words": "text", "if": "text", "again": "word again",
+      "instead_of": "foul", "times": "number", "each": "text", "every": "time", "against": "word against", "next_match": "flag", "when": "when"}},
+    "weight": {"section": 13, "fields": {"max": "mass", "without": "texts"}},
+    "about": {"section": 13, "needs": ["allow"], "fields": {"allow": "word allow", "one_of": "flag"}},
+    "part": {"section": 13, "needs": ["src"], "fields": {
+      "name": "text", "part_numbers": "texts", "number": "number", "kind": "word device", "only_for": "loads", "on": "on",
+      "protection": "A", "each": "circuits", "thinnest": "AWG", "area": "mm2", "for": "text"}},
+    "rule": {"section": 13, "needs": ["says"], "fields": {}},
+    "term": {"section": 14, "fields": {"lasts": "time"}},
+    "extra": {"section": 2, "fields": {}}
+  },
+  "limits": {
+    "perimeter": {"size": "length", "bump": "length"},
+    "start": {"height": "length", "where": "conditions"},
+    "height": {"max": "length"},
+    "reach": {"far": "length", "sides": "number"},
+    "weight": {"robot": "record weight", "bumpers": "record weight", "with_bumpers": "record weight", "inspected": "record weight"},
+    "hold": "by piece",
+    "preload": "by piece",
+    "bumpers": {
+      "low": "length", "high": "length", "out": "length", "hard": "length", "gap": "length", "corner": "value", "tolerance": "length",
+      "padding": "group", "backing": "group", "numbers": "group"},
+    "drive": {"motors": "number"},
+    "price": {},
+    "console": {},
+    "radio": {},
+    "air": {},
+    "battery": {}
+  },
+  "shapes": {
+    "box": "3 lengths",
+    "taper": {"bottom": "outline", "top": "outline", "tall": "length"},
+    "cylinder": {"diameter": "length", "length": "length", "axis": "word axis"},
+    "ball": {"diameter": "length"},
+    "ring": {"inside": "length", "outside": "length", "thick": "length"},
+    "tube": {"inside": "length", "outside": "length", "length": "length", "axis": "word axis"},
+    "prism": {"outline": "outline", "tall": "length"},
+    "join": "shapes",
+    "cut": "shapes"
+  },
+  "outlines": {"rectangle": "2 lengths", "hexagon": {"flats": "length", "points": "angle"}, "circle": "length"},
+  "may_be_left_out": ["axis"],
+  "acts_need": ["must_not", "only_if", "limit"],
+  "cost_main": ["foul", "award", "deny", "either", "words"],
+  "words": {
+    "alliance": ["each"],
+    "symmetry": ["mirror", "turn"],
+    "state_of": ["alliance", "robot", "piece", "place", "match"],
+    "edge": ["tape inside", "tape outside"],
+    "height": ["none"],
+    "for": ["people"],
+    "passage_kind": ["under", "over", "between"],
+    "hang_kind": ["bar", "chain", "frame", "post", "ledge"],
+    "starts": ["left over"],
+    "opening_from": ["front", "above", "below"],
+    "takes_by": ["robot", "human", "field"],
+    "takes_how": ["enter", "rest", "surround"],
+    "gives_by": ["human", "field"],
+    "gives_to": ["floor", "robot"],
+    "whose": ["mine", "theirs"],
+    "goes_to": ["out"],
+    "act": ["touch", "launch", "hold", "cross", "feed"],
+    "again": ["match", "phase", "event"],
+    "against": ["robot", "team", "alliance", "person"],
+    "allow": ["only", "examples"],
+    "device": ["controller", "relay", "pneumatics", "own"],
+    "no_limit": ["any"],
+    "axis": ["x", "y", "z"],
+    "who": ["robot", "anyone"],
+    "touched": ["their robot"],
+    "sides": ["my", "their", "either"],
+    "someone": ["robot", "bumpers", "person", "alliance"],
+    "the": ["the"],
+    "the_piece": ["piece"],
+    "owners": ["my", "their", "any"],
+    "groups": ["any", "all"],
+    "what": ["carpet", "every robot"],
+    "measures": ["partly in", "fully in", "fully outside", "beyond", "over", "above", "through", "from", "touching", "not touching", "touching only"],
+    "compares": ["at least", "at most", "exactly"],
+    "state_owners": ["my", "their"]
+  }
+}

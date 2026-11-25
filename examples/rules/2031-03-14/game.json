@@ -1,0 +1,27 @@
+{
+  "name": "Hay Day",
+  "season": 2031,
+  "edition": "manual 4, 2031-03-14, with update 3",
+  "sources": {
+    "manual": {"title": "Game manual", "edition": "4", "url": "https://example.org/manual"},
+    "drawings": {"title": "Field drawings", "edition": "2031-01-09", "url": "https://example.org/drawings"},
+    "update3": {"title": "Update 3", "edition": "2031-02-04", "url": "https://example.org/update3"}
+  },
+  "variants": {
+    "field": ["welded", "bolted"],
+    "event": ["regional", "championship"],
+    "match": ["qualification", "playoff"],
+    "gate": ["low_gate", "high_gate"]
+  },
+  "frame": {
+    "origin": "blue wall, scoring table side, on the carpet", "x": "toward the red wall", "y": "away from the scoring table", "z": "up",
+    "src": "drawings sheet 1"
+  },
+  "people": {
+    "coach": {"says": "Guides the team.", "most": 1, "src": "manual 6.1"},
+    "driver": {"says": "Runs the robot.", "src": "manual 6.1"},
+    "feeder": {"says": "Handles bales.", "src": "manual 6.1"},
+    "together": [{"of": ["driver", "feeder"], "most": 3}]
+  },
+  "accuracy": {"says": "Field sizes are nominal. Drawings hold {decimal} and {angle}.", "decimal": "0.4 in", "angle": "2 deg", "src": "drawings sheet 1"}
+}
