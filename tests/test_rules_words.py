@@ -124,8 +124,41 @@ class Words(Checked):
                 (lambda d: d["conduct"]["G94"].update(where=["my flod"]), "G94.where[0]", "fold"), (lambda d: d["field"]["hangs"]["rope"].update(may_touch=["my ropes"]), "rope.may_touch[0]", "rope"),
                 (lambda d: d["field"]["hangs"]["rope"].update(may_not_touch="any knot"), "rope.may_not_touch", "list"), (lambda d: d["conduct"]["G93"].update(into="our loft"), "G93.into", "my")]:
             self.refused(change, where, hint)
-        self.accepted(lambda d: d["conduct"]["G93"].update(into="loft"))
+        self.accepted(lambda d: d["conduct"]["G93"].update(into="pond"))
         self.accepted(lambda d: d["field"]["hangs"]["rope"].update(may_touch=["my two ropes", "the end"]))
+
+    def test_a_thing_of_each_alliance_with_nobody_in_front(self):
+        """Catches into: "loft" where each alliance has a loft: nobody knows whose."""
+        for change, where in [(lambda d: d["conduct"]["G93"].update(into="loft"), "conduct.json G93.into"), (lambda d: d["conduct"]["G89"].update(where=["fold"]), "G89.where[0]"),
+                              (lambda d: d["conduct"]["G90"].update(what="yard"), "G90.what"), (lambda d: d["scoring"]["awards"]["hang"]["needs"][0].__setitem__(2, ["bar"]), "hang.needs[0]"),
+                              (lambda d: d["scoring"]["awards"]["park"]["needs"][0].__setitem__(2, "yard"), "park.needs[0]"),
+                              (lambda d: d["field"]["hangs"]["rope"].update(may_touch=["pieces", "rope"]), "field.json rope.may_touch[1]"),
+                              (lambda d: d["field"]["hangs"]["rope"].update(may_not_touch=["knot"]), "field.json rope.may_not_touch[0]")]:
+            self.refused(change, where, "each alliance")
+        self.refused(lambda d: d["conduct"]["G93"].update(into="loft"), "my loft, their loft or any loft")
+
+    def test_a_thing_that_is_nobodys_stands_alone(self):
+        """Control: a thing that neither alliance has needs nobody in front, and words in a list are still words."""
+        self.accepted(lambda d: d["conduct"]["G93"].update(into="pond"))
+        self.accepted(lambda d: d["conduct"]["G97"].update(what=["vine", "any knot"]))
+        self.accepted(lambda d: d["scoring"]["awards"]["hang"]["needs"][0].__setitem__(2, ["my bar", "a bar of wood", "pieces"]))
+        self.accepted(lambda d: d["field"]["hangs"]["rope"].update(may_touch=["pond", "a knot in it", "pieces"], may_not_touch=["their knot", "the rope"]))
+
+    def test_left_over_in_two_places(self):
+        """Catches two places that both start with what is left over of one piece: nobody could share it out."""
+        self.refused(lambda d: d["places"]["cellar"].update(starts={"bale": "left over"}), "places.json cellar.starts.bale", "stall", "left over")
+        self.accepted(lambda d: d["places"]["cellar"].update(starts={"hoop": "left over"}))
+        self.accepted(lambda d: d["places"]["cellar"].update(starts={"bale": 2}))
+
+    def test_a_count_that_the_spots_make(self):
+        """Catches starts of 6 at a place with six spots: the number is typed twice, and one of them would be changed alone."""
+        for many in [6, {"is": 6, "src": "manual 4"}]:
+            self.refused(lambda d: d["places"]["centre_bales"].update(starts={"bale": many}), "places.json centre_bales.starts.bale", '{"each": "spot", "is": 1}')
+        self.refused(lambda d: d["places"]["rack"].update(starts={"hoop": 12}), "rack.starts.hoop", '{"each": "spot", "is": 1}')
+        for good in [5, 7, 0, 12, "left over", "= 2 * 3", {"each": "spot", "is": 6}]:
+            self.accepted(lambda d: [d["places"]["stall"].pop("starts"), d["places"]["centre_bales"].update(starts={"bale": good})])
+        for good in [6, 0]:
+            self.accepted(lambda d: d["places"]["vine"].update(starts={"pumpkin": good}))     # one place with no spots
 
     def test_people(self):
         """Catches someone who is not there: together, or bound by a rule, or a list that is one name."""
@@ -209,6 +242,15 @@ class Words(Checked):
     def test_a_thing_that_no_rule_names_needs_no_geometry(self):
         """Control: a line that no rule or score names may have no geometry at all."""
         self.accepted(lambda d: d["field"]["lines"].update(path={"says": "A path."}))
+
+    def test_what_a_season_must_have_is_said_once(self):
+        """Catches a pile of faults, one for each place that needs the size, the sources or the periods, where one thing is missing."""
+        for file, name in [("game", "sources"), ("field", "size"), ("clock", "periods"), ("game", "frame"), ("field", "symmetry")]:
+            self.refused(lambda d: d[file].pop(name), f"{file}.json", f'has no "{name}"')
+        for file, name in [("game", "sources"), ("field", "size"), ("clock", "periods")]:
+            self.refused(lambda d: d[file].update({name: {}}), f'has no "{name}"')
+            self.refused(lambda d: d[file].update({name: []}), f"{file}.json {name}", "object")
+        self.refused(lambda d: [d["field"].pop("size"), d["places"]["vine"].update(says="It is {size.width} away.")], "field.json", 'has no "size"')
 
     def test_reading_a_folder(self):
         """Catches faults of one stage hidden by another, and a folder that does not read taken for an empty game."""

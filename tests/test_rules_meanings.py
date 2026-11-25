@@ -205,7 +205,7 @@ class Asked(unittest.TestCase):
     def test_how_it_is_written(self):
         """Catches a property with no form to copy from, and a word list without its words."""
         from frc_design_kernel.rules import meanings
-        self.assertEqual(meanings.find("surface.size")[0].form, "lengths")
+        self.assertEqual(meanings.find("surface.size")[0].form, "2 lengths")
         self.assertIn("at most 40 A", meanings.find("part.protection")[0].examples)
         self.assertEqual([one.key for one in meanings.find("zone.edge")[0].words], ["edge: tape inside", "edge: tape outside"])
 

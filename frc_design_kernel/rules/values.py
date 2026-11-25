@@ -215,7 +215,7 @@ class Reader:
         for i, one in enumerate(node if isinstance(node, list) else [node]):
             at = f"{where}[{i}]" if isinstance(node, list) else where
             first = one.split(" ")[0] if isinstance(one, str) else one
-            if not isinstance(one, str) or first not in self.book.sources:
+            if not isinstance(one, str) or first not in self.book.sources and "sources" not in self.book.missing:
                 self.faults.append(unknown(at, "source", first, self.book.sources))
         return ()
 
@@ -297,9 +297,6 @@ class Reader:
         return ()
 
     # -- positions and shapes
-
-    def holds_lengths(self, entry, node, where):
-        return self.value(entry, node, "length", where, loose=True)
 
     def holds_point(self, entry, node, where, sizes=(2, 3)):
         for inner, at in self.unwrapped(entry, node, where):

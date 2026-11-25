@@ -16,17 +16,17 @@
     "bale_on_bench": {"per": "piece", "points": [{"when": ["teleop"], "points": {"by": "event", "regional": 1, "championship": 2}}], "src": "manual 5.7"},
     "pumpkin_in_loft": {"per": "piece", "points": [{"when": ["teleop"], "points": 4}, {"when": ["teleop", "high_gate"], "points": 5}], "src": "manual 5.7"},
     "hoop_on_rack": {"per": "piece", "points": [{"when": ["auto"], "points": 4}, {"when": ["teleop"], "points": 2}], "src": "manual 5.7"},
-    "out_early": {"per": "robot", "points": [{"when": ["auto"], "points": 3}], "needs": [["my bumpers", "fully outside", "my yard"]], "src": "manual 5.8"},
+    "out_early": {"per": "robot", "points": [{"when": ["auto"], "points": 3}], "looked_at": "any time", "needs": [["my bumpers", "fully outside", "my yard"]], "src": "manual 5.8"},
     "hang": {
-      "per": "robot", "points": [{"when": ["teleop"], "points": 9}], "says": "Off the carpet on the bar.", "most": {"each": "alliance", "is": 2},
+      "per": "robot", "points": [{"when": ["teleop"], "points": 9}], "looked_at": "at the end", "says": "Off the carpet on the bar.", "most": {"each": "alliance", "is": 2},
       "needs": [
         ["my robot", "touching", "my bar"], ["my robot", "not touching", ["carpet", "the base of my mast"]],
         ["my robot", "touching only", ["my bar", "my mast", "pieces", "a robot that hangs"]]],
       "src": "manual 5.8"
     },
-    "swing_high": {"per": "robot", "points": [{"when": ["teleop"], "points": 12}], "also_needs": ["hang"], "needs": [["my bumpers", "above", "my swing"]], "src": "manual 5.8"},
+    "swing_high": {"per": "robot", "points": [{"when": ["teleop"], "points": 12}], "looked_at": "at the end", "also_needs": ["hang"], "needs": [["my bumpers", "above", "my swing"]], "src": "manual 5.8"},
     "park": {
-      "per": "robot", "points": [{"when": ["teleop"], "points": 4}], "needs": [["my bumpers", "partly in", "my yard"]], "unless": ["hang", "swing_high"], "src": "manual 5.8"
+      "per": "robot", "points": [{"when": ["teleop"], "points": 4}], "looked_at": "at the end", "needs": [["my bumpers", "partly in", "my yard"]], "unless": ["hang", "swing_high"], "src": "manual 5.8"
     },
     "loft_rp": {
       "per": "match", "rp": 1, "when": ["qualification"], "needed": {"by": "event", "regional": 12, "championship": 16},

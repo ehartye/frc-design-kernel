@@ -26,6 +26,7 @@ ID = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 AXES = "xyz"
 ENDS = ("low", "high")
 ALLIANCES = ("blue", "red")
+STAND_FOR_IDS = ("who", "gives_to", "goes_to", "what", "someone", "the", "the_piece", "owners", "sides", "whose", "groups", "alliance")    # word lists
 
 
 @functools.lru_cache(maxsize=1)
@@ -37,6 +38,11 @@ def names():
 def word_list(name):
     """The words of one of the lists in fields.json."""
     return list(names()["words"][name]["words"])
+
+
+def taken():
+    """The words of the format that stand where an ID may, so that no ID may be one of them."""
+    return {word for name in STAND_FOR_IDS for word in word_list(name)} | {"pieces", "spot", "not"}
 
 
 # ---- the files
@@ -136,8 +142,12 @@ class Book:
     ids: dict         # {ID: Entry}
 
     def of_kind(self, *kinds):
-        """{ID: Entry} for the records of some kinds."""
-        return {e.id: e for e in reversed(self.entries) if e.kind in kinds}    # the first of two with one ID
+        """{ID: Entry} for the records of some kinds, in the order written; the first of two with one ID."""
+        found = {}
+        for entry in self.entries:
+            if entry.kind in kinds:
+                found.setdefault(entry.id, entry)
+        return found
 
     def part(self, file, name):
         """A named group of a file, or an empty one when it is not there or is not an object."""
@@ -156,6 +166,17 @@ class Book:
     @property
     def people(self):
         return {name: one for name, one in self.part("game", "people").items() if name != "together"}
+
+    @property
+    def missing(self):
+        """The names that every season must have and that this one has not, or not as an object where it must be one."""
+        found = set()
+        for file, about in names()["files"].items():
+            for name in about.get("needs", ()):
+                node = self.data.get(file, {}).get(name)
+                if node is None or about["fields"][name]["holds"].startswith("record") and not (isinstance(node, dict) and node):
+                    found.add(name)
+        return found
 
     @property
     def roots(self):
@@ -343,8 +364,10 @@ def _id(name, where, faults):
 
 def _ids(entries, faults):
     """{ID: Entry} of every record that a path begins with, and a fault for each ID that is taken."""
-    ids, roots = {}, names()["roots"]["words"]
+    ids, roots, words = {}, names()["roots"]["words"], taken()
     for entry in entries:
+        if entry.id in words and (entry.kind == "person" or entry.path == entry.id):
+            faults.append(DesignError(entry.where, f'the ID "{entry.id}" is a word of the format', "Choose another ID, so that a rule can mean only one of them"))
         if not entry.path or "." in entry.path or entry.kind in (*roots, "frame"):
             continue
         if entry.path in roots:

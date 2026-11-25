@@ -106,6 +106,35 @@ class FieldNames(Checked):
         self.refused(lambda d: d["robot"]["limits"]["weight"].update(naked={"max": "at most 100 lb", "without": []}), "limits.weight", '"naked"', "robot")
         self.accepted(lambda d: d["robot"]["limits"]["weight"].update(cable={"is": "at most 12 in", "of": "that counts as battery"}))
 
+    def test_what_a_season_must_have(self):
+        """Catches a season with no name, sources, frame, size, symmetry or periods, with one message and not one for each place that needs them."""
+        for file, name in [("game", "name"), ("game", "season"), ("game", "edition"), ("game", "sources"), ("game", "frame"), ("field", "size"), ("field", "symmetry"), ("clock", "periods")]:
+            self.refused(lambda d: d[file].pop(name), f"{file}.json", f'has no "{name}"')
+        for file, name in [("game", "sources"), ("game", "frame"), ("field", "size"), ("clock", "periods")]:
+            self.refused(lambda d: d[file].update({name: {}}), f"{file}.json", f'has no "{name}"')
+
+    def test_what_a_season_may_leave_out(self):
+        """Control: accuracy, the guardrail and equipment may be missing."""
+        self.accepted(lambda d: [d["game"].pop("accuracy"), d["field"].pop("guardrail"), d["field"].pop("equipment")])
+
+    def test_an_award_for_a_robot_says_when_it_is_looked_at(self):
+        """Catches an award per robot of which nobody can tell whether once is enough, or it is looked at when the period ends."""
+        awards = lambda d: d["scoring"]["awards"]
+        self.refused(lambda d: awards(d)["park"].pop("looked_at"), "scoring.json park", 'has no "looked_at"')
+        self.refused(lambda d: awards(d)["park"].update(looked_at="later"), "scoring.json park.looked_at", "any time", "at the end")
+        self.refused(lambda d: awards(d)["hoop_on_rack"].update(per="robot"), "scoring.json hoop_on_rack", 'has no "looked_at"')
+        self.accepted(lambda d: awards(d)["hoop_on_rack"].update(looked_at="any time"))
+        self.accepted(lambda d: awards(d)["park"].update(looked_at="any time"))
+
+    def test_a_surface_has_two_sizes(self):
+        """Catches a surface with one size or three, which nobody could place along and across."""
+        surface = lambda d: d["places"]["bench"]["surface"]
+        for bad in [["22 in"], ["22 in", "55 in", "1 in"], "22 in", [], {"wide": "22 in"}]:
+            self.refused(lambda d: surface(d).update(size=bad), "places.json bench.surface.size", "2 lengths")
+        self.refused(lambda d: surface(d).update(size=["22 in", "3 lb"]), "bench.surface.size.y", "length")
+        self.accepted(lambda d: surface(d).update(size=["22 in", "= crate.shape.box.y"]))
+        self.accepted(lambda d: surface(d).pop("size"))
+
     def test_what_a_record_must_have(self):
         """Catches a conduct rule without says or cost, a construction rule without says, and a part without a source."""
         self.refused(lambda d: d["conduct"]["G90"].pop("cost"), "conduct.json G90", '"cost"')

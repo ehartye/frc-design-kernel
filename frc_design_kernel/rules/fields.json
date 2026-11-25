@@ -218,12 +218,6 @@
         "20 A"
       ]
     },
-    "lengths": {
-      "means": "A list of lengths.",
-      "examples": [
-        ["7 in", "3 in"]
-      ]
-    },
     "2 lengths": {
       "means": "Two lengths.",
       "as": "point",
@@ -515,7 +509,7 @@
       "examples": [
         "any loft",
         ["my fold"],
-        "loft"
+        "pond"
       ]
     },
     "things touched": {
@@ -641,6 +635,7 @@
   "files": {
     "game": {
       "means": "Edition, sources, what changes a number (`variants`), where positions are measured from, people. Everyone needs it.",
+      "needs": ["name", "season", "edition", "sources", "frame"],
       "fields": {
         "name": {"holds": "text", "means": "The game's name."},
         "season": {"holds": "number", "means": "The season's year."},
@@ -654,6 +649,7 @@
     },
     "clock": {
       "means": "Periods, windows (spans of time with a name), states (things that are true for a while). For strategy, rehearsal and controls.",
+      "needs": ["periods"],
       "fields": {
         "periods": {"holds": "records period", "means": "The parts of a match, in order."},
         "windows": {"holds": "records window", "means": "Spans of time with a name. Windows may overlap."},
@@ -662,6 +658,7 @@
     },
     "field": {
       "means": "Size, zones, lines, solids, ways through, things robots hang on, vision tags. For every design phase and vision.",
+      "needs": ["size", "symmetry"],
       "fields": {
         "size": {"holds": "record size", "means": "The size of the field."},
         "symmetry": {"holds": "word symmetry", "means": "How red's side is made from blue's, unless a record has its own."},
@@ -1008,7 +1005,7 @@
       "means": "Something to rest on.",
       "fields": {
         "edge": {"holds": "length", "means": "Carpet to its edge."},
-        "size": {"holds": "lengths", "means": "Its size: two lengths, along `faces` and across."},
+        "size": {"holds": "2 lengths", "means": "Its size: two lengths, along `faces` and across."},
         "slope": {"holds": "angle", "means": "How it leans: 0 deg is flat."}
       }
     },
@@ -1061,11 +1058,15 @@
     },
     "award": {
       "means": "Something that earns points or ranking points.",
+      "needs_with": {
+        "per": {"robot": ["looked_at"]}
+      },
       "fields": {
         "per": {"holds": "text", "means": "What it is earned once for each of, in words: `piece`, `robot` or `match`."},
         "points": {"holds": "list of points", "means": "The points, by when. Of the rows that are true, the one with the most entries in `when` counts (`not lit` is one); two that tie are refused."},
         "rp": {"holds": "number", "means": "Ranking points."},
         "needs": {"holds": "conditions", "means": "Conditions that must be true."},
+        "looked_at": {"holds": "word looked_at", "means": "When a program looks whether its `needs` are true. Every award per robot has it."},
         "unless": {"holds": "awards", "means": "Awards that cancel this one."},
         "also_needs": {"holds": "awards", "means": "Awards whose `needs` apply too."},
         "easier": {"holds": "record easier", "means": "The `needs` that are enough at its `when`."},
@@ -1500,6 +1501,13 @@
         "hold": {"means": "How many pieces. Uses `limit` (a number for each piece), `longer_than`, `where`."},
         "cross": {"means": "Where a robot may be, or how many robots. With `limit`, at most that many robots of one alliance may meet `must_not` at once."},
         "feed": {"means": "How pieces may enter or be kept. Uses `piece`, `who`."}
+      }
+    },
+    "looked_at": {
+      "means": "When an award's `needs` are looked at.",
+      "words": {
+        "any time": {"means": "At any time in the period: once is enough."},
+        "at the end": {"means": "When the period in `when` ends, with `judged`."}
       }
     },
     "again": {

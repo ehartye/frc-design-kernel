@@ -133,6 +133,19 @@ class Ids(unittest.TestCase):
         for root in ("total", "guardrail", "accuracy", "parts"):
             self.one(f'"{root}"', "terms.json", terms={root: {}})
 
+    def test_an_id_that_is_a_word_of_the_format(self):
+        """Catches a place called floor or a piece called any, so that a rule could mean the thing or the word."""
+        for word in ["robot", "floor", "out", "anyone", "carpet", "piece", "pieces", "person", "bumpers", "alliance", "my", "their", "either", "any", "all", "mine", "theirs", "the", "each", "spot", "not"]:
+            self.one(f"places.json {word}", f'"{word}"', "word of the format", places={word: {}})
+        self.one("scoring.json robot", "word of the format", scoring={"counts": {"robot": {}}})
+        self.one("game.json people.anyone", "word of the format", game={"people": {"anyone": {}}})
+
+    def test_a_word_that_stands_nowhere_for_an_id(self):
+        """Control: a word of a list that never stands where an ID may, such as mirror or bar, may be an ID; so may robots."""
+        for word in ["mirror", "bar", "robots", "under", "cellar", "x"]:
+            self.assertEqual(self.gather(places={word: {}})[1], [])
+        self.assertEqual(self.gather(field={"tags": {"all": {}}}, game={"sources": {"any": {}}})[1], [])
+
     def test_an_id_that_is_not_one(self):
         """Catches an ID with a space, a dash or a digit in front, which a path or a formula could not name."""
         for name in ["hay loft", "hay-loft", "2nd", "", "_x", "loé"]:

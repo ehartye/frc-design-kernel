@@ -56,6 +56,7 @@ def leaves(book, faults=None):
     faults = [] if faults is None else faults
     found = list(fields.leaves(book, faults))
     words = Words(book, faults)
+    words.left_over()
     for field in fields.walk(book, []):
         found += words.field(field)
     words.formulas(found)
@@ -80,6 +81,7 @@ class Words:
         self.loads = [e.id for e in book.entries if e.kind == "part" and "on" in e.data]
         self.named = {}         # {ID of a thing: where a rule names it and must know where it is}
         self.found = []         # the Leaves of the field that is being read
+        self.missing = book.missing
 
     def fault(self, where, problem, fix):
         self.faults.append(DesignError(where, problem, fix))
@@ -143,7 +145,24 @@ class Words:
         for piece in node if isinstance(node, dict) else ():
             self.one(piece, self.ids["piece"], "piece", where)
 
-    holds_starts = holds_by_piece
+    def holds_starts(self, field, node, where):
+        self.holds_by_piece(field, node, where)
+        spots = len(read.spot_names(field.owner.get("spots")))
+        for piece, given in node.items() if isinstance(node, dict) else ():
+            many = given.get("is") if isinstance(given, dict) and "each" not in given else given
+            if spots and many == spots:
+                self.fault(f"{where}.{piece}", f"types {many}, which its {spots} spots already make", 'Write {"each": "spot", "is": 1}')
+
+    def left_over(self):
+        """Only one place starts with what is left over of a piece."""
+        first = {}
+        for entry in self.ids["place"].values():
+            starts = entry.data.get("starts")
+            for piece, given in starts.items() if isinstance(starts, dict) else ():
+                if given in word_list("starts"):
+                    if piece in first:
+                        self.fault(f"{entry.where}.starts.{piece}", f'is left over, and so is that of {first[piece]}', "Write how many there are in one of them")
+                    first.setdefault(piece, entry.id)
 
     def holds_hold_limit(self, field, node, where):
         if values.is_group(node):
@@ -153,10 +172,11 @@ class Words:
         self.one(field.name, self.ids["piece"], "piece", field.entry.where)
 
     def holds_period(self, field, node, where):
-        self.one(node, self.ids["period"], "period", where)
+        if "periods" not in self.missing:
+            self.one(node, self.ids["period"], "period", where)
 
     def holds_after_period(self, field, node, where):
-        self.one(field.name.removeprefix("after_"), self.ids["period"], "period", where)
+        self.holds_period(field, field.name.removeprefix("after_"), where)
 
     def holds_given_to(self, field, node, where):
         self.one(node, [*word_list("gives_to"), *self.book.of_kind(*PLACED)], "place", where)
@@ -186,8 +206,12 @@ class Words:
     def thing(self, node, where, bare=False, measured=False, also=()):
         """An ID of a thing with whose it is; bare allows the ID alone, and also has more words for a hint."""
         owner, space, name = node.partition(" ") if isinstance(node, str) else ("", "", "")
-        if not space and bare:
+        if not space and (bare or self.of_each(owner)):
             name = owner
+            if self.of_each(name):
+                owners = [f"{who} {name}" for who in word_list("owners")]
+                self.fault(where, f'"{name}" is one of each alliance, and nobody is in front', f"Write {', '.join(owners[:-1])} or {owners[-1]}")
+                return
         elif owner not in word_list("owners") or not space:
             self.fault(where, f'"{node}" does not name a thing', f"Write {', '.join(word_list('owners'))} and then an ID")
             return
@@ -196,12 +220,15 @@ class Words:
         if kind in NEED_GEOMETRY or measured and kind in PLACED:
             self.named.setdefault(name, where)
 
+    def of_each(self, name):
+        return name in self.things and self.things[name].data.get("alliance") == "each"
+
     def words_or_things(self, node, where, measured=False):
-        """A list in which my, their or any with one ID is a thing, and all else is words."""
+        """A list in which my, their or any with one ID is a thing, an ID of each alliance alone is refused, and all else is words."""
         for one, at in self.list(node, where):
             if not isinstance(one, str) or not one.strip():
                 self.fault(at, "is not words", "Write words between quotes")
-            elif re.fullmatch(rf"(?:{'|'.join(word_list('owners'))}) {ID.pattern}", one):
+            elif re.fullmatch(rf"(?:{'|'.join(word_list('owners'))}) {ID.pattern}", one) or self.of_each(one):
                 self.thing(one, at, measured=measured)
 
     def holds_things(self, field, node, where):
@@ -226,7 +253,7 @@ class Words:
                 self.fault(at, f'"{one}" is not a name of a period, window, state or variant', 'Write the name, with "not", "my" or "their" in front if need be')
             elif got[1] and got[2] in known and got[2] not in self.ids["state"]:
                 self.fault(at, f'"{got[2]}" is nobody\'s: only a state can be my or their', f'Write "{got[2]}"')
-            else:
+            elif "periods" not in self.missing:
                 self.one(got[2], known, "period, window, state or variant", at)
 
     def holds_variants(self, field, node, where):
@@ -290,7 +317,7 @@ class Words:
 
     def _what(self, what, where, measured):
         owner, _, rest = what.partition(" ")
-        if owner in word_list("owners") and rest:
+        if owner in word_list("owners") and rest or self.of_each(what):
             self.thing(what, where, measured=measured)
         else:
             self.fault(where, f'"{what}" names nothing', f'Write my, their or any and an ID, a number, or one of: {", ".join(word_list("what"))}')
@@ -340,11 +367,15 @@ class Words:
         for data in (field.owner, field.entry.data):
             if head in data:
                 return self.book.within(data, path, field.entry)
+        if head in self.missing:
+            return None
         return self.book.look(path)
 
     def formulas(self, found):
         for leaf in found:
             for path in paths_in(leaf.node) if isinstance(leaf.node, str) and leaf.node.startswith("=") else ():
+                if path.partition(".")[0] in self.missing:
+                    continue
                 try:
                     self.book.look(path)
                 except DesignError as problem:

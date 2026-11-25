@@ -46,6 +46,7 @@ class Spec:
     needs: tuple = ()       # names that must be there
     one_of: tuple = ()      # exactly one of these
     any_of: tuple = ()      # one of these or more
+    needs_with: tuple = ()  # (name, {its word: names that must be there with it})
 
 
 def properties(label, about):
@@ -59,7 +60,8 @@ def spec_of(kind):
     known = properties(kind, about)
     if not about.get("closed"):
         known = {**properties("every", kinds["every"]), **(properties("placed", kinds["placed"]) if about.get("placed") else {}), **known}
-    return Spec(known, "piece count" if about.get("by_piece") else "extra", about.get("closed", False), *(tuple(about.get(flag, ())) for flag in ("needs", "one_of", "any_of")))
+    return Spec(known, "piece count" if about.get("by_piece") else "extra", about.get("closed", False), *(tuple(about.get(flag, ())) for flag in ("needs", "one_of", "any_of")),
+                tuple(about.get("needs_with", {}).items()))
 
 
 @functools.lru_cache(maxsize=None)
@@ -93,10 +95,24 @@ def walk(book, faults):
     """Every Field of every record, in the order written. What is wrong with the names goes into faults."""
     for entry in book.entries:
         spec = spec_for(entry)
+        if not entry.path:
+            _must_have(book, entry.file, faults)
         if spec is None:
             faults.append(unknown(entry.where, "limit", entry.id, names()["limits"]))
         else:
             yield from object_fields(entry, entry.data, spec, entry.where, faults)
+
+
+def _must_have(book, file, faults):
+    """A fault for each name that a file must have and has not. One that is there and is no object is not read at all."""
+    for name in names()["files"][file].get("needs", ()):
+        if name in book.missing and book.data.get(file, {}).get(name) in (None, {}):
+            faults.append(DesignError(f"{file}.json", f'has no "{name}"', f'Add "{name}"'))
+
+
+def _needed_with(spec, data):
+    """The names that must be there because of what another field says."""
+    return [need for name, cases in spec.needs_with for word, needs in cases.items() if data.get(name) == word for need in needs]
 
 
 def object_fields(entry, data, spec, where, faults):
@@ -105,7 +121,7 @@ def object_fields(entry, data, spec, where, faults):
         faults.append(DesignError(where, f"does not say one of {_listed(spec.one_of)}", "Write exactly one of them"))
     if spec.any_of and not set(spec.any_of) & set(data):
         faults.append(DesignError(where, f"has no {_listed(spec.any_of)}", "Write one of them"))
-    for name in spec.needs:
+    for name in (*spec.needs, *_needed_with(spec, data)):
         if name not in data:
             faults.append(DesignError(where, f'has no "{name}"', f'Add "{name}"'))
     for name, node in data.items():
